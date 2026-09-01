@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AssetEvents } from "@/components/asset-events";
 import { Zmd1Manifest } from "@/components/zmd1-manifest";
@@ -142,6 +142,64 @@ function verificationBadge(
   return null;
 }
 
+/**
+ * The sealed image, thumbnail first, full size on demand.
+ *
+ * The bytes on screen are the bytes the chain committed to (transitively,
+ * through the bundle hash), so showing them at 96 px only would undersell
+ * the guarantee. Click or Escape closes.
+ */
+function SealedImage({ src }: { src: string }) {
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open]);
+
+  return (
+    <>
+      <button
+        type="button"
+        data-testid="asset-image-open"
+        title="View the sealed image full size"
+        className="group shrink-0 cursor-zoom-in"
+        onClick={() => setOpen(true)}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={src}
+          alt=""
+          className="h-24 w-24 rounded-sm border border-white/10 object-cover transition group-hover:border-[#e8b23a]/60"
+        />
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          data-testid="asset-image-lightbox"
+          className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/85 p-6 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={src}
+            alt=""
+            className="max-h-[82vh] max-w-full rounded-md border border-white/15 shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
+          />
+          <p className="font-data text-[11px] uppercase tracking-[0.16em] text-neutral-500">
+            sealed with the asset · click anywhere to close
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function AssetDetail({ assetId }: { assetId: string }) {
   const state = useQuery({
     queryKey: ["asset", assetId],
@@ -187,12 +245,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
         <div className={`${card} mt-4`}>
           <div className="flex flex-wrap items-start gap-5">
             {state.data.image_path ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={apiBaseUrl + state.data.image_path}
-                alt=""
-                className="h-24 w-24 rounded-sm border border-white/10 object-cover"
-              />
+              <SealedImage src={apiBaseUrl + state.data.image_path} />
             ) : (
               <div className="font-data flex h-24 w-24 items-center justify-center rounded-sm border border-white/10 text-lg text-neutral-600">
                 {assetId.slice(0, 2)}
