@@ -6,6 +6,8 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-01
+
 ### Added
 
 - **The asset id itself is verified, in the browser.** An asset page
@@ -34,6 +36,12 @@ All notable changes to Cachet are documented here. The format follows
   description is known. The landing showcase uses it: most of this testnet
   is script-minted under a shared demo key with no description, so an
   unfiltered showcase was five rows of hex.
+- The files a public site is expected to serve: `robots.txt` (with the
+  sitemap pointer), `sitemap.xml` (entry points only — asset pages change
+  with every block), and an Apple touch icon, which Safari probed on every
+  visit and turned into a console error. The site origin behind them is a
+  build argument (`CACHET_SITE_URL`) like the API origin, so a fork's
+  robots.txt stops pointing crawlers at this deployment.
 
 ### Changed
 
@@ -45,6 +53,63 @@ All notable changes to Cachet are documented here. The format follows
   verification, description only, or bundle only - instead of one fixed
   sentence. An asset id mismatch outranks a bundle mismatch, because it
   makes everything under it moot.
+- One word no longer means two things. "Sealed" named committed metadata
+  on the landing and finalized supply everywhere else, which is exactly
+  how a reader concludes an unsealed asset has editable metadata (it does
+  not — the description hash derives the asset id). The landing step is
+  now "Bind"; both supply states are stated instead of one being the
+  absence of a stamp ("sealed" / "open supply", the latter in the
+  attention colour, since it carries dilution risk for the holder); and
+  reissuing announces itself before proving and on the receipt instead of
+  silently adding units to an existing asset.
+- Names in the landing showcase carry their provenance visibly ("zmd-1",
+  "unverified") — the anti-phishing display rule applied where only
+  typeface used to carry it.
+- The navbar and footer GitHub links land on the repository rather than
+  the organization page.
+- Working paper v1.1: every engine measurement re-taken after three
+  rebuilds had drifted them (4.0 MB module, 1.56 MB zstd on the wire,
+  74 percent; load restated as 24 ms warm / ~0.5 s cold); the provenance
+  point made with a chain-wide aggregate instead of naming one project's
+  batch; issuer moderation verbs added to the CLI listing; P1–P8; and no
+  heading is ever the last thing on a page.
+- Documentation reconciled with the code as it ships: the three
+  non-chain-derivable tables named consistently everywhere, the GC
+  keep-set described as the resolved description journal (what the code
+  does) rather than "on-chain assets" (what it does not), and DEPLOY's
+  one-time setup no longer omits the third mandatory secret.
+- CI actions moved off the Node 20 runtimes before their removal
+  (checkout v7, setup-node v7, cache v6, upload-artifact v7,
+  pnpm/action-setup v6), with automatic package-manager caching opted out
+  in the one job that installs no package manager.
+
+### Fixed
+
+- The verification engine was served with `max-age=0`, so every asset
+  page revalidated 247 KB per visit. Same cache rule as the mint engines
+  now (an hour, plus a stale-while-revalidate day).
+- The mint page printed eight copies of a wasm-bindgen deprecation
+  warning — one per spawned thread — from the generated rayon worker
+  bootstrap. Same call, object form, silence; re-applied by the engine
+  build script so the next rebuild does not undo it.
+- In attested order the ledger index counted down from the registry
+  total, labelling the best-attested assets as the chain's newest. Rows
+  are numbered by rank there; the countdown remains only in chain order,
+  where it is true.
+
+### Security
+
+- The four postcss advisories are resolved rather than accepted: `next`
+  pins postcss 8.4.31 exactly, so the patched line was unreachable until
+  a pnpm override reached it. Verified against the build and the
+  end-to-end suite.
+- The critical halo2_gadgets soundness advisory (under-constrained base
+  in variable-base scalar multiplication) is now described in SECURITY.md
+  as what it is, with the exposure reasoning stated so a reader can
+  disagree with it. The full migration to the fixed circuit is built and
+  tested on `chore/bump-qedit-stack` — blocked on consensus, not on this
+  repository: the fix changes the verifying key, and the deployed testnet
+  still verifies with the old one. Reported upstream (QED-it/zebra#164).
 
 ## [0.2.0] - 2026-08-31
 
