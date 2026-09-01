@@ -6,6 +6,25 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The generated seed is masked by default (fixed-width dots, so even word
+  lengths stay private), with a show/hide toggle. Copy still copies the
+  real phrase while masked - the safe path is the default path, and a
+  screen recording of a mint no longer exposes anything.
+- The sealed image opens full size in a lightbox from the asset page;
+  click or Escape closes.
+
+### Changed
+
+- Below-the-fold landing sections play their entrance when they become
+  visible instead of at page load - an entrance played off-screen is an
+  entrance nobody saw. The testnet stamp now presses itself when the
+  notice is actually being looked at, the four steps settle line by line,
+  and reduced-motion users get the content with no animation at all.
+- The social card drops the keys line, as the landing and banner already
+  did: the sentence lives where the action is.
+
 ## [0.3.0] - 2026-09-01
 
 ### Added

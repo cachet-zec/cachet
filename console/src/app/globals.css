@@ -81,8 +81,48 @@ body::after {
     transform: rotate(-6deg) scale(1);
   }
 }
+/* Inside a .reveal section the press waits for visibility (an entrance
+   played off-screen is an entrance nobody saw); elsewhere it keeps its
+   load-time behaviour. */
 .stamp-press {
   animation: stamp-press 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.45s both;
+}
+.reveal .stamp-press {
+  animation: none;
+}
+.reveal.in-view .stamp-press {
+  animation: stamp-press 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.35s both;
+}
+
+/* Scroll-triggered entrances. The hidden initial state exists only for
+   users whose settings allow motion: with reduced motion, or without
+   JavaScript, the content is simply there. */
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    opacity: 0;
+  }
+  .reveal.in-view {
+    animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  /* A list that IS the content settles line by line. */
+  .reveal .stagger > * {
+    opacity: 0;
+  }
+  .reveal.in-view .stagger > * {
+    animation: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .reveal.in-view .stagger > *:nth-child(2) {
+    animation-delay: 70ms;
+  }
+  .reveal.in-view .stagger > *:nth-child(3) {
+    animation-delay: 140ms;
+  }
+  .reveal.in-view .stagger > *:nth-child(4) {
+    animation-delay: 210ms;
+  }
+  .reveal.in-view .stagger > *:nth-child(5) {
+    animation-delay: 280ms;
+  }
 }
 
 /* The engraved watermark's woven ellipses turn imperceptibly — a live
@@ -104,6 +144,7 @@ body::after {
   .rise-4,
   .rise-5,
   .stamp-press,
+  .reveal.in-view,
   .seal-guilloche,
   .pulse-dot {
     animation: none !important;

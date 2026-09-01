@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { FeaturedAssets } from "@/components/landing/featured-assets";
+import { Reveal } from "@/components/reveal";
 import { LiveStats } from "@/components/landing/live-stats";
 import { SealWatermark } from "@/components/seal-mark";
 import { ghostButton, primaryButton } from "@/lib/ui";
@@ -61,7 +62,7 @@ export default function LandingPage() {
       </section>
 
       {/* Registry excerpt */}
-      <section className="rise rise-2">
+      <Reveal>
         <div className="mb-4 flex items-baseline justify-between">
           <h2 className="font-display text-2xl font-medium text-neutral-100">The registry</h2>
           <Link
@@ -72,16 +73,16 @@ export default function LandingPage() {
           </Link>
         </div>
         <FeaturedAssets />
-      </section>
+      </Reveal>
 
       {/* How it works — numbered editorial list */}
-      <section className="rise rise-3 grid gap-10 lg:grid-cols-[4fr_7fr]">
+      <Reveal className="grid gap-10 lg:grid-cols-[4fr_7fr]">
         <h2 className="font-display text-2xl font-medium leading-snug text-neutral-100">
           Your keys.
           <br />
           Your assets. Verifiably.
         </h2>
-        <ol className="flex flex-col">
+        <ol className="stagger flex flex-col">
           {steps.map((step, index) => (
             <li
               key={step.title}
@@ -99,11 +100,11 @@ export default function LandingPage() {
             </li>
           ))}
         </ol>
-      </section>
+      </Reveal>
 
       {/* Honest framing: an official notice, set as ledger lines and
           stamped like a document. Facts, not prose. */}
-      <section className="rise rise-4 rounded-lg border border-white/[0.08] bg-[#12100d] p-6 [background-image:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0)_45%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_3px_rgba(0,0,0,0.35)] sm:p-7">
+      <Reveal className="rounded-lg border border-white/[0.08] bg-[#12100d] p-6 [background-image:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0)_45%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_3px_rgba(0,0,0,0.35)] sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <h2 className="font-data text-[11px] uppercase tracking-[0.24em] text-neutral-500">
             Notice · read before believing
@@ -145,7 +146,7 @@ export default function LandingPage() {
           </a>
           .
         </p>
-      </section>
+      </Reveal>
     </div>
   );
 }

@@ -182,14 +182,17 @@ function SealedImage({ src }: { src: string }) {
           role="dialog"
           aria-modal="true"
           data-testid="asset-image-lightbox"
-          className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/85 p-6 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/90 p-8 backdrop-blur-md"
           onClick={() => setOpen(false)}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
+          {/* Height budget: viewport minus the caption, the gaps and the
+              padding - so image + caption always fit together, navbar
+              included. Width capped so a square never wall-to-walls. */}
           <img
             src={src}
             alt=""
-            className="max-h-[82vh] max-w-full rounded-md border border-white/15 shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
+            className="max-h-[calc(100vh-9rem)] max-w-[min(88vw,52rem)] rounded-md border border-white/15 object-contain shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
           />
           <p className="font-data text-[11px] uppercase tracking-[0.16em] text-neutral-500">
             sealed with the asset · click anywhere to close
