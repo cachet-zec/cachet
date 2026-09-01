@@ -14,7 +14,7 @@ license = { workspace = true }
 # cachet-chain's own orchard dependency.
 [dependencies]
 thiserror = { workspace = true }
-orchard = { version = "0.12.0", default-features = false, features = ["std", "zsa-issuance"] }
-zcash_primitives = { version = "0.26.1", default-features = false, features = ["std", "zsa-issuance"] }
+orchard = { version = "0.14.0", default-features = false, features = ["std", "zsa-issuance"] }
+zcash_primitives = { version = "0.28.0", default-features = false, features = ["std", "zsa-issuance"] }
 bridgetree = "0.7.1"
 incrementalmerkletree = "0.8.2"
