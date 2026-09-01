@@ -252,8 +252,22 @@ export function AssetDetail({ assetId }: { assetId: string }) {
       )}
 
       {state.data && (
-        <div className={`${card} mt-4`}>
-          <div className="flex flex-wrap items-start gap-5">
+        <div className={`${card} relative mt-4`}>
+          {/* A finalized supply is stamped like a document, not tagged
+              like a form field - the same press as the landing's testnet
+              stamp. The tooltip keeps the precise meaning. */}
+          {state.data.finalized && (
+            <span
+              data-testid="sealed-stamp"
+              title="Finalized: consensus refuses further units, from anyone including the issuer. Holders can still burn what they hold, so the supply can fall but never rise."
+              className="stamp-press font-data absolute right-4 top-4 -rotate-6 select-none rounded-sm border-2 border-[#e8b23a]/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-[#e8b23a]/90 outline outline-1 outline-offset-4 outline-[#e8b23a]/30 sm:right-6 sm:top-6 sm:px-3 sm:py-1.5 sm:text-[12px]"
+            >
+              sealed forever
+            </span>
+          )}
+          <div
+            className={`flex flex-wrap items-start gap-5 ${state.data.finalized ? "sm:pr-36" : ""}`}
+          >
             {state.data.image_path ? (
               <SealedImage src={apiBaseUrl + state.data.image_path} />
             ) : (
@@ -278,14 +292,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                 </span>
               </p>
               <div className="mt-2.5 flex flex-wrap items-center gap-2">
-                {state.data.finalized ? (
-                  <span
-                    className={`${stamp} -rotate-1`}
-                    title="Finalized: consensus refuses further units, from anyone including the issuer. Holders can still burn what they hold, so the supply can fall but never rise."
-                  >
-                    sealed forever
-                  </span>
-                ) : (
+                {!state.data.finalized && (
                   // Stated, not left to the absence of a stamp: whoever
                   // holds this asset can be diluted, and that is a fact
                   // about the chain, not an opinion about the issuer.
