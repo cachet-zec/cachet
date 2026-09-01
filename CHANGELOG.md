@@ -6,8 +6,6 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
-## [Unreleased]
-
 ### Added
 
 - **The asset id itself is verified, in the browser.** An asset page
