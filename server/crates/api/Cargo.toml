@@ -1,0 +1,40 @@
+[package]
+name = "cachet-api"
+description = "HTTP API for Cachet: axum handlers, OpenAPI document, and DTO mapping. Knows cachet-domain and the ChainBackend trait, never the QEDIT forks."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "cachet-server"
+path = "src/main.rs"
+
+[dependencies]
+cachet-domain = { workspace = true }
+cachet-chain = { workspace = true }
+cachet-index = { workspace = true }
+hex = { workspace = true }
+axum = { workspace = true }
+tower-http = { version = "0.6", features = ["cors", "set-header"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = "0.10"
+base64 = "0.22"
+ed25519-dalek = "2"
+rand = "0.8"
+reqwest = { version = "0.12", features = ["json"] }
+blake2b_simd = "1"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+utoipa = { workspace = true }
+utoipa-swagger-ui = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tower_governor = "0.8"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

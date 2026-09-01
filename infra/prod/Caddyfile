@@ -1,0 +1,25 @@
+# TLS termination for the Cachet public instance. Caddy provisions and
+# renews Let's Encrypt certificates automatically once DNS points here.
+# `encode` compresses responses (the 5 MB mint-engine wasm shrinks ~60%).
+cachetzec.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy console:3000
+}
+
+www.cachetzec.com {
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	redir https://cachetzec.com{uri} permanent
+}
+
+api.cachetzec.com {
+	encode zstd gzip
+	header Strict-Transport-Security "max-age=31536000; includeSubDomains"
+	reverse_proxy server:8080 {
+		# Overwrite (not append) the client-IP header so a client-sent
+		# X-Forwarded-For can't spoof the rate-limiter key: the server
+		# trusts this header (CACHET_TRUST_PROXY=1), so Caddy must be its
+		# sole author.
+		header_up X-Forwarded-For {remote_host}
+	}
+}

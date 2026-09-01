@@ -1,0 +1,25 @@
+{
+  "name": "cachet-monorepo",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@10.26.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "openapi:export": "cargo run --manifest-path server/Cargo.toml --bin cachet-server -- --dump-openapi > packages/api-client/openapi.json",
+    "openapi:generate": "pnpm --filter @cachet/api-client generate"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.0",
+    "turbo": "^2.5.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "postcss": "^8.5.26"
+    }
+  }
+}

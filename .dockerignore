@@ -1,0 +1,19 @@
+# Keep the build context lean and deterministic: no host artifacts leak
+# into images (pnpm's node_modules layout is host-specific, and
+# server/target is gigabytes of local build cache).
+.git
+.github
+node_modules
+**/node_modules
+console/.next
+console/test-results
+console/playwright-report
+server/target
+server/target-wasm-mt
+infra
+docs
+scratch
+*.md
+.env*
+**/.env*
+!console/.env.example

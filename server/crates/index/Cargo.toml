@@ -1,0 +1,20 @@
+[package]
+name = "cachet-index"
+description = "Postgres-backed derived-state index for Cachet: reconstructible asset registry cache plus the issuer's description journal. Storage only — sync logic lives in cachet-chain."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cachet-domain = { workspace = true }
+hex = { workspace = true }
+sqlx = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+async-trait = { workspace = true }
+sha2 = "0.10"
+
+[dev-dependencies]
+tokio = { workspace = true }

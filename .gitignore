@@ -1,0 +1,44 @@
+# Node
+node_modules/
+.pnpm-store/
+*.tsbuildinfo
+
+# Next.js
+console/.next/
+console/out/
+
+# Turborepo
+.turbo/
+
+# Playwright
+console/test-results/
+console/playwright-report/
+
+# Rust
+server/target/
+server/target-wasm-mt/
+
+# Generated API client (regenerated from OpenAPI; committed on release only)
+packages/api-client/src/generated/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Production secrets (instance-local throwaway seed + db password)
+infra/prod/.env.prod
+.wasm-tools/
+.claude/
+docs/whitepaper/generate.py
+docs/assets/readme_banner.py

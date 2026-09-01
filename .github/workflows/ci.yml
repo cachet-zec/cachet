@@ -1,0 +1,214 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+# Least privilege: no job needs to write to the repo. A compromised
+# third-party action inherits only read.
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust (fmt, clippy, tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --workspace
+
+  web:
+    name: Web (typecheck, lint, build)
+    runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Generate API client
+        run: pnpm openapi:generate
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Format check
+        run: pnpm format:check
+      - name: Build
+        run: pnpm build
+
+  wasm:
+    name: Mint engine (wasm build + smoke test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+          key: wasm
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          # This job installs no package manager at all, so it should
+          # never try to cache one. v6 narrowed automatic caching to npm,
+          # which makes this a no-op today - kept because the reason it is
+          # correct does not depend on that default staying put.
+          package-manager-cache: false
+      - name: Cache wasm tools (binaryen, wasm-bindgen-cli)
+        uses: actions/cache@v6
+        with:
+          path: .wasm-tools
+          key: wasm-tools-binaryen123-${{ hashFiles('server/Cargo.lock') }}
+      # Same script the Docker wrapper runs locally — CI and local builds
+      # cannot drift.
+      - name: Build both engine variants
+        run: bash infra/mint-engine-build-inner.sh
+      - name: Smoke-test the single-core module
+        run: node infra/mint-engine-smoke.mjs
+
+  e2e:
+    name: E2E (console → server → regtest)
+    runs-on: ubuntu-latest
+    env:
+      # The QEDIT Zebra commit our stack is pinned to (ADR-000).
+      ZEBRA_COMMIT: 2b036fd6d511011e06f632519c7c9d64c2a8ac2d
+      NEXT_TELEMETRY_DISABLED: "1"
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cachet
+          POSTGRES_PASSWORD: cachet-dev-only
+          POSTGRES_DB: cachet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cachet"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      # The Zebra image is ~9.5 GB unpacked; reclaim the runner's
+      # preinstalled SDKs first (same mitigation as QEDIT's own CI, plus
+      # dotnet/ghc for extra headroom).
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /opt/hostedtoolcache \
+            /usr/share/dotnet /usr/local/.ghcup /opt/ghc || true
+          docker system prune -af || true
+          df -h /
+
+      - uses: actions/checkout@v7
+
+      # --- OrchardZSA regtest node (QEDIT Zebra fork, patched) ---
+      - name: Checkout QEDIT Zebra
+        uses: actions/checkout@v7
+        with:
+          repository: QED-it/zebra
+          ref: ${{ env.ZEBRA_COMMIT }}
+          path: zebra
+      - name: Patch protocol version (upstream fix pending, QED-it/zebra#162)
+        run: sed -i 's/Version(170_140)/Version(170_150)/' zebra/zebra-network/src/constants.rs
+      # Cache the built image as a tar keyed by commit+patch — building
+      # Zebra from source takes ~20-40 minutes, loading the cache seconds.
+      - name: Cache Zebra image
+        id: zebra-image-cache
+        uses: actions/cache@v6
+        with:
+          path: /tmp/zebra-node.tar
+          key: zebra-image-${{ env.ZEBRA_COMMIT }}-protover-170150
+      - name: Load cached Zebra image
+        if: steps.zebra-image-cache.outputs.cache-hit == 'true'
+        run: docker load -i /tmp/zebra-node.tar
+      # Plain `docker build` writes straight into the daemon's storage —
+      # buildx with `load: true` exports a tar and re-imports it, doubling
+      # the peak disk usage and overflowing the runner.
+      - name: Build Zebra image
+        if: steps.zebra-image-cache.outputs.cache-hit != 'true'
+        run: |
+          docker build -t zebra-node:local \
+            -f zebra/testnet-single-node-deploy/dockerfile zebra
+          df -h /
+      - name: Save Zebra image to cache
+        if: steps.zebra-image-cache.outputs.cache-hit != 'true'
+        run: docker save zebra-node:local -o /tmp/zebra-node.tar
+      - name: Run Zebra regtest
+        run: |
+          docker run -d --name zebra-node -p 18232:18232 zebra-node:local
+          echo "Waiting for the node to initialize..."
+          sleep 15
+
+      # --- Sapling parameters (needed by the transaction prover) ---
+      - name: Cache Zcash params
+        id: params-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.zcash-params
+          key: zcash-params-sapling-v1
+      - name: Fetch Zcash params
+        if: steps.params-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/.zcash-params
+          curl -sL -o ~/.zcash-params/sapling-spend.params  https://download.z.cash/downloads/sapling-spend.params
+          curl -sL -o ~/.zcash-params/sapling-output.params https://download.z.cash/downloads/sapling-output.params
+
+      # --- Build the stack ---
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: server
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Generate API client
+        run: pnpm openapi:generate
+      - name: Prebuild server
+        run: cargo build --manifest-path server/Cargo.toml --bin cachet-server
+      - name: Install Playwright browsers
+        run: pnpm --filter @cachet/console exec playwright install chromium --with-deps
+
+      # --- Run ---
+      - name: E2E tests
+        run: pnpm --filter @cachet/console e2e
+      - name: Upload Playwright traces
+        # if: failure() means CI never runs this step on a green build, so
+        # its Node 20 runtime was never reported in the deprecation
+        # warnings - it would have broken on the first run that needed it.
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-traces
+          path: console/test-results/
+          retention-days: 7
+      - name: Print Zebra logs on failure
+        if: failure()
+        run: docker logs zebra-node || true

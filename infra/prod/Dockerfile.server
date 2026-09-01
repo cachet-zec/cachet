@@ -1,0 +1,29 @@
+# Cachet server, production image. Build context = repository root:
+#   docker build -f infra/prod/Dockerfile.server -t cachet-server:prod .
+#
+# The builder needs two repo-level facts to compile the QEDIT stack:
+#   - .cargo/config.toml at the workspace ROOT (the zcash_unstable="nu7"
+#     rustflag; cargo resolves config by walking up from the CWD),
+#   - the committed Cargo.lock (--locked), which pins crates that have been
+#     yanked from crates.io and only resolve through the lockfile.
+FROM rust:1-bookworm AS builder
+WORKDIR /build
+COPY .cargo/ .cargo/
+COPY server/ server/
+WORKDIR /build/server
+RUN cargo build --release --bin cachet-server --locked
+
+# Runtime: slim Debian + CA certificates (HTTPS RPC to the public testnet)
+# and curl for the container healthcheck. Runs unprivileged; a read-only
+# deployment holds no key material worth stealing anyway.
+FROM debian:bookworm-slim
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --no-create-home cachet
+COPY --from=builder /build/server/target/release/cachet-server /usr/local/bin/cachet-server
+USER cachet
+EXPOSE 8080
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+    CMD curl -fsS http://localhost:8080/healthz || exit 1
+CMD ["cachet-server"]

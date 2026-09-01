@@ -1,0 +1,6 @@
+# The QEDIT librustzcash fork gates all NU7/ZSA APIs (v6 transactions,
+# issuance bundles, BranchId::Nu7) behind this unstable cfg. Without it the
+# workspace compiles against the stable protocol surface and cachet-chain
+# fails to build. Mirrors zcash_tx_tool's .cargo/config.toml (ADR-000).
+[target.'cfg(all())']
+rustflags = ["--cfg", "zcash_unstable=\"nu7\""]

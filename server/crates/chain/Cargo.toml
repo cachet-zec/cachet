@@ -1,0 +1,45 @@
+[package]
+name = "cachet-chain"
+description = "Chain access layer for Cachet. The ONLY crate allowed to depend on the QED-it protocol forks (ADR-001)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+cachet-domain = { workspace = true }
+cachet-index = { workspace = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+cachet-notes = { path = "../notes" }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+# --- QEDIT protocol stack (ADR-000/001) ---
+# Versions resolve to the QED-it forks through [patch.crates-io] in the
+# workspace manifest, pinned by exact git rev. Bumping a rev is its own PR.
+orchard = { workspace = true }
+zcash_primitives = { workspace = true }
+zcash_protocol = { workspace = true }
+zcash_proofs = { workspace = true }
+zcash_encoding = { workspace = true }
+zcash_transparent = { workspace = true }
+bip0039 = "0.12.0"
+zip32 = "0.2"
+bridgetree = "0.7.1"
+incrementalmerkletree = "0.8.2"
+zcash_address = "0.10.1"
+nonempty = "0.11.0"
+rand = "0.8.6"
+blake2b_simd = "=1.0.1"
+sha2 = "0.10"
+hex = { workspace = true }
+
+# JSON-RPC transport to the Zebra node
+reqwest = { version = "0.12", features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

@@ -1,0 +1,6 @@
+# Force LF everywhere: the QEDIT ecosystem's shell scripts and Docker builds
+# break under CRLF checkouts (see docs/SETUP.md troubleshooting).
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

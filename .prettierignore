@@ -1,0 +1,10 @@
+node_modules
+.next
+.turbo
+server/target
+packages/api-client/src/generated
+pnpm-lock.yaml
+console/public/mint-engine
+console/public/mint-engine-mt
+console/public/verify-engine
+server/vendor

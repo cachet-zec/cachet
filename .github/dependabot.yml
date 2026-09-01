@@ -1,0 +1,53 @@
+# Dependabot policy.
+#
+# The Rust workspace is intentionally NOT auto-updated: the protocol stack
+# is pinned to QEDIT git revs (ADR-001) and the lockfile deliberately holds
+# yanked crates (core2, halo2_gadgets — ADR-000). Automated bumps cannot
+# produce a valid resolution and every Dependabot cargo job fails by
+# construction; dependency bumps there are manual, reviewed PRs. Keep
+# Dependabot *alerts* enabled in the repo settings, but disable Dependabot
+# *security updates* (the auto-PR feature) — it cannot succeed on this
+# workspace. Known accepted advisories are tracked in SECURITY.md.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /server
+    schedule:
+      interval: monthly
+    # Alerts only; no automated PRs against the pinned stack.
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # @types/node tracks the Node the CI actually runs, not the newest
+      # release: typing against APIs the runtime does not have is a way to
+      # get green builds that fail in production. Bump this deliberately,
+      # with node-version in ci.yml, never on its own.
+      - dependency-name: "@types/node"
+        update-types: [version-update:semver-major]
+    groups:
+      # Listed first so it wins for these packages: eslint-config-next is
+      # pinned to the Next major and eslint to what that config supports.
+      # Bumping any of the three alone produces a mismatched toolchain, so
+      # they travel together or not at all.
+      next-toolchain:
+        patterns: ["next", "eslint", "eslint-config-next", "@next/*"]
+      # Majors stay individual — that is where breaking changes live and
+      # each deserves its own review. Everything else arrives as one PR.
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      # One PR for the lot. These are all edits to the same workflow file,
+      # and the Node 20 migration arrived as four separate PRs that all had
+      # to be reasoned about together anyway.
+      actions:
+        patterns: ["*"]

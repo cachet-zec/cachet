@@ -1,0 +1,114 @@
+[workspace]
+resolver = "2"
+# The vendored librustzcash workspace must resolve against its OWN root
+# (workspace-inherited deps), not this one.
+exclude = ["vendor/librustzcash"]
+members = [
+    "crates/domain",
+    "crates/notes",
+    "crates/chain",
+    "crates/index",
+    "crates/api",
+    "crates/mint-engine",
+    "crates/verify-engine",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/cachet-zec/cachet"
+rust-version = "1.86"
+
+[workspace.dependencies]
+# Internal crates
+cachet-domain = { path = "crates/domain" }
+cachet-chain = { path = "crates/chain" }
+cachet-index = { path = "crates/index" }
+
+# Database (index crate only; runtime-checked queries for now, see the
+# crate's README note)
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls",
+    "postgres",
+    "migrate",
+    "macros",
+] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = { version = "0.4", features = ["serde"] }
+
+# Errors
+thiserror = "2"
+anyhow = "1"
+
+# Async runtime & web
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+axum = "0.8"
+async-trait = "0.1"
+
+# OpenAPI
+utoipa = { version = "5", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "9", features = ["axum"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# The chain crate is the ONLY place QEDIT forks may be imported (see ADR-001).
+# The [patch.crates-io] section below redirects the protocol crates to the
+# QED-it forks at exact revs, mirroring zcash_tx_tool @ 655298f (ADR-000).
+# Bumping any rev is its own PR: `chore(chain): bump qedit stack to <rev>`.
+
+[workspace.dependencies.orchard]
+version = "0.12.0"
+features = ["zsa-issuance"]
+
+[workspace.dependencies.zcash_primitives]
+version = "0.26.1"
+features = ["transparent-inputs", "non-standard-fees", "zsa-issuance", "zip-233"]
+
+[workspace.dependencies.zcash_protocol]
+version = "0.7.2"
+
+[workspace.dependencies.zcash_proofs]
+version = "0.26.1"
+
+[workspace.dependencies.zcash_encoding]
+version = "0.3.0"
+
+[workspace.dependencies.zcash_transparent]
+version = "0.6.3"
+features = ["transparent-inputs"]
+
+[patch.crates-io]
+# The librustzcash crates are vendored (QED-it rev 0ea73754 + the
+# proving-key cache patch) — see vendor/librustzcash/README.md.
+orchard = { git = "https://github.com/QED-it/orchard", rev = "77d3274cb1f4620e9a1b86477c490fa123dff6bd" }
+sapling-crypto = { git = "https://github.com/QED-it/sapling-crypto", rev = "59535fb5d34b5c5cf1b20ef18269f5c65228378c" }
+zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "9f7e93d42cef839d02b9d75918117941d453f8cb" }
+zcash_primitives = { path = "vendor/librustzcash/zcash_primitives" }
+zcash_protocol = { path = "vendor/librustzcash/components/zcash_protocol" }
+zcash_address = { path = "vendor/librustzcash/components/zcash_address" }
+zcash_proofs = { path = "vendor/librustzcash/zcash_proofs" }
+zcash_encoding = { path = "vendor/librustzcash/components/zcash_encoding" }
+zcash_transparent = { path = "vendor/librustzcash/zcash_transparent" }
+sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
+halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
+halo2_poseidon = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
+zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "d5e84264d2ad0646b587a837f4e2424ca64d3a05" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+# Halo2 proving is unusably slow unoptimized; optimize dependencies even in
+# dev/test builds while keeping our own crates fast to compile. Cuts the
+# regtest integration suite and e2e issuance times by roughly an order of
+# magnitude.
+[profile.dev.package."*"]
+opt-level = 3

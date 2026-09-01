@@ -1,0 +1,41 @@
+# Local development stack.
+#
+#   docker compose -f infra/docker-compose.yml up -d
+#
+# - zebra-regtest: single-node OrchardZSA regtest (QED-it fork, v6 txs enabled).
+#   Build the image once from the QED-it/zebra repo (see docs/SETUP.md):
+#     docker build -t qedit/zebra-regtest-txv6 -f testnet-single-node-deploy/dockerfile .
+# - postgres: state store for the Cachet server (cache/journal/index).
+#   The chain remains the source of truth. Everything here is rebuilt from
+#   it on sync, except the description journal, the content-addressed
+#   metadata bundles and the moderation list (see docs/PRIVACY.md P4).
+
+services:
+  zebra-regtest:
+    image: qedit/zebra-regtest-txv6
+    ports:
+      # Loopback only: an unauthenticated regtest RPC must not reach the
+      # LAN when developing on a shared network.
+      - "127.0.0.1:18232:18232" # JSON-RPC
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: cachet
+      POSTGRES_PASSWORD: cachet-dev-only
+      POSTGRES_DB: cachet
+    ports:
+      # Loopback only: don't expose a known-password dev DB to the LAN.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cachet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

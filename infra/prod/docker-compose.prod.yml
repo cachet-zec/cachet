@@ -1,0 +1,72 @@
+# Cachet public read-only deployment (docs/DEPLOY.md).
+#
+# Topology: Caddy terminates TLS for cachetzec.com (console) and
+# api.cachetzec.com (server); Postgres never leaves the internal network.
+# The server runs CACHET_READ_ONLY=1 with a THROWAWAY seed: the real
+# issuer seed never reaches this machine.
+services:
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - server
+      - console
+
+  server:
+    image: cachet-server:prod
+    restart: unless-stopped
+    environment:
+      CACHET_BACKEND: zsa
+      CACHET_NETWORK: zsa-testnet
+      CACHET_READ_ONLY: "1"
+      CACHET_SEED_PHRASE: ${CACHET_SEED_PHRASE}
+      CACHET_SCAN_START_HEIGHT: "1"
+      CACHET_DATABASE_URL: postgres://cachet:${POSTGRES_PASSWORD}@postgres:5432/cachet
+      CACHET_CORS_ORIGIN: https://cachetzec.com
+      CACHET_SNAPSHOT_KEY: ${CACHET_SNAPSHOT_KEY}
+      CACHET_SYNC_INTERVAL_SECS: "30"
+      PORT: "8080"
+      # Listen on the container network so Caddy can reach it. Safe here:
+      # only 80/443 are published; 8080 stays inside the compose network.
+      CACHET_BIND: "0.0.0.0"
+      # Caddy is the only ingress, so client-IP headers are trustworthy —
+      # the rate limiter may key on X-Forwarded-For.
+      CACHET_TRUST_PROXY: "1"
+      # Optional operator surfaces (blank = disabled): the token-gated
+      # moderation API behind /admin, and the Discord mint notification.
+      CACHET_ADMIN_TOKEN: ${CACHET_ADMIN_TOKEN:-}
+      CACHET_DISCORD_WEBHOOK: ${CACHET_DISCORD_WEBHOOK:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  console:
+    image: cachet-console:prod
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cachet
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: cachet
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cachet -d cachet"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

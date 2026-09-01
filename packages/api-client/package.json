@@ -1,0 +1,21 @@
+{
+  "name": "@cachet/api-client",
+  "version": "0.2.0",
+  "license": "MIT",
+  "private": true,
+  "description": "Typed client for the Cachet API. Types are generated from the server's OpenAPI document \u2014 never written by hand.",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "generate": "openapi-typescript ./openapi.json -o ./src/generated/schema.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "openapi-fetch": "^0.17.0"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.9.0",
+    "typescript": "^5.9.0"
+  }
+}

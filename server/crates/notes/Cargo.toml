@@ -1,0 +1,20 @@
+# Shared Orchard note tracking: the minimal hot wallet used by the server
+# (cachet-chain) and compiled to WebAssembly by the browser mint engine.
+# Chain-agnostic on purpose: it consumes parsed transactions, no I/O.
+[package]
+name = "cachet-notes"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+# Feature discipline: this crate rides in the single-core wasm build of
+# the mint engine, so it must not re-enable orchard's default `multicore`
+# (cargo feature unification would drag rayon into the non-threaded wasm
+# module and break it). Native builds get multicore anyway through
+# cachet-chain's own orchard dependency.
+[dependencies]
+thiserror = { workspace = true }
+orchard = { version = "0.12.0", default-features = false, features = ["std", "zsa-issuance"] }
+zcash_primitives = { version = "0.26.1", default-features = false, features = ["std", "zsa-issuance"] }
+bridgetree = "0.7.1"
+incrementalmerkletree = "0.8.2"
