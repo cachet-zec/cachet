@@ -20,7 +20,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # No `circuit`: verification needs the asset-id derivation, never a proof.
-orchard = { version = "0.12.0", default-features = false, features = ["std", "zsa-issuance"] }
+orchard = { version = "0.14.0", default-features = false, features = ["std", "zsa-issuance"] }
 nonempty = { version = "0.11", default-features = false }
 wasm-bindgen = "0.2"
 hex = { workspace = true }

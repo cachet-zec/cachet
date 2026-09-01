@@ -123,7 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # The QEDIT Zebra commit our stack is pinned to (ADR-000).
-      ZEBRA_COMMIT: 2b036fd6d511011e06f632519c7c9d64c2a8ac2d
+      ZEBRA_COMMIT: f0635ce96058a598ae1e7d47435a0582057f242d
       NEXT_TELEMETRY_DISABLED: "1"
     services:
       postgres:
@@ -159,8 +159,6 @@ jobs:
           repository: QED-it/zebra
           ref: ${{ env.ZEBRA_COMMIT }}
           path: zebra
-      - name: Patch protocol version (upstream fix pending, QED-it/zebra#162)
-        run: sed -i 's/Version(170_140)/Version(170_150)/' zebra/zebra-network/src/constants.rs
       # Cache the built image as a tar keyed by commit+patch — building
       # Zebra from source takes ~20-40 minutes, loading the cache seconds.
       - name: Cache Zebra image
@@ -168,7 +166,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: /tmp/zebra-node.tar
-          key: zebra-image-${{ env.ZEBRA_COMMIT }}-protover-170150
+          key: zebra-image-${{ env.ZEBRA_COMMIT }}-protover-170160
       - name: Load cached Zebra image
         if: steps.zebra-image-cache.outputs.cache-hit == 'true'
         run: docker load -i /tmp/zebra-node.tar

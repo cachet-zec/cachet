@@ -8,6 +8,15 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Changed
 
+- The protocol stack moves to the line with the fixed Orchard circuit
+  (halo2_gadgets 0.5): orchard 0.14 at `cf801a5d`, librustzcash `c5c232db`
+  (zcash_primitives 0.28), sapling-crypto 0.7, QEDIT halo2 `ef3d0ba2`. The
+  three wasm engines are rebuilt on it. Proofs from this build verify on
+  nodes built from QEDIT's `zsa1` line (Zebra 5.2.0) and are rejected by
+  the older testnet node; an instance must point at a node of that line.
+  CI's regtest node is now built from `zsa1` too, and the protocol-version
+  patch it carried is gone since QED-it/zebra#183.
+
 - The landing's engraved watermark starts drawing as soon as the page
   shows, and sweeps outwards in about seven seconds instead of eleven.
 - The landing's opening paragraph says what you can do in plain steps:
