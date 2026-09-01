@@ -20,6 +20,9 @@ export function MintStudio() {
   const nextId = useRef(0);
 
   const [seed, setSeed] = useState("");
+  // Masked by default: a phrase on screen is on every screenshot and
+  // stream. Copy works while masked, so revealing is never required.
+  const [seedRevealed, setSeedRevealed] = useState(false);
   const [seedSaved, setSeedSaved] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [issuer, setIssuer] = useState<string | null>(null);
@@ -81,6 +84,7 @@ export function MintStudio() {
     const { seed } = await call<{ seed: string }>("generate_seed");
     setSeed(seed);
     setSeedSaved(false);
+    setSeedRevealed(false);
   };
 
   // The moment the user has confirmed the seed is saved, start building
@@ -292,12 +296,23 @@ export function MintStudio() {
                     <span className="w-4 shrink-0 text-right text-[10px] text-neutral-600">
                       {index + 1}
                     </span>
-                    {word}
+                    {/* Fixed-width mask: even word lengths stay private. */}
+                    {seedRevealed ? word : <span className="text-neutral-500">••••••</span>}
                   </li>
                 ))}
             </ol>
             <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
               <CopyButton value={seed} label="Copy phrase" />
+              <button
+                type="button"
+                data-testid="mint-seed-reveal"
+                aria-pressed={seedRevealed}
+                title="Copy works while hidden: the clipboard gets the real phrase either way."
+                className="text-[11px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
+                onClick={() => setSeedRevealed(!seedRevealed)}
+              >
+                {seedRevealed ? "hide words" : "show words"}
+              </button>
               <button
                 type="button"
                 className="text-[11px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
