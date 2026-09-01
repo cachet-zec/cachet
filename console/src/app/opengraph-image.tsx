@@ -115,8 +115,7 @@ export default async function OpenGraphImage() {
           <div style={{ display: "flex" }}>on Zcash.</div>
         </div>
         <div style={{ marginTop: 30, fontSize: 23, lineHeight: 1.7, color: MUTED, maxWidth: 900 }}>
-          Your keys never leave your browser. Public supplies, shielded balances, metadata sealed
-          on-chain.
+          Public supplies, shielded balances, metadata sealed on-chain. Minted from your browser.
         </div>
       </div>
 
