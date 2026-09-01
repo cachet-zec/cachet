@@ -49,7 +49,7 @@ export function NavLinks() {
         X
       </a>
       <a
-        href="https://github.com/cachet-zec"
+        href="https://github.com/cachet-zec/cachet"
         target="_blank"
         rel="noreferrer"
         aria-label="Cachet on GitHub"

@@ -139,7 +139,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                     </li>
                     <li>
                       <a
-                        href="https://github.com/cachet-zec"
+                        href="https://github.com/cachet-zec/cachet"
                         target="_blank"
                         rel="noreferrer"
                         className="text-neutral-400 transition hover:text-[#e8b23a]"
