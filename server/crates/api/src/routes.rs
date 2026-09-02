@@ -621,6 +621,7 @@ pub(crate) async fn relay_transaction(
     responses(
         (status = 201, body = MetadataUploadResponse),
         (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 410, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "These exact bytes were withheld or purged by this registry's operator"),
         (status = 429, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This client's upload budget for the minute is spent, or the pending-upload pool is at capacity"),
         (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
     )
@@ -658,10 +659,18 @@ pub(crate) async fn upload_metadata(
     )
     .map_err(ApiError::Validation)?;
 
-    let sha256 = store
-        .put(bundle.to_canonical_bytes())
-        .await
-        .map_err(metadata_error)?;
+    // Content-addressed, so the hash is known before anything is stored:
+    // bytes the operator withheld (or purged) are refused here rather
+    // than landing on disk again under the same name.
+    let bytes = bundle.to_canonical_bytes();
+    let sha256: [u8; 32] = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(&bytes).into()
+    };
+    if store.is_hidden(sha256).await.map_err(metadata_error)? {
+        return Err(ApiError::HiddenByOperator);
+    }
+    let sha256 = store.put(bytes).await.map_err(metadata_error)?;
     let sha256_hex = hex::encode(sha256);
     let chain_description = cachet_domain::ChainDescription::compose(&bundle.name, &sha256_hex)
         .map_err(ApiError::Validation)?;

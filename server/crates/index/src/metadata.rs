@@ -62,6 +62,17 @@ pub trait MetadataStore: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Delete a bundle's bytes outright; returns whether they existed.
+    /// Withholding keeps bytes on disk, and for some content (illegal
+    /// material) an operator must not keep them at all. The chain
+    /// commitment is untouched: the asset still exists, its hash still
+    /// names these bytes, this registry simply no longer has them.
+    async fn delete(&self, _sha256: [u8; 32]) -> Result<bool, IndexError> {
+        Err(IndexError::OutOfRange(
+            "this metadata store does not support deletion".into(),
+        ))
+    }
+
     /// The subset of `hashes` that are stored, not hidden, and embed an
     /// image — the one question the registry listing asks. Backends
     /// should answer it in a bounded number of round trips; the default
@@ -152,6 +163,14 @@ impl MetadataStore for AssetIndex {
 
     async fn moderation_list(&self) -> Result<Vec<HiddenEntry>, IndexError> {
         AssetIndex::list_hidden(self).await
+    }
+
+    async fn delete(&self, sha256: [u8; 32]) -> Result<bool, IndexError> {
+        let result = sqlx::query("DELETE FROM metadata_bundles WHERE sha256 = $1")
+            .bind(sha256.as_slice())
+            .execute(self.pool())
+            .await?;
+        Ok(result.rows_affected() > 0)
     }
 
     /// Two round trips regardless of registry size (image test + hidden
@@ -313,6 +332,15 @@ impl MetadataStore for MemoryMetadataStore {
             })
             .collect())
     }
+
+    async fn delete(&self, sha256: [u8; 32]) -> Result<bool, IndexError> {
+        Ok(self
+            .bundles
+            .lock()
+            .expect("metadata store lock poisoned")
+            .remove(&sha256)
+            .is_some())
+    }
 }
 
 #[cfg(test)]
@@ -326,5 +354,23 @@ mod tests {
         assert_eq!(sha256, hash_bytes(b"hello"));
         assert_eq!(store.get(sha256).await.unwrap().unwrap(), b"hello");
         assert!(store.get([0; 32]).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn delete_forgets_the_bytes_but_not_the_moderation() {
+        let store = MemoryMetadataStore::new();
+        let sha256 = store.put(b"gone".to_vec()).await.unwrap();
+        store
+            .moderation_hide(ModerationKind::Bundle, &sha256, Some("purged"))
+            .await
+            .unwrap();
+        assert!(store.delete(sha256).await.unwrap());
+        assert!(store.get(sha256).await.unwrap().is_none());
+        assert!(
+            !store.delete(sha256).await.unwrap(),
+            "second delete is a no-op"
+        );
+        // The denylist survives the deletion: the bytes stay refused.
+        assert!(store.is_hidden(sha256).await.unwrap());
     }
 }

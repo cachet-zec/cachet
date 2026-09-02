@@ -7,7 +7,13 @@ import Link from "next/link";
 import { api, apiBaseUrl } from "@/lib/api";
 import { card, cardTitle, dangerButton, ghostButton, input, label, stamp } from "@/lib/ui";
 
-type Entry = { kind: string; key: string; reason: string | null; hidden_at: string };
+type Entry = {
+  kind: string;
+  key: string;
+  reason: string | null;
+  hidden_at: string;
+  bytes_present: boolean | null;
+};
 type Collection = { issuer: string; asset_count: number; total_supply: string | number };
 type Asset = {
   asset_id: string;
@@ -90,15 +96,16 @@ export function AdminPanel() {
     }
   }
 
-  async function hide(hideKind: string, hideKey: string, hideReason?: string) {
+  async function hide(hideKind: string, hideKey: string, hideReason?: string, purge = false) {
     setStatus(null);
     try {
       await adminFetch("POST", {
         kind: hideKind,
         key: hideKey,
         reason: hideReason?.trim() ? hideReason.trim() : undefined,
+        purge,
       });
-      setStatus(`Hidden ${hideKind} ${hideKey.slice(0, 12)}…`);
+      setStatus(`${purge ? "Purged" : "Hidden"} ${hideKind} ${hideKey.slice(0, 12)}…`);
       await refresh();
     } catch (hideError) {
       setStatus(hideError instanceof Error ? hideError.message : String(hideError));
@@ -122,6 +129,22 @@ export function AdminPanel() {
   const hiddenBundleKeys = new Set(
     entries.filter((entry) => entry.kind === "bundle").map((entry) => entry.key.toLowerCase()),
   );
+  const purgedBundleKeys = new Set(
+    entries
+      .filter((entry) => entry.kind === "bundle" && entry.bytes_present === false)
+      .map((entry) => entry.key.toLowerCase()),
+  );
+
+  /** Purge is the one irreversible action here: say so before doing it. */
+  function purge(sha: string, name: string | null) {
+    const confirmed = window.confirm(
+      `Purge the bytes of "${name ?? sha.slice(0, 12)}" from this registry?\n\n` +
+        "The description and image are deleted from disk, not just withheld. The chain record, " +
+        "the on-chain name and the hash stay; the same bytes are refused if uploaded again. " +
+        "Daily backups keep a copy for up to 7 days.",
+    );
+    if (confirmed) void hide("bundle", sha, "purged", true);
+  }
   const needle = search.trim().toLowerCase();
   const visibleAssets = needle
     ? assets.filter((asset) =>
@@ -158,9 +181,11 @@ export function AdminPanel() {
     <div className="flex flex-col gap-5">
       <h1 className="font-display text-2xl font-semibold text-neutral-100">Operator moderation</h1>
       <p className="max-w-2xl text-sm text-neutral-500">
-        Availability-only: hiding withholds distribution on THIS registry (listings, bundles, images
-        answer 410). The chain record is untouched, every entry is reversible, and any other
-        registry can keep serving the identical content. A registry can withhold; it can never lie.
+        Hiding withholds distribution on THIS registry (listings, bundles, images answer 410) and is
+        reversible. Purging also deletes a bundle&apos;s bytes from disk, for content an operator
+        must not keep; the entry stays so the bytes cannot return. Either way the chain record is
+        untouched and any other registry can keep serving the identical content. A registry can
+        withhold; it can never lie.
       </p>
       {status && <p className="text-sm text-[#e8b23a]">{status}</p>}
 
@@ -211,7 +236,11 @@ export function AdminPanel() {
                     </span>
                     {asset.finalized && <span className={stamp}>sealed</span>}
                     {bundleHidden && (
-                      <span className="font-data text-xs text-red-300">bundle hidden</span>
+                      <span className="font-data text-xs text-red-300">
+                        {sha !== null && purgedBundleKeys.has(sha)
+                          ? "bundle purged"
+                          : "bundle hidden"}
+                      </span>
                     )}
                   </div>
                   <div className="font-data mt-0.5 truncate text-[11px] text-neutral-600">
@@ -233,6 +262,16 @@ export function AdminPanel() {
                       onClick={() => void hide("bundle", sha, asset.display_name ?? undefined)}
                     >
                       Hide bundle
+                    </button>
+                  )}
+                  {sha && !purgedBundleKeys.has(sha) && (
+                    <button
+                      type="button"
+                      className={`${dangerButton} px-3 py-1 text-xs`}
+                      title="Delete this asset's bundle bytes from this registry's disk. Irreversible here; the chain record stays."
+                      onClick={() => purge(sha, asset.display_name)}
+                    >
+                      Purge
                     </button>
                   )}
                   {asset.issuer && !hiddenIssuerKeys.has(asset.issuer) && (
@@ -384,6 +423,11 @@ export function AdminPanel() {
                 <span className="font-data break-all text-xs text-neutral-300">{entry.key}</span>
                 {entry.reason && (
                   <span className="ml-2 text-xs italic text-neutral-500">{entry.reason}</span>
+                )}
+                {entry.bytes_present === false && (
+                  <span className="font-data ml-2 text-[10px] uppercase tracking-[0.14em] text-red-300">
+                    purged
+                  </span>
                 )}
               </span>
               <button

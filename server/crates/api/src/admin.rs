@@ -60,6 +60,11 @@ pub struct ModerationRequest {
     pub key: String,
     /// Optional operator note, stored with the entry (audit trail).
     pub reason: Option<String>,
+    /// Bundles only: also delete the bytes from this registry's store.
+    /// The moderation entry stays, so the same bytes are refused if
+    /// re-uploaded; the chain commitment and the name are untouched.
+    #[serde(default)]
+    pub purge: bool,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -68,6 +73,9 @@ pub struct ModerationEntryResponse {
     pub key: String,
     pub reason: Option<String>,
     pub hidden_at: String,
+    /// Bundles only: whether this registry still holds the bytes
+    /// (`false` after a purge). `null` for other kinds.
+    pub bytes_present: Option<bool>,
 }
 
 fn parse_request(
@@ -125,6 +133,21 @@ pub(crate) async fn hide(
         .await
         .map_err(metadata_error)?;
     tracing::info!(kind = body.kind, key = body.key, "admin: hidden");
+    if body.purge {
+        if kind != cachet_index::ModerationKind::Bundle {
+            return Err(ApiError::Validation(
+                cachet_domain::DomainError::InvalidMetadata {
+                    reason: "purge applies to bundles only",
+                },
+            ));
+        }
+        let sha256: [u8; 32] = key
+            .as_slice()
+            .try_into()
+            .expect("parse_request checked the bundle key length");
+        let existed = store.delete(sha256).await.map_err(metadata_error)?;
+        tracing::info!(key = body.key, existed, "admin: purged bundle bytes");
+    }
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
 
@@ -172,17 +195,30 @@ pub(crate) async fn list(
     authorize(&state, &headers)?;
     let store = require_metadata_store(&state)?;
     let entries = store.moderation_list().await.map_err(metadata_error)?;
-    Ok(Json(
-        entries
-            .into_iter()
-            .map(|entry| ModerationEntryResponse {
-                kind: entry.kind,
-                key: entry.key,
-                reason: entry.reason,
-                hidden_at: entry.hidden_at,
-            })
-            .collect(),
-    ))
+    let mut responses = Vec::with_capacity(entries.len());
+    for entry in entries {
+        // A hidden bundle either still sits on disk or was purged; the
+        // operator's view should say which.
+        let bytes_present = if entry.kind == cachet_index::ModerationKind::Bundle.as_str() {
+            match hex::decode(&entry.key)
+                .ok()
+                .and_then(|key| <[u8; 32]>::try_from(key.as_slice()).ok())
+            {
+                Some(sha256) => Some(store.get(sha256).await.map_err(metadata_error)?.is_some()),
+                None => None,
+            }
+        } else {
+            None
+        };
+        responses.push(ModerationEntryResponse {
+            kind: entry.kind,
+            key: entry.key,
+            reason: entry.reason,
+            hidden_at: entry.hidden_at,
+            bytes_present,
+        });
+    }
+    Ok(Json(responses))
 }
 
 #[cfg(test)]

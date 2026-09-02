@@ -564,6 +564,52 @@ async fn read_only_mode_blocks_mutations_but_not_reads() {
 }
 
 #[tokio::test]
+async fn purged_bytes_are_gone_and_cannot_come_back() {
+    use cachet_index::{MetadataStore, ModerationKind};
+    let store = Arc::new(cachet_index::MemoryMetadataStore::new());
+    let app = cachet_api::router(
+        Arc::new(InMemoryChain::new()),
+        Some(store.clone()),
+        false,
+        None,
+    );
+
+    let upload = json!({"name": "Must Not Stay", "description": "bytes an operator cannot keep"});
+    let (status, meta) = send(&app, post_json("/api/v1/metadata", upload.clone())).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let sha = meta["sha256"].as_str().unwrap().to_owned();
+    let mut bytes = [0u8; 32];
+    hex::decode_to_slice(&sha, &mut bytes).unwrap();
+
+    // What the admin purge does, through the store: hide, then delete.
+    store
+        .moderation_hide(ModerationKind::Bundle, &bytes, Some("purged"))
+        .await
+        .unwrap();
+    assert!(store.delete(bytes).await.unwrap());
+    assert!(store.get(bytes).await.unwrap().is_none(), "bytes are gone");
+
+    // Distribution answers 410, as for any hidden bundle...
+    let (status, _) = send(
+        &app,
+        Request::get(format!("/api/v1/metadata/{sha}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::GONE);
+
+    // ...and the same bytes cannot be re-uploaded: refused before storage.
+    let (status, body) = send(&app, post_json("/api/v1/metadata", upload)).await;
+    assert_eq!(status, StatusCode::GONE);
+    assert_eq!(
+        body["type"],
+        "https://cachetzec.com/problems/hidden-by-operator"
+    );
+    assert!(store.get(bytes).await.unwrap().is_none(), "still gone");
+}
+
+#[tokio::test]
 async fn admin_surface_is_absent_without_a_token() {
     // No CACHET_ADMIN_TOKEN in the environment → 404 on every method and
     // even with a (necessarily wrong) bearer token: indistinguishable

@@ -14,9 +14,16 @@ All notable changes to Cachet are documented here. The format follows
   screen recording of a mint no longer exposes anything.
 - The sealed image opens full size in a lightbox from the asset page;
   click or Escape closes.
+- A terms and content policy page (`/terms`), linked from the footer:
+  what the instance is, what may not be uploaded, what the operator does
+  about it, privacy in one paragraph, and how to report content.
 - The operator page (`/admin`) lists the assets carrying content with
   their thumbnails and offers per-row actions: hide the bundle, hide the
-  issuer. Issuer keys are shortened, full key on hover.
+  issuer, or **purge** the bundle. Purging deletes the bytes from this
+  registry's disk (hiding only withholds them), for content an operator
+  must not keep; the moderation entry stays so the same bytes are refused
+  if uploaded again, and the chain commitment is untouched. Issuer keys
+  are shortened, full key on hover.
 
 ### Changed
 

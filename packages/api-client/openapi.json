@@ -836,6 +836,16 @@
               }
             }
           },
+          "410": {
+            "description": "These exact bytes were withheld or purged by this registry's operator",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "429": {
             "description": "This client's upload budget for the minute is spent, or the pending-upload pool is at capacity",
             "content": {
@@ -1387,6 +1397,10 @@
         "type": "object",
         "required": ["kind", "key", "hidden_at"],
         "properties": {
+          "bytes_present": {
+            "type": ["boolean", "null"],
+            "description": "Bundles only: whether this registry still holds the bytes\n(`false` after a purge). `null` for other kinds."
+          },
           "hidden_at": {
             "type": "string"
           },
@@ -1412,6 +1426,10 @@
           "kind": {
             "type": "string",
             "description": "`bundle`, `description` or `issuer`."
+          },
+          "purge": {
+            "type": "boolean",
+            "description": "Bundles only: also delete the bytes from this registry's store.\nThe moderation entry stays, so the same bytes are refused if\nre-uploaded; the chain commitment and the name are untouched."
           },
           "reason": {
             "type": ["string", "null"],
