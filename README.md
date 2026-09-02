@@ -76,7 +76,8 @@ while balances and transfers stay shielded, as Zcash intends.
 - **Moderate honestly** — an operator denylist (`cachet-server moderate`
   over SSH, or the token-gated `/admin` page when `CACHET_ADMIN_TOKEN`
   is set) can withhold a bundle, a description or a whole issuer
-  (HTTP 410 `hidden-by-operator`, reason + timestamp, reversible) but can
+  (HTTP 410 `hidden-by-operator`, reason + timestamp, reversible), or
+  purge a bundle's bytes outright for content it must not keep, but can
   never alter one: metadata is content-addressed and verified
   client-side. A registry can withhold, it can never lie.
 - **Resolve** — the chain stores only description _hashes_; anyone can teach

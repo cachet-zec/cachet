@@ -49,13 +49,13 @@ things are on you:
   hold the address itself: their key is a salted hash whose salt is drawn
   at process start and never written down (PRIVACY.md P2).
 - **The admin token is a moderation remote control.** With
-  `CACHET_ADMIN_TOKEN` set, anyone holding the token can hide/unhide, and
-  can purge a bundle's bytes from disk (the one irreversible action:
-  meant for content an operator must not retain; the moderation entry
-  stays so the bytes are refused if re-uploaded, and the daily dumps
-  keep a copy for up to seven days unless you delete them too). Can hide/unhide
-  content on your registry (availability only — it can never alter or
-  spend anything). Generate it randomly (`openssl rand -hex 32`) and
+  `CACHET_ADMIN_TOKEN` set, anyone holding the token can hide and unhide
+  content on your registry, and can purge a bundle's bytes from disk (the
+  one irreversible action, meant for content an operator must not retain:
+  the moderation entry stays so the bytes are refused if re-uploaded, and
+  the daily dumps keep a copy for up to seven days unless you delete them
+  too). Availability only — it can never alter or spend anything.
+  Generate it randomly (`openssl rand -hex 32`) and
   treat it like a password. Tokens shorter than 32 characters are
   **refused**: the server logs a warning and leaves the admin surface
   disabled rather than accept a guessable one. Unset, the admin routes
