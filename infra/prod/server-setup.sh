@@ -37,13 +37,39 @@ cat > /etc/cron.daily/cachet-bundles-backup <<'CRON'
 #!/bin/sh
 # Dump the bundle store from the compose Postgres; keep the last 7 days.
 cd /opt/cachet || exit 0
-docker compose -f docker-compose.prod.yml exec -T postgres \
+docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T postgres \
   pg_dump -U cachet -d cachet --table=metadata_bundles --table=moderation_hidden \
   --table=asset_descriptions \
-  | gzip > "backups/bundles-$(date +%Y%m%d).sql.gz" 2>/dev/null
+  | gzip > "backups/bundles-$(date +%Y%m%d).sql.gz"
 ls -1t backups/bundles-*.sql.gz 2>/dev/null | tail -n +8 | xargs -r rm --
 CRON
 chmod 755 /etc/cron.daily/cachet-bundles-backup
+# A minimal Debian ships no cron daemon, so /etc/cron.daily alone runs
+# nothing (this bit a real deployment: the backup silently never ran).
+# Drive the script from a systemd timer, which every Debian has.
+cat > /etc/systemd/system/cachet-bundles-backup.service <<'UNIT'
+[Unit]
+Description=Cachet: dump the three tables the chain cannot rebuild
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/etc/cron.daily/cachet-bundles-backup
+UNIT
+cat > /etc/systemd/system/cachet-bundles-backup.timer <<'UNIT'
+[Unit]
+Description=Cachet: daily bundle-store backup
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=15m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now cachet-bundles-backup.timer
 
 echo "--- versions:"
 docker --version

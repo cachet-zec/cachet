@@ -104,8 +104,11 @@ Other knobs (all optional): `PORT` (default 8080),
 `CACHET_READ_ONLY=1` (public browse-and-verify deployment: wallet-signing
 endpoints answer 403), `CACHET_RATE_LIMIT_PER_SEC` (per-client rate
 limit, default 30 req/s with bursts of 60, `0` disables),
-`CACHET_TRUST_PROXY=1` (key rate limiting on `X-Forwarded-For` — only
-behind a reverse proxy you control), `CACHET_SYNC_INTERVAL_SECS`
+`CACHET_TRUST_PROXY=1` (key the rate limit and the per-client write
+throttles on `X-Forwarded-For` / `X-Real-IP` — only behind a reverse
+proxy you control; the throttles themselves are fixed: 60 metadata
+uploads a minute and 8 relays in flight per client, 429 beyond),
+`CACHET_SYNC_INTERVAL_SECS`
 (background registry sync cadence, default 30), `CACHET_IPFS_GATEWAY`
 (ZMD-1 manifest resolution, default `https://ipfs.io`),
 `CACHET_SNAPSHOT_KEY` (Ed25519 seed enabling signed registry snapshots;
@@ -183,8 +186,8 @@ pnpm install
 pnpm dev
 ```
 
-Open `http://localhost:3000`: node status, an issuance form, and asset
-lookup.
+Open `http://localhost:3000/console`: node status, an issuance form,
+and asset lookup (`/` is the public landing page).
 
 ## Regenerating the TypeScript client
 

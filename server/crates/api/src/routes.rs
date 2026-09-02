@@ -545,6 +545,7 @@ async fn enrich_image_path(
         (status = 202, body = TxResponse, description = "Accepted by the chain"),
         (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This client already has the maximum number of relays in flight; retry shortly"),
         (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -620,6 +621,7 @@ pub(crate) async fn relay_transaction(
     responses(
         (status = 201, body = MetadataUploadResponse),
         (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 429, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This client's upload budget for the minute is spent, or the pending-upload pool is at capacity"),
         (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
     )
 )]

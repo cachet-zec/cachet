@@ -17,9 +17,10 @@ Design decisions:
   mints seal full bundles (name, description, image). The storage bound
   is chain-anchored — a garbage collector sweeps bundles that no
   resolved asset description references after a 30-minute grace, a
-  global upload budget and an orphan-pool cap bound the transient
-  window, and a daily cron on the host backs up the three tables not
-  derivable from the chain.
+  per-client upload budget (60/min), a per-client cap of 8 relays in
+  flight and an orphan-pool cap bound the transient window, and a daily
+  systemd timer on the host backs up the three tables not derivable
+  from the chain.
 - **Optional operator surfaces, off by default.** `CACHET_ADMIN_TOKEN`
   enables the token-gated moderation API and the console's `/admin` page
   (404 everywhere without it; a token under 32 characters is refused);

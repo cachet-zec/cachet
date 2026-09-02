@@ -836,6 +836,16 @@
               }
             }
           },
+          "429": {
+            "description": "This client's upload budget for the minute is spent, or the pending-upload pool is at capacity",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
           "503": {
             "description": "",
             "content": {
@@ -974,6 +984,16 @@
           },
           "422": {
             "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "This client already has the maximum number of relays in flight; retry shortly",
             "content": {
               "application/problem+json": {
                 "schema": {

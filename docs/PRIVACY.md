@@ -20,9 +20,9 @@ status, latency, and error kinds only.
 
 _Verify:_ peer addresses are used in exactly two places in
 `server/crates/api`, both in memory only, never logged, never persisted:
-the rate limiter's key extractor (peer address by default,
-`X-Forwarded-For` only behind a declared proxy — `CACHET_TRUST_PROXY`),
-pruned every minute; and the write-path throttles in `client_key.rs`
+the rate limiter's key extractor (peer address by default; client-IP
+headers such as `X-Forwarded-For` / `X-Real-IP` only behind a declared
+proxy — `CACHET_TRUST_PROXY`), pruned every minute; and the write-path throttles in `client_key.rs`
 (upload budget, relays in flight), which do not even hold the address —
 their key is `BLAKE2b(salt ‖ address)` with a salt drawn at process start
 and never written down, so the maps cannot be inverted and the salt dies

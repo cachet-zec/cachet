@@ -1,6 +1,6 @@
 # TLS termination for the Cachet public instance. Caddy provisions and
 # renews Let's Encrypt certificates automatically once DNS points here.
-# `encode` compresses responses (the 5 MB mint-engine wasm shrinks ~60%).
+# `encode` compresses responses (the 4 MB mint-engine wasm ships as ~1.6 MB).
 cachetzec.com {
 	encode zstd gzip
 	header Strict-Transport-Security "max-age=31536000; includeSubDomains"

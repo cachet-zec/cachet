@@ -14,6 +14,9 @@ All notable changes to Cachet are documented here. The format follows
   screen recording of a mint no longer exposes anything.
 - The sealed image opens full size in a lightbox from the asset page;
   click or Escape closes.
+- The operator page (`/admin`) lists the assets carrying content with
+  their thumbnails and offers per-row actions: hide the bundle, hide the
+  issuer. Issuer keys are shortened, full key on hover.
 
 ### Changed
 
@@ -24,6 +27,22 @@ All notable changes to Cachet are documented here. The format follows
   and reduced-motion users get the content with no animation at all.
 - The social card drops the keys line, as the landing and banner already
   did: the sentence lives where the action is.
+- A finalized supply is stamped "sealed forever" in the asset card's
+  corner, the same press as the landing's testnet stamp; the open state
+  stays an inline chip.
+- The mint studio treats a 429 from the relay as "queue", not failure: it
+  waits for a slot (up to 8 times, 2.5 s apart) and keeps the proof.
+- Every API error response carries `Cache-Control: no-store`; a cached
+  410 could otherwise keep an unhidden bundle "hidden" in a browser.
+- Working paper v1.2: the abuse-surface paragraph now describes the
+  per-client throttles and their salted, process-bound key instead of a
+  global budget "keyed to nobody"; the OpenAPI document declares the 429
+  responses of the relay and upload routes.
+- The host setup drives the daily backup from a systemd timer: a minimal
+  Debian ships no cron daemon, so `/etc/cron.daily` alone ran nothing on
+  the public instance for two days. Documentation reconciled with the
+  code throughout (per-client numbers, trusted headers, paths, measured
+  sizes).
 
 ### Security
 
@@ -100,8 +119,9 @@ All notable changes to Cachet are documented here. The format follows
   how a reader concludes an unsealed asset has editable metadata (it does
   not — the description hash derives the asset id). The landing step is
   now "Bind"; both supply states are stated instead of one being the
-  absence of a stamp ("sealed" / "open supply", the latter in the
-  attention colour, since it carries dilution risk for the holder); and
+  absence of a stamp ("sealed forever" / "issuer can mint more" on the
+  asset page, "sealed" / "open supply" in the list, the open state in
+  the attention colour since it carries dilution risk for the holder); and
   reissuing announces itself before proving and on the receipt instead of
   silently adding units to an existing asset.
 - Names in the landing showcase carry their provenance visibly ("zmd-1",

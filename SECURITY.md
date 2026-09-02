@@ -39,11 +39,15 @@ things are on you:
   writable instance reachable from the network **must** sit behind an
   authenticating reverse proxy. The public deployment avoids the question
   entirely: `CACHET_READ_ONLY=1` plus a throwaway seed.
-- **The rate limiter trusts client-IP headers only behind a proxy.** It
-  keys on the real peer address by default; set `CACHET_TRUST_PROXY=1`
-  **only** when a reverse proxy you control sits in front and rewrites
-  `X-Forwarded-For` (the shipped Caddyfile does). Setting it while
-  directly exposed lets an attacker spoof the header and bypass the limit.
+- **Client-IP headers are trusted only behind a proxy.** The rate
+  limiter and the per-client write-path throttles (60 uploads a minute,
+  8 relays in flight, both answering 429) key on the real peer address by
+  default; set `CACHET_TRUST_PROXY=1` **only** when a reverse proxy you
+  control sits in front and rewrites `X-Forwarded-For` / `X-Real-IP` (the
+  shipped Caddyfile does). Setting it while directly exposed lets an
+  attacker spoof the header and bypass every limit. The throttles never
+  hold the address itself: their key is a salted hash whose salt is drawn
+  at process start and never written down (PRIVACY.md P2).
 - **The admin token is a moderation remote control.** With
   `CACHET_ADMIN_TOKEN` set, anyone holding the token can hide/unhide
   content on your registry (availability only — it can never alter or
