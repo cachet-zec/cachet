@@ -29,6 +29,18 @@ updates:
       # with node-version in ci.yml, never on its own.
       - dependency-name: "@types/node"
         update-types: [version-update:semver-major]
+      # The Next major is a deliberate migration (async APIs, Turbopack
+      # default, lint pipeline), done by hand as one reviewed change with
+      # the two packages that must move with it. Auto-PRs for it fail CI
+      # by construction and keep coming back; security fixes are
+      # backported to the current line (15.5.24 carried both critical
+      # advisories of 2026-08), so the major is not the security path.
+      - dependency-name: "next"
+        update-types: [version-update:semver-major]
+      - dependency-name: "eslint-config-next"
+        update-types: [version-update:semver-major]
+      - dependency-name: "eslint"
+        update-types: [version-update:semver-major]
     groups:
       # Listed first so it wins for these packages: eslint-config-next is
       # pinned to the Next major and eslint to what that config supports.

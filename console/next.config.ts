@@ -27,6 +27,13 @@ const nextConfig: NextConfig = {
   // Next.js telemetry is disabled via NEXT_TELEMETRY_DISABLED in .env,
   // and no analytics/error-reporting SDK may be added.
   reactStrictMode: true,
+  // The console never uses next/image: every image is a plain <img>
+  // pointing at the API, whose bytes are content-addressed and verified
+  // in the browser. Disabling the optimizer removes the /_next/image
+  // endpoint and the sharp/libheif surface behind it (two critical
+  // advisories in 2026-08 lived there) from a server that gains nothing
+  // from it.
+  images: { unoptimized: true },
 
   // Privacy/security headers on every console response. Referrer-Policy is
   // the load-bearing one: outbound links (issuer external_url, GitHub) must

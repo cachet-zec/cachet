@@ -25,6 +25,17 @@ All notable changes to Cachet are documented here. The format follows
 - The social card drops the keys line, as the landing and banner already
   did: the sentence lives where the action is.
 
+### Security
+
+- The Next.js image optimizer is disabled: the console never uses
+  `next/image` (every image is a plain `<img>` whose bytes are verified in
+  the browser), so the `/_next/image` endpoint and the sharp/libheif surface
+  behind it - where two critical advisories lived in August 2026, both
+  already fixed in the pinned 15.5.24 - no longer exist on the server.
+- Dependabot no longer proposes the Next major: it is a deliberate
+  migration done by hand with `eslint` and `eslint-config-next`, and the
+  security fixes are backported to the current line.
+
 ## [0.3.0] - 2026-09-01
 
 ### Added
