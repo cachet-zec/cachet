@@ -35,6 +35,18 @@ All notable changes to Cachet are documented here. The format follows
 - Dependabot no longer proposes the Next major: it is a deliberate
   migration done by hand with `eslint` and `eslint-config-next`, and the
   security fixes are backported to the current line.
+- Write paths are throttled per client, not per instance. The global
+  upload counter let one client starve every other browser mint at near
+  zero cost; the relay held its lock for a full 10 s wait even after the
+  node had rejected the block. Uploads are now budgeted per client, relays
+  capped per client in flight, and a `submitblock` verdict is a rejection
+  immediately. The key is a salted hash of the address (salt drawn at
+  boot, memory only, never logged), documented in PRIVACY.md P2.
+- Issuer-level moderation is applied on the description-resolution and
+  ZMD-1 manifest routes too; they previously bypassed it.
+- The admin token comparison hashes both sides to a fixed size first, so
+  the configured token's length no longer shapes the timing.
+- `.gitignore` covers every `.env*` file, not just the local variants.
 
 ## [0.3.0] - 2026-09-01
 

@@ -177,9 +177,19 @@ export function MintStudio() {
         target_height: chain.data.tip_height + 1,
       });
 
-      // 4. Hand the signed bytes to the relay.
+      // 4. Hand the signed bytes to the relay. A 429 here is the relay
+      //    saying "queue" - the per-client in-flight cap or the rate limit
+      //    answered before anything was submitted - so waiting and
+      //    retrying is safe and is exactly what a room full of people
+      //    behind one NAT needs. Bounded: the proof is not thrown away for
+      //    a busy minute, but nobody waits forever.
       setStage("Relaying the signed transaction…");
-      const relayed = await api.POST("/api/v1/relay", { body: { tx_hex: built.tx_hex } });
+      let relayed = await api.POST("/api/v1/relay", { body: { tx_hex: built.tx_hex } });
+      for (let attempt = 1; relayed.response.status === 429 && attempt <= 8; attempt += 1) {
+        setStage(`Relay busy, waiting for a slot (attempt ${attempt} of 8)…`);
+        await new Promise((resolve) => setTimeout(resolve, 2_500));
+        relayed = await api.POST("/api/v1/relay", { body: { tx_hex: built.tx_hex } });
+      }
       if (relayed.error) throw new Error(problemMessage(relayed.error));
 
       // 5. Teach the registry the description we minted under — accepted

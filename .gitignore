@@ -22,9 +22,11 @@ server/target-wasm-mt/
 packages/api-client/src/generated/
 
 # Environment
-.env
-.env.local
-.env.*.local
+# Every environment file, whatever the suffix (Next.js also loads
+# .env.production and .env.development); only the examples are tracked.
+.env*
+!.env.example
+!.env*.example
 
 # Editors / OS
 .idea/

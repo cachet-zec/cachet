@@ -16,13 +16,17 @@ use crate::AppState;
 use crate::error::ApiError;
 use crate::routes::{metadata_error, require_metadata_store};
 
-/// Constant-time byte comparison: a wrong token must cost the same time
-/// as a right one, whatever the mismatch position.
+/// Constant-time token comparison. Both sides are hashed to a fixed
+/// 32 bytes first, so neither the mismatch position nor the length of the
+/// configured token shapes the timing.
 fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    if a.len() != b.len() {
-        return false;
-    }
-    a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
+    use sha2::{Digest, Sha256};
+    let a = Sha256::digest(a);
+    let b = Sha256::digest(b);
+    a.iter()
+        .zip(b.iter())
+        .fold(0u8, |acc, (x, y)| acc | (x ^ y))
+        == 0
 }
 
 fn authorize(state: &AppState, headers: &axum::http::HeaderMap) -> Result<(), ApiError> {

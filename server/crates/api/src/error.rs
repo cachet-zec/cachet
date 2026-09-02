@@ -44,6 +44,11 @@ pub enum ApiError {
         "the registry's pending-upload pool is at capacity; retry in a few minutes          (bundles that are never minted get swept)"
     )]
     UploadPoolFull,
+    #[error(
+        "this client already has the maximum number of relays in flight; wait for them to \
+         settle before sending another"
+    )]
+    RelayBusy,
     #[error("admin authentication failed")]
     AdminUnauthorized,
 }
@@ -57,6 +62,7 @@ impl ApiError {
             Self::HiddenByOperator => StatusCode::GONE,
             Self::NotConfigured { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::UploadPoolFull => StatusCode::TOO_MANY_REQUESTS,
+            Self::RelayBusy => StatusCode::TOO_MANY_REQUESTS,
             Self::AdminUnauthorized => StatusCode::NOT_FOUND,
             Self::Chain(chain_error) => match chain_error {
                 ChainError::Rejected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
@@ -78,6 +84,7 @@ impl ApiError {
             Self::HiddenByOperator => "hidden-by-operator",
             Self::NotConfigured { .. } => "not-configured",
             Self::UploadPoolFull => "upload-pool-full",
+            Self::RelayBusy => "relay-busy",
             // 404 on purpose: with no token configured (or a wrong one),
             // the admin surface is indistinguishable from absent.
             Self::AdminUnauthorized => "not-found",

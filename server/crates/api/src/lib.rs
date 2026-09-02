@@ -5,6 +5,7 @@
 //! when the OrchardZSA backend lands (ADR-001).
 
 mod admin;
+pub mod client_key;
 pub mod dto;
 pub mod error;
 mod routes;
@@ -51,6 +52,9 @@ pub struct AppState {
     /// (public facts only — txid and asset ids, never a client address).
     /// Absent → no notification (CACHET_DISCORD_WEBHOOK).
     pub mint_webhook: Option<Arc<str>>,
+    /// Per-client write-path throttles keyed by a salted hash of the
+    /// client address (PRIVACY.md P2): memory only, never logged.
+    pub client_limits: Arc<client_key::ClientLimits>,
 }
 
 /// Minimum length of an accepted `CACHET_ADMIN_TOKEN`: 32 characters,
@@ -205,6 +209,9 @@ pub fn router(
             .ok()
             .filter(|url| url.starts_with("https://"))
             .map(Arc::from),
+        client_limits: Arc::new(client_key::ClientLimits::new(
+            client_key::ClientLimits::trust_proxy_from_env(),
+        )),
     };
     Router::new()
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))

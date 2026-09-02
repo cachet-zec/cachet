@@ -60,33 +60,19 @@ pub(crate) fn router() -> Router<AppState> {
 /// until the garbage collector drains them.
 pub const ORPHAN_POOL_CAP_BYTES: u64 = 512 * 1024 * 1024;
 
-/// Instance-wide upload backstop, per minute. This is NOT the storage
-/// bound — [`ORPHAN_POOL_CAP_BYTES`] is — it only stops a runaway from
-/// racing the sweeper. Sized well above any human pace (a mint costs
-/// seconds of zk proving, so even a busy workshop stays far below) and
-/// below the per-client request limit, so it can never be the thing a
-/// real user hits. Deliberately not keyed by client: behind a reverse
-/// proxy every request shares one peer address anyway, and reading
-/// forwarded headers here would duplicate the limiter for no gain.
-const UPLOADS_PER_MINUTE: u32 = 600;
-
-fn check_upload_budget() -> Result<(), ApiError> {
-    use std::time::Instant;
-    static WINDOW: std::sync::Mutex<Option<(Instant, u32)>> = std::sync::Mutex::new(None);
-    let mut guard = WINDOW
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let now = Instant::now();
-    match guard.as_mut() {
-        Some((started, count)) if started.elapsed().as_secs() < 60 => {
-            if *count >= UPLOADS_PER_MINUTE {
-                return Err(ApiError::UploadPoolFull);
-            }
-            *count += 1;
-        }
-        _ => {
-            *guard = Some((now, 1));
-        }
+/// Issuer-level moderation, applied wherever an asset's content can be
+/// obtained: a hidden issuance key's assets answer 410 from every route,
+/// not just the ones that list them.
+async fn refuse_hidden_issuer(state: &AppState, issuer: Option<&str>) -> Result<(), ApiError> {
+    let (Some(store), Some(issuer)) = (&state.metadata, issuer) else {
+        return Ok(());
+    };
+    let Ok(issuer_bytes) = hex::decode(issuer) else {
+        return Ok(());
+    };
+    let hidden = store.hidden_issuers().await.map_err(metadata_error)?;
+    if hidden.iter().any(|key| key == &issuer_bytes) {
+        return Err(ApiError::HiddenByOperator);
     }
     Ok(())
 }
@@ -272,6 +258,10 @@ pub(crate) async fn zmd1_manifest(
 ) -> Result<Json<Zmd1ManifestResponse>, ApiError> {
     let asset_id: AssetId = asset_id.parse().map_err(ApiError::Validation)?;
     let asset = state.chain.asset_state(asset_id).await?;
+    {
+        let summary: AssetSummaryResponse = asset.clone().into();
+        refuse_hidden_issuer(&state, summary.issuer.as_deref()).await?;
+    }
     let descriptor = asset
         .description
         .as_deref()
@@ -560,8 +550,17 @@ async fn enrich_image_path(
 )]
 pub(crate) async fn relay_transaction(
     State(state): State<AppState>,
+    crate::client_key::Client(client): crate::client_key::Client,
     Json(body): Json<RelayRequest>,
 ) -> Result<(StatusCode, Json<TxResponse>), ApiError> {
+    // Relays are serialized behind the node (one block at a time), so a
+    // client that keeps one waiting holds everyone. Bound what a single
+    // client can have in flight; the slot frees itself when this handler
+    // returns, whatever happened.
+    let _slot = state
+        .client_limits
+        .begin_relay(client)
+        .ok_or(ApiError::RelayBusy)?;
     let tx_bytes = hex::decode(body.tx_hex.trim()).map_err(|_| {
         ApiError::Validation(cachet_domain::DomainError::InvalidMetadata {
             reason: "tx_hex must be hex-encoded transaction bytes",
@@ -626,6 +625,7 @@ pub(crate) async fn relay_transaction(
 )]
 pub(crate) async fn upload_metadata(
     State(state): State<AppState>,
+    crate::client_key::Client(client): crate::client_key::Client,
     Json(body): Json<MetadataUploadRequest>,
 ) -> Result<(StatusCode, Json<MetadataUploadResponse>), ApiError> {
     // Open to everyone, read-only deployments included: community mints
@@ -634,12 +634,16 @@ pub(crate) async fn upload_metadata(
     // references is swept after a grace window, so durable storage costs
     // a real zk proof and leaves a public trace — plus two throttles that
     // keep the transient window itself bounded:
-    //   1. a global upload budget (nobody legitimately uploads faster
-    //      than they can prove mints);
+    //   1. a per-client upload budget (nobody legitimately uploads
+    //      faster than they can prove mints, and one client's excess must
+    //      not become everyone's 429 - a global counter did exactly that);
     //   2. a hard cap on the orphan pool, so a botnet cannot outrun the
     //      sweeper and exhaust the disk.
-    // Neither throttle records who called (PRIVACY.md P2 holds).
-    check_upload_budget()?;
+    // The budget is keyed by a salted hash of the address, memory only,
+    // never logged (PRIVACY.md P2 holds).
+    if !state.client_limits.take_upload(client) {
+        return Err(ApiError::UploadPoolFull);
+    }
     if crate::ORPHAN_BYTES.load(std::sync::atomic::Ordering::Relaxed) > ORPHAN_POOL_CAP_BYTES {
         return Err(ApiError::UploadPoolFull);
     }
@@ -881,6 +885,12 @@ pub(crate) async fn resolve_description(
     // Domain-validate the description shape (1–512 bytes) before the
     // backend hashes it.
     cachet_domain::AssetDescription::new(body.description.clone()).map_err(ApiError::Validation)?;
+    // A hidden issuer's asset must not come back enriched through the
+    // resolution route either - the check precedes the write.
+    {
+        let current: AssetSummaryResponse = state.chain.asset_state(asset_id).await?.into();
+        refuse_hidden_issuer(&state, current.issuer.as_deref()).await?;
+    }
     state
         .chain
         .resolve_description(asset_id, &body.description)
@@ -967,15 +977,7 @@ pub(crate) async fn get_asset(
 ) -> Result<Json<AssetSummaryResponse>, ApiError> {
     let asset_id: AssetId = asset_id.parse().map_err(ApiError::Validation)?;
     let mut response: AssetSummaryResponse = state.chain.asset_state(asset_id).await?.into();
-    // Issuer-level moderation: assets of a hidden issuance key answer 410.
-    if let (Some(store), Some(issuer)) = (&state.metadata, response.issuer.as_deref()) {
-        if let Ok(issuer_bytes) = hex::decode(issuer) {
-            let hidden = store.hidden_issuers().await.map_err(metadata_error)?;
-            if hidden.iter().any(|key| key == &issuer_bytes) {
-                return Err(ApiError::HiddenByOperator);
-            }
-        }
-    }
+    refuse_hidden_issuer(&state, response.issuer.as_deref()).await?;
     enrich_image_path(&state, &mut response).await?;
     Ok(Json(response))
 }

@@ -18,12 +18,15 @@ is set in CI and documented in SETUP.
 The server never logs client IPs or request bodies. Log lines carry route,
 status, latency, and error kinds only.
 
-_Verify:_ the only peer-address use in `server/crates/api` is the rate
-limiter's key extractor (peer address by default, `X-Forwarded-For` only
-behind a declared proxy — `CACHET_TRUST_PROXY`), whose keys live in
-memory only and are pruned every minute — never logged, never persisted.
-The global upload budget deliberately keys on nothing at all. Tracing
-calls log typed fields, never raw requests.
+_Verify:_ peer addresses are used in exactly two places in
+`server/crates/api`, both in memory only, never logged, never persisted:
+the rate limiter's key extractor (peer address by default,
+`X-Forwarded-For` only behind a declared proxy — `CACHET_TRUST_PROXY`),
+pruned every minute; and the write-path throttles in `client_key.rs`
+(upload budget, relays in flight), which do not even hold the address —
+their key is `BLAKE2b(salt ‖ address)` with a salt drawn at process start
+and never written down, so the maps cannot be inverted and the salt dies
+with the process. Tracing calls log typed fields, never raw requests.
 
 ## P3 — No server-side custody of spending keys
 

@@ -441,6 +441,15 @@ impl OrchardZsaBackend {
         let verdict = self.rpc.submit_block(block_hex).await?;
         if let Some(text) = &verdict {
             tracing::debug!(verdict = %text, "submitblock returned a verdict string");
+            // A verdict is the node's answer, not a hint: anything other
+            // than "duplicate" / "inconclusive" is a rejection, and waiting
+            // 10 s for a tip that will never advance only held the relay
+            // lock for whoever came next.
+            if text != "duplicate" && text != "inconclusive" {
+                return Err(ChainError::Rejected {
+                    reason: format!("block at height {block_height} rejected by the node: {text}"),
+                });
+            }
         }
 
         // Zebra validates submitted blocks asynchronously, and its
