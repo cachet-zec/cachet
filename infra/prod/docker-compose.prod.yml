@@ -14,11 +14,23 @@ x-logging: &default-logging
     max-size: "50m"
     max-file: "3"
 
+# Memory ceilings. The host is an LXC container and cannot swap, so
+# without limits a single runaway (the Next.js console under a spike) can
+# take the whole 3 GB and the kernel kills whatever it likes - Postgres
+# included. With them, the runaway alone is killed and restarts in
+# seconds while the rest keeps serving. Sized from measured idle use
+# (~330 MB for the stack) with room for a real spike; total 2.3 GB,
+# leaving the host its margin.
+
 services:
   caddy:
     image: caddy:2
     restart: unless-stopped
     logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     ports:
       - "80:80"
       - "443:443"
@@ -34,6 +46,10 @@ services:
     image: cachet-server:prod
     restart: unless-stopped
     logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     environment:
       CACHET_BACKEND: zsa
       CACHET_NETWORK: zsa-testnet
@@ -63,11 +79,22 @@ services:
     image: cachet-console:prod
     restart: unless-stopped
     logging: *default-logging
+    environment:
+      # Node collects its heap before the cgroup ceiling, not after.
+      NODE_OPTIONS: --max-old-space-size=768
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   postgres:
     image: postgres:17-alpine
     restart: unless-stopped
     logging: *default-logging
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     environment:
       POSTGRES_USER: cachet
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
