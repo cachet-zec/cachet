@@ -274,7 +274,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
             <span
               data-testid="sealed-stamp"
               title="Finalized: consensus refuses further units, from anyone including the issuer. Holders can still burn what they hold, so the supply can fall but never rise."
-              className="stamp-press font-data absolute right-4 top-4 -rotate-6 select-none rounded-sm border-2 border-[#e8b23a]/70 px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-[#e8b23a]/90 outline outline-1 outline-offset-4 outline-[#e8b23a]/30 sm:right-6 sm:top-6 sm:px-3 sm:py-1.5 sm:text-[12px]"
+              className="stamp-press font-data absolute right-6 top-6 hidden -rotate-6 select-none rounded-sm border-2 border-[#e8b23a]/70 px-3 py-1.5 text-[12px] uppercase tracking-[0.2em] text-[#e8b23a]/90 outline outline-1 outline-offset-4 outline-[#e8b23a]/30 sm:block"
             >
               sealed forever
             </span>
@@ -305,7 +305,19 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                   {state.data.total_supply.toLocaleString("en-US")}
                 </span>
               </p>
-              <div className="mt-2.5 flex flex-wrap items-center gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-3">
+                {/* Narrow screens: the corner would sit on the title, so the
+                    stamp takes its place in the badge row, upright and
+                    unanimated: a rotated box in a flowing row always bites
+                    its neighbour. */}
+                {state.data.finalized && (
+                  <span
+                    title="Finalized: consensus refuses further units, from anyone including the issuer. Holders can still burn what they hold, so the supply can fall but never rise."
+                    className="font-data select-none rounded-sm border-2 border-[#e8b23a]/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#e8b23a]/90 outline outline-1 outline-offset-2 outline-[#e8b23a]/30 sm:hidden"
+                  >
+                    sealed forever
+                  </span>
+                )}
                 {!state.data.finalized && (
                   // Stated, not left to the absence of a stamp: whoever
                   // holds this asset can be diluted, and that is a fact
