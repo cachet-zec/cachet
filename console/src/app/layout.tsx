@@ -55,7 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="min-h-screen antialiased">
         <Providers>
           <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-6">
-            <header className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-5">
+            <header className="relative z-10 flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-5">
               <Link href="/" className="flex items-center gap-2.5">
                 <SealMark />
                 <span className="font-display text-xl font-semibold tracking-tight text-neutral-100">

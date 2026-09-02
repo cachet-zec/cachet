@@ -32,7 +32,7 @@ export default function LandingPage() {
       <section className="rise relative grid items-start gap-10 lg:grid-cols-[7fr_4fr]">
         <div
           aria-hidden
-          className="absolute -left-24 -top-48 -z-10 h-[440px] w-[420px] bg-[radial-gradient(closest-side,rgba(232,178,58,0.06),transparent)] sm:-left-40 sm:w-[680px]"
+          className="pointer-events-none absolute -left-24 -top-48 -z-10 h-[440px] w-[420px] bg-[radial-gradient(closest-side,rgba(232,178,58,0.06),transparent)] sm:-left-40 sm:w-[680px]"
         />
         <SealWatermark className="absolute -right-52 -top-40 -z-10 hidden w-[620px] opacity-[0.05] lg:block" />
         <div>
