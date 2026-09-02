@@ -111,9 +111,16 @@ impl IntoResponse for ApiError {
             status: status.as_u16(),
             detail,
         };
+        // Never cacheable: an error is a statement about now, not about
+        // content. A 410 in particular is cacheable by default (RFC 9111),
+        // and a cached 410 would keep an unhidden bundle "hidden" in a
+        // browser or proxy long after the operator reversed the decision.
         (
             status,
-            [(header::CONTENT_TYPE, "application/problem+json")],
+            [
+                (header::CONTENT_TYPE, "application/problem+json"),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
             Json(body),
         )
             .into_response()

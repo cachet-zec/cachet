@@ -2,11 +2,33 @@
 
 import { useState } from "react";
 
+import Link from "next/link";
+
 import { api, apiBaseUrl } from "@/lib/api";
-import { card, cardTitle, dangerButton, ghostButton, input, label } from "@/lib/ui";
+import { card, cardTitle, dangerButton, ghostButton, input, label, stamp } from "@/lib/ui";
 
 type Entry = { kind: string; key: string; reason: string | null; hidden_at: string };
 type Collection = { issuer: string; asset_count: number; total_supply: string | number };
+type Asset = {
+  asset_id: string;
+  display_name: string | null;
+  issuer: string | null;
+  total_supply: string | number;
+  finalized: boolean;
+  image_path: string | null;
+  description: string | null;
+};
+
+/** The bundle a Cachet envelope points at, or null for any other description. */
+function bundleSha(description: string | null): string | null {
+  if (!description) return null;
+  try {
+    const envelope = JSON.parse(description) as { sha256?: unknown };
+    return typeof envelope.sha256 === "string" ? envelope.sha256.toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Operator moderation console. The token lives in component state only —
@@ -20,6 +42,8 @@ export function AdminPanel() {
   const [unlocked, setUnlocked] = useState(false);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [issuers, setIssuers] = useState<Collection[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [search, setSearch] = useState("");
   const [status, setStatus] = useState<string | null>(null);
 
   const [kind, setKind] = useState("issuer");
@@ -49,6 +73,11 @@ export function AdminPanel() {
     setEntries((await listed.json()) as Entry[]);
     const collections = await api.GET("/api/v1/collections");
     setIssuers((collections.data ?? []) as Collection[]);
+    // What a moderator actually looks at: the assets carrying content
+    // (a name, an image). Unresolved script mints are hex and nothing
+    // else; they stay reachable through "hide by key".
+    const resolved = await api.GET("/api/v1/assets", { params: { query: { resolved: true } } });
+    setAssets((resolved.data ?? []) as Asset[]);
   }
 
   async function unlock() {
@@ -90,6 +119,17 @@ export function AdminPanel() {
   const hiddenIssuerKeys = new Set(
     entries.filter((entry) => entry.kind === "issuer").map((entry) => entry.key),
   );
+  const hiddenBundleKeys = new Set(
+    entries.filter((entry) => entry.kind === "bundle").map((entry) => entry.key.toLowerCase()),
+  );
+  const needle = search.trim().toLowerCase();
+  const visibleAssets = needle
+    ? assets.filter((asset) =>
+        [asset.display_name ?? "", asset.asset_id, asset.issuer ?? ""].some((field) =>
+          field.toLowerCase().includes(needle),
+        ),
+      )
+    : assets;
 
   if (!unlocked) {
     return (
@@ -125,6 +165,94 @@ export function AdminPanel() {
       {status && <p className="text-sm text-[#e8b23a]">{status}</p>}
 
       <section className={card}>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <h2 className={cardTitle}>Assets with content ({assets.length})</h2>
+          <input
+            className={`${input} max-w-xs`}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="filter by name, asset id or issuer"
+            spellCheck={false}
+          />
+        </div>
+        {visibleAssets.length === 0 && <p className="text-sm text-neutral-500">Nothing matches.</p>}
+        <ul className="flex flex-col">
+          {visibleAssets.map((asset) => {
+            const sha = bundleSha(asset.description);
+            const bundleHidden = sha !== null && hiddenBundleKeys.has(sha);
+            return (
+              <li
+                key={asset.asset_id}
+                className="flex flex-wrap items-center gap-4 border-b border-white/[0.06] py-2.5 last:border-b-0"
+              >
+                {asset.image_path ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={apiBaseUrl + asset.image_path}
+                    alt=""
+                    className="h-12 w-12 shrink-0 rounded-sm border border-white/10 object-cover"
+                  />
+                ) : (
+                  <div className="font-data flex h-12 w-12 shrink-0 items-center justify-center rounded-sm border border-white/10 text-sm text-neutral-600">
+                    {asset.asset_id.slice(0, 2)}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <Link
+                      href={`/assets/${asset.asset_id}`}
+                      target="_blank"
+                      className="font-display text-base text-neutral-100 transition hover:text-[#e8b23a]"
+                    >
+                      {asset.display_name ?? asset.asset_id.slice(0, 16)}
+                    </Link>
+                    <span className="font-data text-xs text-neutral-500">
+                      supply {String(asset.total_supply)}
+                    </span>
+                    {asset.finalized && <span className={stamp}>sealed</span>}
+                    {bundleHidden && (
+                      <span className="font-data text-xs text-red-300">bundle hidden</span>
+                    )}
+                  </div>
+                  <div className="font-data mt-0.5 truncate text-[11px] text-neutral-600">
+                    <span title={asset.asset_id}>{asset.asset_id.slice(0, 20)}&hellip;</span>
+                    {asset.issuer && (
+                      <span title={asset.issuer}>
+                        {" "}
+                        &middot; issuer {asset.issuer.slice(0, 14)}&hellip;
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <span className="flex items-center gap-2">
+                  {sha && !bundleHidden && (
+                    <button
+                      type="button"
+                      className={`${dangerButton} px-3 py-1 text-xs`}
+                      title="Withhold this asset's bundle: description and image answer 410. The chain record and the name stay."
+                      onClick={() => void hide("bundle", sha, asset.display_name ?? undefined)}
+                    >
+                      Hide bundle
+                    </button>
+                  )}
+                  {asset.issuer && !hiddenIssuerKeys.has(asset.issuer) && (
+                    <button
+                      type="button"
+                      className={`${ghostButton} px-3 py-1 text-xs`}
+                      title="Withhold every asset of this issuance key from listings."
+                      onClick={() => void hide("issuer", asset.issuer as string)}
+                    >
+                      Hide issuer
+                    </button>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </section>
+
+      <section className={card}>
         <h2 className={`${cardTitle} mb-3`}>Issuers on chain</h2>
         <ul className="flex flex-col">
           {issuers.map((collection) => (
@@ -132,8 +260,8 @@ export function AdminPanel() {
               key={collection.issuer}
               className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] py-2 last:border-b-0"
             >
-              <span className="font-data break-all text-xs text-neutral-300">
-                {collection.issuer}
+              <span className="font-data text-xs text-neutral-300" title={collection.issuer}>
+                {collection.issuer.slice(0, 24)}&hellip;
               </span>
               <span className="flex items-center gap-3">
                 <span className="font-data text-xs text-neutral-500">

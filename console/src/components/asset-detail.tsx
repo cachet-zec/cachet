@@ -45,8 +45,22 @@ function useVerifiedBundle(envelope: Envelope | null) {
   return useQuery({
     queryKey: ["bundle", envelope?.sha256],
     enabled: envelope !== null,
+    // A 410 is an operator decision, not a transient fault: retrying it
+    // twice in a row is pointless, but polling it slowly is not - the
+    // operator can unhide, and a page left open should notice without a
+    // reload. Successes are content-addressed and never need refetching.
+    retry: false,
+    refetchInterval: (query) => (query.state.status === "error" ? 15_000 : false),
     queryFn: async () => {
-      const response = await fetch(`${apiBaseUrl}/api/v1/metadata/${envelope!.sha256}`);
+      const url = `${apiBaseUrl}/api/v1/metadata/${envelope!.sha256}`;
+      let response = await fetch(url);
+      if (!response.ok) {
+        // An error may be the browser's own cached copy of an older
+        // decision (a 410 cached before the API marked errors no-store).
+        // Ask the network once before believing it; the success path keeps
+        // the immutable cache untouched.
+        response = await fetch(url, { cache: "reload" });
+      }
       if (!response.ok) {
         throw new Error(
           response.status === 410
@@ -191,10 +205,10 @@ function SealedImage({ src }: { src: string }) {
             className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/90 p-8 backdrop-blur-md"
             onClick={() => setOpen(false)}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             {/* Height budget: viewport minus the caption, the gaps and the
               padding - so image + caption always fit together, navbar
               included. Width capped so a square never wall-to-walls. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={src}
               alt=""
