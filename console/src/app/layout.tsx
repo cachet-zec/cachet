@@ -184,6 +184,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                         If this instance disappears
                       </Link>
                     </li>
+                    <li>
+                      <Link
+                        href="/terms"
+                        className="text-neutral-400 transition hover:text-[#e8b23a]"
+                      >
+                        Terms and content policy
+                      </Link>
+                    </li>
                     <li className="text-neutral-400">
                       <SnapshotKey />
                     </li>
