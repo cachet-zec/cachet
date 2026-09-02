@@ -14,6 +14,13 @@ All notable changes to Cachet are documented here. The format follows
   screen recording of a mint no longer exposes anything.
 - The sealed image opens full size in a lightbox from the asset page;
   click or Escape closes.
+- Every asset page has its own social card: the sealed image beside the
+  name, the supply and the supply state, in the site's lockup. The card
+  reads through the public API, so moderation applies by construction: a
+  hidden issuer yields a generic card, a hidden or purged bundle a card
+  without picture.
+- The registry gains filters that compose with the search: supply state
+  (all, sealed, open) and "named assets only".
 - A terms and content policy page (`/terms`), linked from the footer:
   what the instance is, what may not be uploaded, what the operator does
   about it, privacy in one paragraph, and how to report content.

@@ -21,8 +21,17 @@ export async function generateMetadata({
       cache: "no-store",
     });
     if (!response.ok) return fallback;
-    const asset = (await response.json()) as { display_name?: string | null };
-    return asset.display_name ? { title: `${asset.display_name} · Cachet` } : fallback;
+    const asset = (await response.json()) as {
+      display_name?: string | null;
+      total_supply?: string | number;
+      finalized?: boolean;
+    };
+    if (!asset.display_name) return fallback;
+    const state = asset.finalized ? "sealed forever" : "open supply";
+    return {
+      title: `${asset.display_name} · Cachet`,
+      description: `A Zcash Shielded Asset on the public ZSA testnet. Supply ${String(asset.total_supply ?? "?")}, ${state}. Metadata sealed on chain and verified in your browser.`,
+    };
   } catch {
     return fallback;
   }

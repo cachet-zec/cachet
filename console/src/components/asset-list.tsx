@@ -24,6 +24,11 @@ export function AssetList() {
   const [page, setPage] = useState(0);
   const [query, setQuery] = useState("");
   const [attestedFirst, setAttestedFirst] = useState(true);
+  // Filters compose with the search: supply state, and whether an asset
+  // carries an attested name at all (most script mints on this testnet
+  // do not).
+  const [supplyFilter, setSupplyFilter] = useState<"all" | "sealed" | "open">("all");
+  const [namedOnly, setNamedOnly] = useState(false);
   const { data, error, isPending, refetch, isFetching } = useQuery({
     queryKey: ["assets"],
     queryFn: async () => {
@@ -40,11 +45,14 @@ export function AssetList() {
   const filtered =
     data?.filter(
       (asset) =>
-        needle === "" ||
-        asset.display_name?.toLowerCase().includes(needle) ||
-        asset.description?.toLowerCase().includes(needle) ||
-        asset.asset_id.startsWith(needle) ||
-        asset.issuer?.startsWith(needle),
+        (needle === "" ||
+          asset.display_name?.toLowerCase().includes(needle) ||
+          asset.description?.toLowerCase().includes(needle) ||
+          asset.asset_id.startsWith(needle) ||
+          asset.issuer?.startsWith(needle)) &&
+        (supplyFilter === "all" ||
+          (supplyFilter === "sealed" ? asset.finalized : !asset.finalized)) &&
+        (!namedOnly || Boolean(asset.name_source)),
     ) ?? [];
   // Array.sort is stable, so chain order survives inside each group.
   const ordered = attestedFirst
@@ -103,6 +111,56 @@ export function AssetList() {
         />
       )}
 
+      {data && data.length > PAGE_SIZE && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <div
+            role="radiogroup"
+            aria-label="Supply state"
+            data-testid="list-supply-filter"
+            className="flex overflow-hidden rounded-md border border-white/10 bg-black/30"
+          >
+            {(
+              [
+                ["all", "all"],
+                ["sealed", "sealed"],
+                ["open", "open supply"],
+              ] as const
+            ).map(([value, title], index) => (
+              <button
+                key={value}
+                type="button"
+                role="radio"
+                aria-checked={supplyFilter === value}
+                onClick={() => {
+                  setSupplyFilter(value);
+                  setPage(0);
+                }}
+                className={`font-data px-3 py-1.5 text-[12px] transition ${index > 0 ? "border-l border-white/[0.07]" : ""} ${
+                  supplyFilter === value
+                    ? "bg-[#e8b23a]/[0.08] text-[#e8b23a]"
+                    : "text-neutral-400 hover:bg-white/[0.03] hover:text-neutral-200"
+                }`}
+              >
+                {title}
+              </button>
+            ))}
+          </div>
+          <label className="font-data flex cursor-pointer items-center gap-2 text-[12px] text-neutral-400">
+            <input
+              type="checkbox"
+              data-testid="list-named-only"
+              checked={namedOnly}
+              onChange={(event) => {
+                setNamedOnly(event.target.checked);
+                setPage(0);
+              }}
+              className="accent-[#e8b23a]"
+            />
+            named assets only
+          </label>
+        </div>
+      )}
+
       {isPending && (
         <div className="flex flex-col gap-2.5">
           {Array.from({ length: 4 }, (_, i) => (
@@ -118,7 +176,11 @@ export function AssetList() {
       )}
       {data && data.length > 0 && total === 0 && (
         <p className="py-10 text-center text-sm text-neutral-500">
-          Nothing matches &ldquo;{query}&rdquo;.
+          {needle ? (
+            <>Nothing matches &ldquo;{query}&rdquo; with these filters.</>
+          ) : (
+            "Nothing matches these filters."
+          )}
         </p>
       )}
 
