@@ -8,3 +8,17 @@
  * at somebody else's box.
  */
 export const SITE_URL = process.env.NEXT_PUBLIC_CACHET_SITE_URL ?? "https://cachetzec.com";
+
+/**
+ * Asset ids the landing showcase leads with, in display order.
+ *
+ * The landing is editorial; the console lists everything. Baked at build
+ * time like the site URL (NEXT_PUBLIC_CACHET_FEATURED_ASSETS, comma
+ * separated). Malformed entries are dropped rather than sent to the API.
+ */
+export const FEATURED_ASSET_IDS: readonly string[] = (
+  process.env.NEXT_PUBLIC_CACHET_FEATURED_ASSETS ?? ""
+)
+  .split(",")
+  .map((id) => id.trim().toLowerCase())
+  .filter((id) => /^[0-9a-f]{64}$/.test(id));

@@ -116,7 +116,10 @@ generate with `--generate-snapshot-key`), `CACHET_ADMIN_TOKEN` (enables
 the token-gated moderation API and the console's `/admin` page; must be
 at least 32 characters or it is refused — see SECURITY.md), and
 `CACHET_DISCORD_WEBHOOK` (posts relayed mints to a Discord webhook:
-asset ids and txid, never a client address). The console
+asset ids and txid, never a client address), and `CACHET_FEATURED_ASSETS`
+(comma-separated asset ids the landing showcase leads with, in order;
+baked into the console at build time by `deploy.sh`, so it is editorial
+for the landing only and the console keeps listing everything). The console
 builds with `NEXT_TELEMETRY_DISABLED=1` (CI and the prod image both set
 it; Next.js telemetry is off).
 

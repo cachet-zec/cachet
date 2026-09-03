@@ -21,6 +21,10 @@ All notable changes to Cachet are documented here. The format follows
   without picture.
 - The registry gains filters that compose with the search: supply state
   (all, sealed, open) and "named assets only".
+- The landing showcase leads with the operator's featured assets
+  (`CACHET_FEATURED_ASSETS`, baked at build time), then fills with the
+  newest attested entries. The landing is editorial; the console still
+  lists everything.
 - A terms and content policy page (`/terms`), linked from the footer:
   what the instance is, what may not be uploaded, what the operator does
   about it, privacy in one paragraph, and how to report content.

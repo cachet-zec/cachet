@@ -31,9 +31,14 @@ docker build -f "$DIR/Dockerfile.server" -t cachet-server:prod "$ROOT"
 # .env.prod. Both default to this deployment; point them at your own:
 #   CACHET_SITE_URL=https://example.org CACHET_API_URL=https://api.example.org \
 #     bash infra/prod/deploy.sh root@host
+# The landing's featured asset ids are baked in too. They are public, so
+# they may live in .env.prod next to the secrets for convenience; an
+# explicit CACHET_FEATURED_ASSETS in the environment wins.
+FEATURED="${CACHET_FEATURED_ASSETS:-$(grep -E '^CACHET_FEATURED_ASSETS=' "$DIR/.env.prod" | cut -d= -f2- || true)}"
 docker build -f "$DIR/Dockerfile.console" \
     --build-arg NEXT_PUBLIC_CACHET_API_URL="${CACHET_API_URL:-https://api.cachetzec.com}" \
     --build-arg NEXT_PUBLIC_CACHET_SITE_URL="${CACHET_SITE_URL:-https://cachetzec.com}" \
+    --build-arg NEXT_PUBLIC_CACHET_FEATURED_ASSETS="$FEATURED" \
     -t cachet-console:prod "$ROOT"
 
 echo "==> shipping images to $HOST (this is the slow part)"
