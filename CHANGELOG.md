@@ -6,6 +6,8 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-04
+
 ### Removed
 
 - Recognition of a third-party NFT descriptor convention, its manifest

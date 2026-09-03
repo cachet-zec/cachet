@@ -1,6 +1,6 @@
 {
   "name": "@cachet/api-client",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "private": true,
   "description": "Typed client for the Cachet API. Types are generated from the server's OpenAPI document \u2014 never written by hand.",
