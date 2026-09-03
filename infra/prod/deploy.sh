@@ -25,6 +25,14 @@ REMOTE=/opt/cachet
     exit 1
 }
 
+# Fail loudly before doing anything: with Docker Desktop stopped, `docker
+# build` errors out and a truncated log reads like a finished deploy while
+# production still runs the previous build.
+docker info >/dev/null 2>&1 || {
+    echo "Docker daemon is not reachable (is Docker Desktop running?). Nothing was built or shipped." >&2
+    exit 1
+}
+
 echo "==> building images"
 docker build -f "$DIR/Dockerfile.server" -t cachet-server:prod "$ROOT"
 # Baked into the JS bundle at build time, so neither can come from

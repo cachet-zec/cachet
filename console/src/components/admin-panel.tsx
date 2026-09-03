@@ -227,7 +227,8 @@ export function AdminPanel() {
                     <Link
                       href={`/assets/${asset.asset_id}`}
                       target="_blank"
-                      className="font-display text-base text-neutral-100 transition hover:text-[#e8b23a]"
+                      className="font-display min-w-0 max-w-full truncate text-base text-neutral-100 transition hover:text-[#e8b23a]"
+                      title={asset.display_name ?? asset.asset_id}
                     >
                       {asset.display_name ?? asset.asset_id.slice(0, 16)}
                     </Link>

@@ -280,7 +280,7 @@ export function AssetDetail({ assetId }: { assetId: string }) {
             </span>
           )}
           <div
-            className={`flex flex-wrap items-start gap-5 ${state.data.finalized ? "sm:pr-36" : ""}`}
+            className={`flex flex-wrap items-start gap-5 ${state.data.finalized ? "sm:pr-52" : ""}`}
           >
             {state.data.image_path ? (
               <SealedImage src={apiBaseUrl + state.data.image_path} />
@@ -293,8 +293,8 @@ export function AssetDetail({ assetId }: { assetId: string }) {
               <h1
                 className={
                   nameSource === "free_text"
-                    ? "font-display text-2xl font-semibold italic tracking-tight text-neutral-300"
-                    : "font-display text-2xl font-semibold tracking-tight text-neutral-50"
+                    ? "font-display text-2xl font-semibold italic tracking-tight text-neutral-300 [overflow-wrap:anywhere]"
+                    : "font-display text-2xl font-semibold tracking-tight text-neutral-50 [overflow-wrap:anywhere]"
                 }
               >
                 {displayName ?? <span className="italic text-neutral-500">Unresolved asset</span>}
