@@ -122,17 +122,9 @@ export function FeaturedAssets() {
             />
             {/* Provenance carried visibly, not just by typeface: on a
                 landing a reader has no way to tell a name sealed into an
-                asset id from a third party's on-chain identifier, and the
-                registry indexes both because it indexes everyone. Only
-                unsealed names need the caveat, as on the asset page. */}
-            {asset.name_source === "zmd1" && (
-              <span
-                className={`${stamp} shrink-0`}
-                title="ZMD-1 descriptor: a third party's on-chain machine identifier, recognised here"
-              >
-                zmd-1
-              </span>
-            )}
+                asset id from an issuer's free-text label, and the registry
+                indexes both because it indexes everyone. Only unsealed
+                names need the caveat, as on the asset page. */}
             {asset.name_source === "free_text" && (
               <span
                 className={`${stamp} shrink-0`}

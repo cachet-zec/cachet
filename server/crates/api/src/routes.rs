@@ -14,7 +14,6 @@ use crate::dto::{
     BatchIssueResponse, BurnAssetRequest, ChainInfoResponse, CollectionResponse, IssueAssetRequest,
     IssueAssetResponse, MetadataUploadRequest, MetadataUploadResponse, RawBlocksResponse,
     RelayRequest, ResolveDescriptionRequest, TransferAssetRequest, TxResponse,
-    Zmd1ManifestResponse,
 };
 use crate::error::ApiError;
 
@@ -26,10 +25,6 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/api/v1/chain", get(chain_info))
         .route("/api/v1/chain/transactions", get(raw_transactions))
         .route("/api/v1/snapshot", get(registry_snapshot))
-        .route(
-            "/api/v1/assets/{asset_id}/zmd1-manifest",
-            get(zmd1_manifest),
-        )
         .route("/api/v1/assets", get(list_assets).post(issue_asset))
         .route("/api/v1/assets/batch", post(issue_asset_batch))
         .route("/api/v1/collections", get(list_collections))
@@ -229,70 +224,6 @@ pub(crate) async fn registry_snapshot(
         .unwrap_or_else(|poisoned| poisoned.into_inner()) =
         Some((std::time::Instant::now(), sealed.clone()));
     Ok(Json(sealed))
-}
-
-/// Verified ZMD-1 full-form manifest of a foreign asset.
-///
-/// ZMD-1 (ZecBit's convention) full-form descriptors commit the chain to
-/// BLAKE2b-256 of a manifest document. This instance fetches the
-/// manifest from its IPFS gateway, verifies the hash, and serves the
-/// exact bytes — the same "the registry cannot lie" guarantee as
-/// Cachet's own envelope, applied to a neighbour's format. 404 when the
-/// asset has no resolved full-form descriptor; 422 when the fetched
-/// bytes do not match the on-chain commitment.
-#[utoipa::path(
-    get,
-    path = "/api/v1/assets/{asset_id}/zmd1-manifest",
-    tag = "registry",
-    params(("asset_id" = String, Path, description = "Asset id, hex-encoded 32 bytes")),
-    responses(
-        (status = 200, body = Zmd1ManifestResponse),
-        (status = 404, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
-        (status = 422, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
-        (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
-    )
-)]
-pub(crate) async fn zmd1_manifest(
-    State(state): State<AppState>,
-    Path(asset_id): Path<String>,
-) -> Result<Json<Zmd1ManifestResponse>, ApiError> {
-    let asset_id: AssetId = asset_id.parse().map_err(ApiError::Validation)?;
-    let asset = state.chain.asset_state(asset_id).await?;
-    {
-        let summary: AssetSummaryResponse = asset.clone().into();
-        refuse_hidden_issuer(&state, summary.issuer.as_deref()).await?;
-    }
-    let descriptor = asset
-        .description
-        .as_deref()
-        .and_then(cachet_domain::zmd1::Zmd1Descriptor::parse)
-        .ok_or(ApiError::NotFound {
-            what: "ZMD-1 descriptor",
-        })?;
-    let (Some(cid), Some(content_hash)) = (&descriptor.manifest_cid, &descriptor.content_hash)
-    else {
-        return Err(ApiError::NotFound {
-            what: "ZMD-1 full-form manifest (this descriptor is minimal-form)",
-        });
-    };
-
-    let manifest = crate::zmd1_manifest::fetch_verified(&state.ipfs_gateway, cid, content_hash)
-        .await
-        .map_err(|error| match error {
-            crate::zmd1_manifest::ManifestError::Unavailable(reason) => {
-                ApiError::Chain(cachet_chain::ChainError::Unavailable { reason })
-            }
-            other => ApiError::Chain(cachet_chain::ChainError::Rejected {
-                reason: other.to_string(),
-            }),
-        })?;
-
-    Ok(Json(Zmd1ManifestResponse {
-        manifest,
-        cid: cid.clone(),
-        content_hash: content_hash.clone(),
-        display_name: descriptor.display_name(),
-    }))
 }
 
 /// Spendable balances of the wallet's tracked accounts.
@@ -871,8 +802,8 @@ pub(crate) async fn issue_asset_batch(
 /// Verified, permissionless, and deliberately open on read-only
 /// deployments: the chain stores only the description hash (ZIP 227), so a
 /// submission either matches the on-chain commitment or is rejected — the
-/// registry cannot be lied to. This is how assets issued elsewhere (e.g.
-/// ZMD-1 collections) gain names here.
+/// registry cannot be lied to. This is how assets issued elsewhere gain
+/// names here.
 #[utoipa::path(
     post,
     path = "/api/v1/assets/{asset_id}/description",

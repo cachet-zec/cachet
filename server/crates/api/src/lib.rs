@@ -19,7 +19,6 @@ pub fn with_health(router: axum::Router) -> axum::Router {
     router.route("/healthz", axum::routing::get(routes::health))
 }
 pub mod snapshot;
-pub mod zmd1_manifest;
 
 use std::sync::Arc;
 
@@ -40,10 +39,6 @@ pub struct AppState {
     /// Operator key for signed registry snapshots; absent → the snapshot
     /// endpoint answers 503 (CACHET_SNAPSHOT_KEY).
     pub snapshot_key: Option<Arc<ed25519_dalek::SigningKey>>,
-    /// IPFS gateway used to resolve ZMD-1 full-form manifests
-    /// (CACHET_IPFS_GATEWAY, default ipfs.io). Server-side fetches only:
-    /// visitors' browsers never touch a gateway.
-    pub ipfs_gateway: Arc<str>,
     /// Bearer token guarding the operator admin surface. Absent (the
     /// default) → every admin route answers 404, indistinguishable from
     /// not existing (CACHET_ADMIN_TOKEN).
@@ -139,7 +134,6 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         routes::chain_info,
         routes::raw_transactions,
         routes::registry_snapshot,
-        routes::zmd1_manifest,
         routes::list_assets,
         routes::list_collections,
         routes::issue_asset,
@@ -161,7 +155,6 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
     components(schemas(
         dto::ChainInfoResponse,
         snapshot::SnapshotResponse,
-        dto::Zmd1ManifestResponse,
         dto::RawBlocksResponse,
         dto::RawBlockResponse,
         dto::IssueAssetRequest,
@@ -203,7 +196,6 @@ pub fn router(
         metadata,
         read_only,
         snapshot_key,
-        ipfs_gateway: zmd1_manifest::gateway_from_env().into(),
         admin_token: accepted_admin_token(std::env::var("CACHET_ADMIN_TOKEN").ok()),
         mint_webhook: std::env::var("CACHET_DISCORD_WEBHOOK")
             .ok()

@@ -6,6 +6,17 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- Recognition of a third-party NFT descriptor convention, its manifest
+  resolution route and the IPFS gateway setting that served it. The
+  registry now knows two kinds of names: sealed into the asset id by the
+  Cachet envelope, or an issuer's unverified free-text label. Assets
+  carrying that convention's descriptors are listed like any other
+  asset with a free-text description.
+- Working paper v1.3 (3 September): the registry section and the
+  references follow the change above; nothing else moved.
+
 ### Added
 
 - The generated seed is masked by default (fixed-width dots, so even word
@@ -79,8 +90,8 @@ All notable changes to Cachet are documented here. The format follows
   capped per client in flight, and a `submitblock` verdict is a rejection
   immediately. The key is a salted hash of the address (salt drawn at
   boot, memory only, never logged), documented in PRIVACY.md P2.
-- Issuer-level moderation is applied on the description-resolution and
-  ZMD-1 manifest routes too; they previously bypassed it.
+- Issuer-level moderation is applied on the description-resolution
+  route too; it previously bypassed it.
 - The admin token comparison hashes both sides to a fixed size first, so
   the configured token's length no longer shapes the timing.
 - `.gitignore` covers every `.env*` file, not just the local variants.
@@ -98,8 +109,8 @@ All notable changes to Cachet are documented here. The format follows
   the asset id from the issuance validating key and the description it was
   served, and compares it with the id it asked for. A registry can serve
   any description; it cannot serve one that derives the right id.
-  The check covers every asset with a description, so ZMD-1 and free-text
-  names are checkable too, not only sealed ones.
+  The check covers every asset with a description, so free-text names
+  are checkable too, not only sealed ones.
 - `cachet-verify-engine`: a second, much smaller wasm module (247 KB
   against the mint engine's 4 MB) carrying the derivation and nothing
   else - no Halo2 circuit, no keys. Loaded once per session, only when
@@ -125,7 +136,7 @@ All notable changes to Cachet are documented here. The format follows
 ### Changed
 
 - The registry list orders assets whose name is attested first (sealed,
-  then ZMD-1, then unverified label, then unresolved). Reordering, not
+  then unverified label, then unresolved). Reordering, not
   filtering: every asset stays listed, the count is unchanged, and one
   click returns to strict chain order.
 - The verification badge states what was actually established - full
@@ -142,8 +153,8 @@ All notable changes to Cachet are documented here. The format follows
   the attention colour since it carries dilution risk for the holder); and
   reissuing announces itself before proving and on the receipt instead of
   silently adding units to an existing asset.
-- Names in the landing showcase carry their provenance visibly ("zmd-1",
-  "unverified") — the anti-phishing display rule applied where only
+- Names in the landing showcase carry their provenance visibly
+  ("unverified") — the anti-phishing display rule applied where only
   typeface used to carry it.
 - The navbar and footer GitHub links land on the repository rather than
   the organization page.
@@ -228,15 +239,6 @@ storage sweep rather than by a restriction.
   relayed through the instance posts its asset ids and txid (public
   chain data, never a client address) to a Discord webhook.
   Documented in PRIVACY.md P8; off by default.
-
-- **ZMD-1 full-form manifest verification**: foreign assets whose
-  descriptor commits to a manifest (`zmd1|…|<cid>|<blake2b-256>`) get it
-  fetched server-side from the operator's IPFS gateway
-  (`CACHET_IPFS_GATEWAY`, default ipfs.io), verified byte-for-byte
-  against the on-chain hash, cached (content-addressed), and rendered on
-  the asset page with a verified badge — name, description, attributes;
-  images stay explicit external links. A mismatch is a 422, never a
-  silent substitution. Visitors' browsers never contact a gateway.
 
 - **Browser transfers and burns**: the mint studio now carries a full
   wallet. The page fetches raw blocks (`GET /api/v1/chain/transactions`,
@@ -341,10 +343,8 @@ read-only instance on the public ZSA testnet.
 /api/v1/assets/{id}/description` records an asset's plaintext description
   only if it hashes to the on-chain commitment (personalized BLAKE2b-256,
   ZIP 227). Open on read-only deployments — verification, not issuance.
-- ZMD-1 interop: descriptions matching ZecBit's published descriptor
-  grammar display under the canonical `slug #index` form; every display
-  name now carries a `name_source` (`envelope` / `zmd1` / `free_text`) and
-  the console renders unverified free-text labels distinctly
+- Every display name carries a `name_source` (`envelope` / `free_text`)
+  and the console renders unverified free-text labels distinctly
   (anti-phishing display rule shared with ZIP 227 guidance).
 
 - Mint studio: issue OrchardZSA assets with metadata sealed into the asset id

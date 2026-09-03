@@ -3,7 +3,6 @@
  * never rendered without its provenance.
  *
  * - `envelope`  — sealed into the asset id via the metadata hash: a real name.
- * - `zmd1`      — on-chain machine identifier (`slug #index`): monospace.
  * - `free_text` — issuer-chosen, unverified label: dimmed italic.
  * - none        — unresolved: only the asset id identifies it.
  */
@@ -26,16 +25,6 @@ export function AssetName({
           {assetId.slice(0, 12)}…
         </span>
         <span className="shrink-0 text-xs italic text-neutral-600">unresolved</span>
-      </span>
-    );
-  }
-  if (source === "zmd1") {
-    return (
-      <span
-        className="font-data truncate text-sm text-neutral-200"
-        title="ZMD-1 descriptor: an on-chain machine identifier"
-      >
-        {name}
       </span>
     );
   }

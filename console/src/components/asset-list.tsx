@@ -12,13 +12,13 @@ const PAGE_SIZE = 8;
 
 /**
  * How strongly a name is attested, best first: sealed into the asset id,
- * then an on-chain machine identifier, then an unverified issuer label,
- * then nothing at all. Ordering by this is a view preference, not
- * moderation - every asset stays listed either way.
+ * then an unverified issuer label, then nothing at all. Ordering by this
+ * is a view preference, not moderation - every asset stays listed either
+ * way.
  */
-const NAME_RANK: Record<string, number> = { envelope: 0, zmd1: 1, free_text: 2 };
+const NAME_RANK: Record<string, number> = { envelope: 0, free_text: 1 };
 const rank = (source: string | null | undefined) =>
-  source === null || source === undefined ? 3 : (NAME_RANK[source] ?? 3);
+  source === null || source === undefined ? 2 : (NAME_RANK[source] ?? 2);
 
 export function AssetList() {
   const [page, setPage] = useState(0);

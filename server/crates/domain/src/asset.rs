@@ -237,8 +237,8 @@ pub struct AssetSummary {
 }
 
 /// A collection: the set of assets sharing one issuance key. This is the
-/// chain-level notion of a collection — the same definition ZMD-1 uses —
-/// and everything in it is exact public chain data.
+/// chain-level notion of a collection, and everything in it is exact
+/// public chain data.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CollectionSummary {
     /// Issuance validating key, ZIP 227 canonical encoding, lowercase hex.

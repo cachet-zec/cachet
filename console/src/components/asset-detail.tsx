@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { AssetEvents } from "@/components/asset-events";
-import { Zmd1Manifest } from "@/components/zmd1-manifest";
 import { CopyButton } from "@/components/copy-button";
 import { api, apiBaseUrl, problemMessage } from "@/lib/api";
 import { safeExternalHref } from "@/lib/safe-href";
@@ -88,7 +87,7 @@ function useVerifiedBundle(envelope: Envelope | null) {
  * self-consistent: a registry can serve any description it likes, but it
  * cannot serve one that derives the asset id the reader asked for unless it
  * is the real one. Applies to every asset with a description, whatever the
- * format - envelope, ZMD-1 or free text.
+ * format - envelope or free text.
  */
 function useDerivedIdentity(assetId: string, issuer?: string | null, description?: string | null) {
   return useQuery({
@@ -329,14 +328,6 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                     issuer can mint more
                   </span>
                 )}
-                {nameSource === "zmd1" && (
-                  <span
-                    className={stamp}
-                    title="ZMD-1 descriptor: an on-chain machine identifier issued by a third party"
-                  >
-                    zmd-1 descriptor
-                  </span>
-                )}
                 {nameSource === "free_text" && (
                   <span className={stamp} title="Issuer-chosen free text; not a verified name">
                     unverified label
@@ -429,8 +420,6 @@ export function AssetDetail({ assetId }: { assetId: string }) {
             )}
             {!state.data.description && <ResolveDescription assetId={assetId} />}
           </dl>
-
-          {nameSource === "zmd1" && <Zmd1Manifest assetId={assetId} />}
 
           <AssetEvents assetId={assetId} />
         </div>

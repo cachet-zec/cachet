@@ -9,7 +9,6 @@
 pub mod asset;
 pub mod id;
 pub mod metadata;
-pub mod zmd1;
 
 pub use asset::{
     AccountBalances, AssetDescription, AssetEvent, AssetEventKind, AssetState, AssetSummary,
@@ -18,7 +17,6 @@ pub use asset::{
 };
 pub use id::{AssetId, TxId};
 pub use metadata::{ChainDescription, MetadataBundle};
-pub use zmd1::{Zmd1Descriptor, Zmd1Form};
 
 /// Where a display name came from — clients must render names differently
 /// depending on how much the chain vouches for them (anti-phishing: a name
@@ -28,9 +26,6 @@ pub enum NameSource {
     /// Cachet v1 envelope: the name is sealed (via the bundle hash) into
     /// the asset id itself.
     Envelope,
-    /// ZMD-1 canonical form `<slug> #<index>`: a machine identifier
-    /// committed on-chain; the human-facing manifest lives elsewhere.
-    Zmd1,
     /// Free-text on-chain description: issuer-chosen, no format, display
     /// only as an unverified label.
     FreeText,
@@ -41,9 +36,6 @@ pub enum NameSource {
 pub fn display_name_for(description: &str) -> (String, NameSource) {
     if let Some(envelope) = ChainDescription::parse(description) {
         return (envelope.name, NameSource::Envelope);
-    }
-    if let Some(descriptor) = Zmd1Descriptor::parse(description) {
-        return (descriptor.display_name(), NameSource::Zmd1);
     }
     (description.to_owned(), NameSource::FreeText)
 }

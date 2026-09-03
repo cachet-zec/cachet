@@ -71,9 +71,9 @@ trust unverified metadata.
 
 ## Why no creator signature on the bundle
 
-Some metadata conventions (e.g. ZMD-1's _minimal_ form) sign manifests
-with the issuance key because their metadata can be revised after
-issuance. Cachet's envelope needs no separate signature: the bundle hash
+Some metadata conventions sign manifests with the issuance key because
+their metadata can be revised after issuance. Cachet's envelope needs no
+separate signature: the bundle hash
 is inside the chain description, the chain description hash is inside the
 asset id, and the asset id derivation is authenticated by the issuance
 bundle's own ZIP 227 signature. The chain's signature already covers
@@ -144,27 +144,13 @@ exercised at the server (database access) or through an optional
 token-gated HTTP admin surface, which answers 404 unless the operator
 sets `CACHET_ADMIN_TOKEN`.
 
-## Foreign conventions: ZMD-1
+## Names carry their provenance
 
-Cachet is neutral infrastructure and recognizes descriptors from other
-ecosystems. Descriptions matching ZecBit's published ZMD-1 grammar
-(`zmd1|<collection>|<index>[|<manifest-cid>|<content-hash>]`) are parsed
-and displayed under the canonical short form `<slug> #<index>` — never as
-raw strings, per the shared anti-phishing display rule. The API labels
-every display name with its provenance (`name_source`: `envelope`,
-`zmd1`, or `free_text`) so clients can render trust states honestly.
-
-Full-form descriptors are resolved all the way:
-`GET /api/v1/assets/{id}/zmd1-manifest` fetches the manifest the
-descriptor names (server-side, from the operator's IPFS gateway,
-`CACHET_IPFS_GATEWAY`, default `ipfs.io` — visitors' browsers never
-contact a gateway), verifies plain BLAKE2b-256 of the bytes against the
-on-chain content hash, and serves the exact verified text (64 KB bound,
-content-addressed and cached). A mismatch is a 422, never a silent
-substitution: the same "the registry cannot lie" guarantee as the
-envelope, applied to a neighbour's format. Manifest images are rendered
-as explicit external links only — this registry embeds and proxies no
-third-party content.
+The API labels every display name with its provenance (`name_source`:
+`envelope` or `free_text`) so clients can render trust states honestly.
+A description that is not a Cachet envelope is an issuer-chosen label:
+displayed, but never as a verified name, per the anti-phishing display
+rule ZIP 227 asks wallets to adopt.
 
 ## Signed registry snapshots (v1)
 

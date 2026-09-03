@@ -1,6 +1,6 @@
 /**
- * URL fields inside metadata bundles and ZMD-1 manifests are
- * attacker-authored: the hash checks prove integrity, not safety. A link
+ * URL fields inside metadata bundles are attacker-authored: the hash
+ * checks prove integrity, not safety. A link
  * is only ever rendered for http(s) targets — `javascript:`, `data:` and
  * every other scheme come back as null and must render as plain text.
  */

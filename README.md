@@ -83,12 +83,9 @@ while balances and transfers stay shielded, as Zcash intends.
 - **Resolve** — the chain stores only description _hashes_; anyone can teach
   the registry an asset's plaintext description, and it is accepted only if
   it hashes to the on-chain commitment (ZIP 227). Permissionless and
-  unforgeable — the registry cannot be lied to. Foreign conventions are
-  recognized end to end: ZMD-1 descriptors display under their canonical
-  `slug #index` form, and full-form descriptors get their manifest
-  fetched, BLAKE2b-verified against the on-chain commitment and rendered
-  (`GET /api/v1/assets/{id}/zmd1-manifest`) — every name labeled by its
-  provenance.
+  unforgeable — the registry cannot be lied to. Every name is labeled by
+  its provenance: sealed into the asset id, or an issuer's unverified
+  free-text label.
 - **Publish** — `CACHET_READ_ONLY=1` turns an instance into a public,
   browse-and-verify deployment with every wallet-signing mutation
   disabled (HTTP 403). Description resolution (verification, not

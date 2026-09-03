@@ -109,9 +109,7 @@ throttles on `X-Forwarded-For` / `X-Real-IP` — only behind a reverse
 proxy you control; the throttles themselves are fixed: 60 metadata
 uploads a minute and 8 relays in flight per client, 429 beyond),
 `CACHET_SYNC_INTERVAL_SECS`
-(background registry sync cadence, default 30), `CACHET_IPFS_GATEWAY`
-(ZMD-1 manifest resolution, default `https://ipfs.io`),
-`CACHET_SNAPSHOT_KEY` (Ed25519 seed enabling signed registry snapshots;
+(background registry sync cadence, default 30), `CACHET_SNAPSHOT_KEY` (Ed25519 seed enabling signed registry snapshots;
 generate with `--generate-snapshot-key`), `CACHET_ADMIN_TOKEN` (enables
 the token-gated moderation API and the console's `/admin` page; must be
 at least 32 characters or it is refused — see SECURITY.md), and

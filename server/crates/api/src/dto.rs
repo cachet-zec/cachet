@@ -81,20 +81,6 @@ impl RawBlocksResponse {
     }
 }
 
-/// A verified ZMD-1 full-form manifest (foreign convention, ZecBit).
-#[derive(Debug, Serialize, ToSchema)]
-pub struct Zmd1ManifestResponse {
-    /// The raw manifest text, byte-exact as fetched and verified. Clients
-    /// may re-hash it (BLAKE2b-256, plain) against `content_hash`.
-    pub manifest: String,
-    /// CIDv1 the descriptor names.
-    pub cid: String,
-    /// The on-chain content hash the manifest bytes were verified against.
-    pub content_hash: String,
-    /// Canonical short name, `<collection> #<index>`.
-    pub display_name: String,
-}
-
 /// One asset held by a wallet account.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct HoldingResponse {
@@ -212,11 +198,11 @@ pub struct BatchIssueResponse {
 /// Permissionless by design: the chain stores only the description hash
 /// (ZIP 227), so a preimage either matches the commitment or is rejected —
 /// the registry cannot be lied to. This is how assets issued by *other*
-/// parties (e.g. ZMD-1 collections) gain names here.
+/// parties gain names here.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct ResolveDescriptionRequest {
     /// The plaintext asset description (1–512 bytes).
-    #[schema(example = "zmd1|zecbit-genesis|1", min_length = 1, max_length = 512)]
+    #[schema(example = "Testnet Sample", min_length = 1, max_length = 512)]
     pub description: String,
 }
 
@@ -314,13 +300,12 @@ pub struct AssetSummaryResponse {
     /// this instance (local journal).
     pub description: Option<String>,
     /// Safest human-readable name derived from the description: the sealed
-    /// envelope name, a ZMD-1 canonical form (`slug #index`), or the raw
-    /// free text. Render it according to `name_source`.
+    /// envelope name or the raw free text. Render it according to
+    /// `name_source`.
     pub display_name: Option<String>,
     /// Where `display_name` comes from — `envelope` (sealed into the asset
-    /// id), `zmd1` (on-chain machine identifier), or `free_text`
-    /// (issuer-chosen, unverified label). Anti-phishing: clients must not
-    /// present a name without its provenance.
+    /// id) or `free_text` (issuer-chosen, unverified label). Anti-phishing:
+    /// clients must not present a name without its provenance.
     #[schema(example = "envelope")]
     pub name_source: Option<String>,
     /// Server-relative path to the asset's image (serve from the API
@@ -346,7 +331,6 @@ impl From<cachet_domain::AssetSummary> for AssetSummaryResponse {
                 Some(
                     match source {
                         cachet_domain::NameSource::Envelope => "envelope",
-                        cachet_domain::NameSource::Zmd1 => "zmd1",
                         cachet_domain::NameSource::FreeText => "free_text",
                     }
                     .to_owned(),

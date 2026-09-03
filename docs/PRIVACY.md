@@ -101,10 +101,6 @@ nobody has to discover it:
   as it is to any relay on any chain. Users who want to remove even that
   can reach the instance over Tor, or run their own (see P3's endgame:
   this instance is a convenience, not a chokepoint).
-- **Operator ↔ IPFS gateway.** Resolving a ZMD-1 full-form manifest makes
-  the _server_ fetch a CID from its configured gateway: the gateway
-  learns which manifests this registry resolves — operator-level
-  metadata, never visitor-level (visitors' browsers contact no gateway).
 - **Operator ↔ Discord (opt-in).** When the operator configures
   `CACHET_DISCORD_WEBHOOK`, a mint relayed through this instance posts
   the minted asset ids and txid — public chain data — to a Discord
@@ -121,6 +117,5 @@ nobody has to discover it:
   link your eventual genuine spend. Same relay ↔ IP trust boundary as
   above; the same answer applies (Tor, or run your own instance).
 
-_Verify:_ the relay handler logs txids only (P2); the manifest fetch
-lives server-side in `crates/api/src/zmd1_manifest.rs`; the console makes
-no third-party requests (P5).
+_Verify:_ the relay handler logs txids only (P2); the console makes no
+third-party requests (P5).

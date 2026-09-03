@@ -853,31 +853,6 @@ async fn description_resolution_stays_open_in_read_only_mode() {
 }
 
 #[tokio::test]
-async fn zmd1_descriptors_display_canonically() {
-    let app = app();
-    let (_, issued) = send(
-        &app,
-        post_json(
-            "/api/v1/assets",
-            json!({"description": "zmd1|zecbit-genesis|1", "amount": 1, "finalize": true}),
-        ),
-    )
-    .await;
-    let asset_id = issued["asset_id"].as_str().unwrap();
-
-    let (status, asset) = send(
-        &app,
-        Request::get(format!("/api/v1/assets/{asset_id}"))
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(asset["display_name"], "zecbit-genesis #1");
-    assert_eq!(asset["name_source"], "zmd1");
-}
-
-#[tokio::test]
 async fn assets_carry_their_issuer_and_collections_group_them() {
     let app = app();
     send(
@@ -1087,50 +1062,4 @@ async fn snapshot_signed_and_verifiable() {
         .find(|a| a["asset_id"] == asset_id)
         .expect("minted asset is in the snapshot");
     assert_eq!(entry["total_supply"], 3);
-}
-
-/// ZMD-1 manifest endpoint: 404 for non-ZMD-1 assets and for
-/// minimal-form descriptors (no manifest committed on chain).
-#[tokio::test]
-async fn zmd1_manifest_requires_a_full_form_descriptor() {
-    let app = app();
-
-    // Not ZMD-1 at all.
-    let (_, issued) = send(
-        &app,
-        post_json(
-            "/api/v1/assets",
-            json!({"description": "Plain", "amount": 1}),
-        ),
-    )
-    .await;
-    let plain_id = issued["asset_id"].as_str().unwrap();
-    let (status, _) = send(
-        &app,
-        Request::get(format!("/api/v1/assets/{plain_id}/zmd1-manifest"))
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-
-    // ZMD-1, but minimal form: identity only, nothing to fetch.
-    let (_, issued) = send(
-        &app,
-        post_json(
-            "/api/v1/assets",
-            json!({"description": "zmd1|cachet-test|1", "amount": 1}),
-        ),
-    )
-    .await;
-    let minimal_id = issued["asset_id"].as_str().unwrap();
-    let (status, body) = send(
-        &app,
-        Request::get(format!("/api/v1/assets/{minimal_id}/zmd1-manifest"))
-            .body(Body::empty())
-            .unwrap(),
-    )
-    .await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    assert!(body["detail"].as_str().unwrap().contains("minimal-form"));
 }

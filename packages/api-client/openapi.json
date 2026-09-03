@@ -11,7 +11,9 @@
   "paths": {
     "/api/v1/admin/moderation": {
       "get": {
-        "tags": ["ops"],
+        "tags": [
+          "ops"
+        ],
         "summary": "Every moderation entry, for the operator's audit view.",
         "operationId": "list",
         "responses": {
@@ -34,7 +36,9 @@
         }
       },
       "post": {
-        "tags": ["ops"],
+        "tags": [
+          "ops"
+        ],
         "summary": "Hide a bundle, description or issuer from this registry's distribution.",
         "operationId": "hide",
         "requestBody": {
@@ -57,7 +61,9 @@
         }
       },
       "delete": {
-        "tags": ["ops"],
+        "tags": [
+          "ops"
+        ],
         "summary": "Lift a moderation entry.",
         "operationId": "unhide",
         "requestBody": {
@@ -82,7 +88,9 @@
     },
     "/api/v1/assets": {
       "get": {
-        "tags": ["registry"],
+        "tags": [
+          "registry"
+        ],
         "summary": "List every asset observed on the chain, newest first.",
         "description": "`resolved=true` narrows the listing to assets whose description is\nknown, which is what a client wants when it intends to show names\nrather than ids. Everything stays reachable without it.",
         "operationId": "list_assets",
@@ -93,7 +101,10 @@
             "description": "Keep only the newest N assets. Omitted: the whole registry (what a\nclient doing its own search or mirroring wants).",
             "required": false,
             "schema": {
-              "type": ["integer", "null"],
+              "type": [
+                "integer",
+                "null"
+              ],
               "minimum": 0
             }
           },
@@ -103,7 +114,10 @@
             "description": "`true`: keep only assets whose description is known, so their name\nis attested rather than an id. Omitted: everything, which stays the\ndefault - this is a caller's view preference, never moderation.",
             "required": false,
             "schema": {
-              "type": ["boolean", "null"]
+              "type": [
+                "boolean",
+                "null"
+              ]
             }
           }
         ],
@@ -134,7 +148,9 @@
         }
       },
       "post": {
-        "tags": ["issuance"],
+        "tags": [
+          "issuance"
+        ],
         "summary": "Issue units of an asset (creates the asset on first issuance).",
         "operationId": "issue_asset",
         "requestBody": {
@@ -203,7 +219,9 @@
     },
     "/api/v1/assets/batch": {
       "post": {
-        "tags": ["issuance"],
+        "tags": [
+          "issuance"
+        ],
         "summary": "Mint several assets in ONE transaction (a single ZIP 227 issuance\nbundle, one action per item, all-or-nothing).",
         "operationId": "issue_asset_batch",
         "requestBody": {
@@ -272,7 +290,9 @@
     },
     "/api/v1/assets/{asset_id}": {
       "get": {
-        "tags": ["registry"],
+        "tags": [
+          "registry"
+        ],
         "summary": "Read the on-chain state of an asset, with its registry enrichment\n(journaled description, display name, image) when known.",
         "operationId": "get_asset",
         "parameters": [
@@ -332,7 +352,9 @@
     },
     "/api/v1/assets/{asset_id}/burns": {
       "post": {
-        "tags": ["issuance"],
+        "tags": [
+          "issuance"
+        ],
         "summary": "Permanently destroy units of an asset held by the wallet.",
         "operationId": "burn_asset",
         "parameters": [
@@ -412,9 +434,11 @@
     },
     "/api/v1/assets/{asset_id}/description": {
       "post": {
-        "tags": ["registry"],
+        "tags": [
+          "registry"
+        ],
         "summary": "Teach the registry the plaintext description of an on-chain asset.",
-        "description": "Verified, permissionless, and deliberately open on read-only\ndeployments: the chain stores only the description hash (ZIP 227), so a\nsubmission either matches the on-chain commitment or is rejected — the\nregistry cannot be lied to. This is how assets issued elsewhere (e.g.\nZMD-1 collections) gain names here.",
+        "description": "Verified, permissionless, and deliberately open on read-only\ndeployments: the chain stores only the description hash (ZIP 227), so a\nsubmission either matches the on-chain commitment or is rejected — the\nregistry cannot be lied to. This is how assets issued elsewhere gain\nnames here.",
         "operationId": "resolve_description",
         "parameters": [
           {
@@ -493,7 +517,9 @@
     },
     "/api/v1/assets/{asset_id}/events": {
       "get": {
-        "tags": ["registry"],
+        "tags": [
+          "registry"
+        ],
         "summary": "Public events of an asset's life, oldest first. Transfers are shielded\nand never listed.",
         "operationId": "asset_events",
         "parameters": [
@@ -546,7 +572,9 @@
     },
     "/api/v1/assets/{asset_id}/transfers": {
       "post": {
-        "tags": ["issuance"],
+        "tags": [
+          "issuance"
+        ],
         "summary": "Transfer units of an asset from the wallet to a recipient.",
         "operationId": "transfer_asset",
         "parameters": [
@@ -624,70 +652,11 @@
         }
       }
     },
-    "/api/v1/assets/{asset_id}/zmd1-manifest": {
-      "get": {
-        "tags": ["registry"],
-        "summary": "Verified ZMD-1 full-form manifest of a foreign asset.",
-        "description": "ZMD-1 (ZecBit's convention) full-form descriptors commit the chain to\nBLAKE2b-256 of a manifest document. This instance fetches the\nmanifest from its IPFS gateway, verifies the hash, and serves the\nexact bytes — the same \"the registry cannot lie\" guarantee as\nCachet's own envelope, applied to a neighbour's format. 404 when the\nasset has no resolved full-form descriptor; 422 when the fetched\nbytes do not match the on-chain commitment.",
-        "operationId": "zmd1_manifest",
-        "parameters": [
-          {
-            "name": "asset_id",
-            "in": "path",
-            "description": "Asset id, hex-encoded 32 bytes",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Zmd1ManifestResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "",
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProblemDetails"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/chain": {
       "get": {
-        "tags": ["chain"],
+        "tags": [
+          "chain"
+        ],
         "summary": "Identify the connected network and chain tip.",
         "operationId": "chain_info",
         "responses": {
@@ -716,7 +685,9 @@
     },
     "/api/v1/chain/transactions": {
       "get": {
-        "tags": ["chain"],
+        "tags": [
+          "chain"
+        ],
         "summary": "Raw transactions of a block range, for client-side note scanning.",
         "description": "Public chain data, identical for every caller — a browser wallet\ndownloads these pages and trial-decrypts locally, so this instance\nnever learns which notes belong to whom (PRIVACY.md). Open on\nread-only deployments for the same reason as description resolution:\nserving public data is not signing.",
         "operationId": "raw_transactions",
@@ -738,7 +709,10 @@
             "description": "Blocks per page (1-100, default 25).",
             "required": false,
             "schema": {
-              "type": ["integer", "null"],
+              "type": [
+                "integer",
+                "null"
+              ],
               "format": "int64",
               "minimum": 0
             }
@@ -770,7 +744,9 @@
     },
     "/api/v1/collections": {
       "get": {
-        "tags": ["registry"],
+        "tags": [
+          "registry"
+        ],
         "summary": "Chain-level collections: every asset minted under one issuance key,\ngrouped — the only provenance statement the chain itself makes.",
         "operationId": "list_collections",
         "responses": {
@@ -802,7 +778,9 @@
     },
     "/api/v1/metadata": {
       "post": {
-        "tags": ["metadata"],
+        "tags": [
+          "metadata"
+        ],
         "summary": "Register a metadata bundle and get back the on-chain description that\nbinds it to the asset at issuance.",
         "operationId": "upload_metadata",
         "requestBody": {
@@ -871,7 +849,9 @@
     },
     "/api/v1/metadata/{sha256}": {
       "get": {
-        "tags": ["metadata"],
+        "tags": [
+          "metadata"
+        ],
         "summary": "Fetch a metadata bundle by its content hash. Verifiable: re-hash the\nbody and compare with the path.",
         "operationId": "get_metadata",
         "parameters": [
@@ -914,7 +894,9 @@
     },
     "/api/v1/metadata/{sha256}/image": {
       "get": {
-        "tags": ["metadata"],
+        "tags": [
+          "metadata"
+        ],
         "summary": "Serve the image embedded in a metadata bundle (same-origin, so the\nconsole never fetches third-party assets — PRIVACY.md P5).",
         "operationId": "get_metadata_image",
         "parameters": [
@@ -957,7 +939,9 @@
     },
     "/api/v1/relay": {
       "post": {
-        "tags": ["chain"],
+        "tags": [
+          "chain"
+        ],
         "summary": "Relay a fully signed, browser-built issuance transaction to the chain.",
         "description": "Deliberately open on read-only deployments: read-only means \"this\ninstance signs nothing\", and a relayed transaction was signed by the\nsender's own browser-held key. The relay can refuse; it cannot alter.",
         "operationId": "relay_transaction",
@@ -1027,7 +1011,9 @@
     },
     "/api/v1/snapshot": {
       "get": {
-        "tags": ["snapshot"],
+        "tags": [
+          "snapshot"
+        ],
         "summary": "Signed registry snapshot: a deterministic export of every asset the\nregistry knows, sealed under the operator's Ed25519 key so mirrors can\nserve it offline and clients can verify it (see the registry spec for\nthe verification procedure). 503 until the operator configures\nCACHET_SNAPSHOT_KEY.",
         "operationId": "registry_snapshot",
         "responses": {
@@ -1056,7 +1042,9 @@
     },
     "/api/v1/wallet": {
       "get": {
-        "tags": ["issuance"],
+        "tags": [
+          "issuance"
+        ],
         "summary": "Spendable balances of the wallet's tracked accounts.",
         "description": "Disabled on read-only deployments: the operator's shielded balances are\nexactly the kind of information this project exists to keep private,\nand a public instance must not broadcast them.",
         "operationId": "wallet_balances",
@@ -1099,7 +1087,9 @@
     },
     "/healthz": {
       "get": {
-        "tags": ["ops"],
+        "tags": [
+          "ops"
+        ],
         "summary": "Liveness probe. Does not touch the chain: a wedged node must not make the\nprocess look dead.",
         "operationId": "health",
         "responses": {
@@ -1115,7 +1105,10 @@
       "AccountBalancesResponse": {
         "type": "object",
         "description": "Spendable balances of one wallet account.",
-        "required": ["account", "holdings"],
+        "required": [
+          "account",
+          "holdings"
+        ],
         "properties": {
           "account": {
             "type": "integer",
@@ -1133,7 +1126,12 @@
       "AssetEventResponse": {
         "type": "object",
         "description": "One public event of an asset's life. Transfers are shielded and never\nlisted.",
-        "required": ["height", "txid", "kind", "amount"],
+        "required": [
+          "height",
+          "txid",
+          "kind",
+          "amount"
+        ],
         "properties": {
           "amount": {
             "type": "integer",
@@ -1159,34 +1157,53 @@
       "AssetSummaryResponse": {
         "type": "object",
         "description": "The public record of one asset: a registry listing row, and also the\nfull response of the single-asset endpoint.",
-        "required": ["asset_id", "total_supply", "finalized"],
+        "required": [
+          "asset_id",
+          "total_supply",
+          "finalized"
+        ],
         "properties": {
           "asset_id": {
             "type": "string",
             "description": "Asset id (hex-encoded 32 bytes)."
           },
           "description": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Raw chain description, when known. The chain only stores the\ndescription hash, so this is present only for assets issued through\nthis instance (local journal)."
           },
           "display_name": {
-            "type": ["string", "null"],
-            "description": "Safest human-readable name derived from the description: the sealed\nenvelope name, a ZMD-1 canonical form (`slug #index`), or the raw\nfree text. Render it according to `name_source`."
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Safest human-readable name derived from the description: the sealed\nenvelope name or the raw free text. Render it according to\n`name_source`."
           },
           "finalized": {
             "type": "boolean"
           },
           "image_path": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Server-relative path to the asset's image (serve from the API\norigin), when a stored metadata bundle embeds one."
           },
           "issuer": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "The issuance validating key that minted this asset (ZIP 227\ncanonical encoding, lowercase hex). The chain's only provenance\nstatement: assets sharing this key share an issuer."
           },
           "name_source": {
-            "type": ["string", "null"],
-            "description": "Where `display_name` comes from — `envelope` (sealed into the asset\nid), `zmd1` (on-chain machine identifier), or `free_text`\n(issuer-chosen, unverified label). Anti-phishing: clients must not\npresent a name without its provenance.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Where `display_name` comes from — `envelope` (sealed into the asset\nid) or `free_text` (issuer-chosen, unverified label). Anti-phishing:\nclients must not present a name without its provenance.",
             "example": "envelope"
           },
           "total_supply": {
@@ -1199,7 +1216,9 @@
       "BatchIssueRequest": {
         "type": "object",
         "description": "Request body for minting several assets in one transaction.",
-        "required": ["items"],
+        "required": [
+          "items"
+        ],
         "properties": {
           "items": {
             "type": "array",
@@ -1213,7 +1232,10 @@
       "BatchIssueResponse": {
         "type": "object",
         "description": "Result of an accepted batch issuance.",
-        "required": ["txid", "asset_ids"],
+        "required": [
+          "txid",
+          "asset_ids"
+        ],
         "properties": {
           "asset_ids": {
             "type": "array",
@@ -1231,7 +1253,9 @@
       "BurnAssetRequest": {
         "type": "object",
         "description": "Request body for burning units of an asset from the wallet.",
-        "required": ["amount"],
+        "required": [
+          "amount"
+        ],
         "properties": {
           "amount": {
             "type": "integer",
@@ -1245,7 +1269,11 @@
       "ChainInfoResponse": {
         "type": "object",
         "description": "Connected network, chain tip, and deployment mode.",
-        "required": ["network", "tip_height", "read_only"],
+        "required": [
+          "network",
+          "tip_height",
+          "read_only"
+        ],
         "properties": {
           "network": {
             "type": "string",
@@ -1257,7 +1285,10 @@
             "description": "When true, the wallet-signing endpoints (mint, batch mint,\ntransfer, burn, wallet) answer 403 — a public read-only\ndeployment. Relay, description resolution and metadata upload stay\nopen: they need no key from this instance."
           },
           "snapshot_public_key": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Ed25519 public key (hex) that signs this instance's registry\nsnapshots; absent when snapshots are not enabled. Compare it to\nthe operator's out-of-band publications (working paper, posts)\nbefore trusting a mirror."
           },
           "tip_height": {
@@ -1271,7 +1302,12 @@
       "CollectionResponse": {
         "type": "object",
         "description": "A chain-level collection: every asset minted under one issuance key.",
-        "required": ["issuer", "asset_count", "total_supply", "finalized_count"],
+        "required": [
+          "issuer",
+          "asset_count",
+          "total_supply",
+          "finalized_count"
+        ],
         "properties": {
           "asset_count": {
             "type": "integer",
@@ -1299,7 +1335,10 @@
       "HoldingResponse": {
         "type": "object",
         "description": "One asset held by a wallet account.",
-        "required": ["asset_id", "amount"],
+        "required": [
+          "asset_id",
+          "amount"
+        ],
         "properties": {
           "amount": {
             "type": "integer",
@@ -1314,7 +1353,10 @@
       "IssueAssetRequest": {
         "type": "object",
         "description": "Request body for issuing units of an asset.",
-        "required": ["description", "amount"],
+        "required": [
+          "description",
+          "amount"
+        ],
         "properties": {
           "amount": {
             "type": "integer",
@@ -1339,7 +1381,10 @@
       "IssueAssetResponse": {
         "type": "object",
         "description": "Result of an accepted issuance.",
-        "required": ["txid", "asset_id"],
+        "required": [
+          "txid",
+          "asset_id"
+        ],
         "properties": {
           "asset_id": {
             "type": "string",
@@ -1354,19 +1399,30 @@
       "MetadataUploadRequest": {
         "type": "object",
         "description": "Request body for registering a metadata bundle before issuance.",
-        "required": ["name"],
+        "required": [
+          "name"
+        ],
         "properties": {
           "description": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Long-form description (≤ 4096 bytes), stored in the bundle only."
           },
           "external_url": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional issuer link.",
             "example": "https://example.com"
           },
           "image_data_uri": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Embedded image as a base64 data URI (png/jpeg/webp/gif, ≤ ~400 KB)."
           },
           "name": {
@@ -1381,7 +1437,10 @@
       "MetadataUploadResponse": {
         "type": "object",
         "description": "Result of a metadata upload: the bundle hash and the exact description\nstring to use at issuance (which binds the bundle to the asset forever).",
-        "required": ["sha256", "chain_description"],
+        "required": [
+          "sha256",
+          "chain_description"
+        ],
         "properties": {
           "chain_description": {
             "type": "string",
@@ -1395,10 +1454,17 @@
       },
       "ModerationEntryResponse": {
         "type": "object",
-        "required": ["kind", "key", "hidden_at"],
+        "required": [
+          "kind",
+          "key",
+          "hidden_at"
+        ],
         "properties": {
           "bytes_present": {
-            "type": ["boolean", "null"],
+            "type": [
+              "boolean",
+              "null"
+            ],
             "description": "Bundles only: whether this registry still holds the bytes\n(`false` after a purge). `null` for other kinds."
           },
           "hidden_at": {
@@ -1411,13 +1477,19 @@
             "type": "string"
           },
           "reason": {
-            "type": ["string", "null"]
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
       "ModerationRequest": {
         "type": "object",
-        "required": ["kind", "key"],
+        "required": [
+          "kind",
+          "key"
+        ],
         "properties": {
           "key": {
             "type": "string",
@@ -1432,7 +1504,10 @@
             "description": "Bundles only: also delete the bytes from this registry's store.\nThe moderation entry stays, so the same bytes are refused if\nre-uploaded; the chain commitment and the name are untouched."
           },
           "reason": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional operator note, stored with the entry (audit trail)."
           }
         }
@@ -1440,7 +1515,12 @@
       "ProblemDetails": {
         "type": "object",
         "description": "RFC 9457 problem document. Every non-2xx response uses this shape.",
-        "required": ["type", "title", "status", "detail"],
+        "required": [
+          "type",
+          "title",
+          "status",
+          "detail"
+        ],
         "properties": {
           "detail": {
             "type": "string",
@@ -1466,7 +1546,10 @@
       "RawBlockResponse": {
         "type": "object",
         "description": "One block's raw transactions, hex-encoded, consensus order.",
-        "required": ["height", "txs"],
+        "required": [
+          "height",
+          "txs"
+        ],
         "properties": {
           "height": {
             "type": "integer",
@@ -1485,7 +1568,10 @@
       "RawBlocksResponse": {
         "type": "object",
         "description": "A page of raw blocks for client-side note scanning. Public chain data,\nidentical for every caller: browsers scan for their own notes locally\nand never tell the server which notes are theirs.",
-        "required": ["tip_height", "blocks"],
+        "required": [
+          "tip_height",
+          "blocks"
+        ],
         "properties": {
           "blocks": {
             "type": "array",
@@ -1504,7 +1590,9 @@
       "RelayRequest": {
         "type": "object",
         "description": "Request body for relaying a browser-built, fully signed transaction.\n\nThe instance signs nothing: the transaction was built, proven and\nsigned in the sender's browser (see the mint engine). The relay can\nrefuse, never alter. Available on read-only deployments — the whole\npoint is that the server holds no keys.",
-        "required": ["tx_hex"],
+        "required": [
+          "tx_hex"
+        ],
         "properties": {
           "tx_hex": {
             "type": "string",
@@ -1514,13 +1602,15 @@
       },
       "ResolveDescriptionRequest": {
         "type": "object",
-        "description": "Request body for resolving an asset's on-chain description.\n\nPermissionless by design: the chain stores only the description hash\n(ZIP 227), so a preimage either matches the commitment or is rejected —\nthe registry cannot be lied to. This is how assets issued by *other*\nparties (e.g. ZMD-1 collections) gain names here.",
-        "required": ["description"],
+        "description": "Request body for resolving an asset's on-chain description.\n\nPermissionless by design: the chain stores only the description hash\n(ZIP 227), so a preimage either matches the commitment or is rejected —\nthe registry cannot be lied to. This is how assets issued by *other*\nparties gain names here.",
+        "required": [
+          "description"
+        ],
         "properties": {
           "description": {
             "type": "string",
             "description": "The plaintext asset description (1–512 bytes).",
-            "example": "zmd1|zecbit-genesis|1",
+            "example": "Testnet Sample",
             "maxLength": 512,
             "minLength": 1
           }
@@ -1529,7 +1619,14 @@
       "SnapshotResponse": {
         "type": "object",
         "description": "The wire envelope: payload bytes plus a detached signature. Mirrors\nstore and serve this JSON as-is.",
-        "required": ["payload", "sha256", "signature", "public_key", "tip_height", "asset_count"],
+        "required": [
+          "payload",
+          "sha256",
+          "signature",
+          "public_key",
+          "tip_height",
+          "asset_count"
+        ],
         "properties": {
           "asset_count": {
             "type": "integer",
@@ -1563,7 +1660,10 @@
       "TransferAssetRequest": {
         "type": "object",
         "description": "Request body for transferring units of an asset from the wallet.",
-        "required": ["amount", "recipient"],
+        "required": [
+          "amount",
+          "recipient"
+        ],
         "properties": {
           "amount": {
             "type": "integer",
@@ -1582,34 +1682,13 @@
       "TxResponse": {
         "type": "object",
         "description": "A transaction accepted by the chain.",
-        "required": ["txid"],
+        "required": [
+          "txid"
+        ],
         "properties": {
           "txid": {
             "type": "string",
             "description": "Transaction id (hex, display order). Acceptance, not finality."
-          }
-        }
-      },
-      "Zmd1ManifestResponse": {
-        "type": "object",
-        "description": "A verified ZMD-1 full-form manifest (foreign convention, ZecBit).",
-        "required": ["manifest", "cid", "content_hash", "display_name"],
-        "properties": {
-          "cid": {
-            "type": "string",
-            "description": "CIDv1 the descriptor names."
-          },
-          "content_hash": {
-            "type": "string",
-            "description": "The on-chain content hash the manifest bytes were verified against."
-          },
-          "display_name": {
-            "type": "string",
-            "description": "Canonical short name, `<collection> #<index>`."
-          },
-          "manifest": {
-            "type": "string",
-            "description": "The raw manifest text, byte-exact as fetched and verified. Clients\nmay re-hash it (BLAKE2b-256, plain) against `content_hash`."
           }
         }
       }
