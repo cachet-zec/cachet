@@ -6,6 +6,13 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `infra/prod/pull-backup.sh` copies the newest bundle-store dump off the
+  host, checks the gzip is whole, and skips what it already has. The
+  daily timer keeps its seven dumps next to the database they come from;
+  this is the copy that survives the machine.
+
 ## [0.4.0] - 2026-09-04
 
 ### Removed

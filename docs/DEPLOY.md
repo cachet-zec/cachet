@@ -88,7 +88,21 @@ ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml logs 
 # operator moderation (availability-only denylist, see packages/registry-spec)
 ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml \
   exec server cachet-server moderate list'
+
+# one-screen health: load, memory against the ceilings, containers, API errors
+bash infra/prod/status.sh root@<ip>
+
+# copy the newest bundle-store dump off the host (default: ~/cachet-backups)
+bash infra/prod/pull-backup.sh root@<ip>
 ```
+
+Backups: `server-setup.sh` installs a systemd timer that dumps, once a
+day, the three tables the chain cannot rebuild (metadata bundles,
+resolved descriptions, moderation) into `/opt/cachet/backups`, keeping
+the seven newest dumps. They live on the same disk as the database, so
+`pull-backup.sh` is the copy that survives the machine: run it from a
+laptop or a scheduled task. Everything else the registry holds is
+recomputed from the chain at boot.
 
 The server's background sync keeps the index at the chain tip every 30s;
 after a fresh boot the first full index build takes about a minute.
