@@ -1,6 +1,6 @@
 //! Per-client throttles that never learn who the client is.
 //!
-//! Two write paths need a per-client bound (metadata uploads and the
+//! Two write paths need per-client bounds (metadata uploads and the
 //! relay), and PRIVACY.md P2 forbids keeping client addresses anywhere.
 //! The reconciliation: the key is `BLAKE2b(salt || address)` with a salt
 //! drawn at process start and never written down. The maps hold hashes
@@ -33,6 +33,14 @@ pub const UPLOADS_PER_MINUTE_PER_CLIENT: u32 = 60;
 /// rejects immediately, a slot is only held while a genuine block mines.
 pub const RELAYS_IN_FLIGHT_PER_CLIENT: u32 = 8;
 
+/// Relays one client may submit per minute. The in-flight cap bounds
+/// concurrency, not rate: a script relaying one proof every half second
+/// never has two in flight and was never refused (nine sealed mints in
+/// five seconds, observed). A person proves a mint in seconds and then
+/// reads the receipt, so ten a minute is an order of magnitude above
+/// anyone real, including a room behind one NAT taking turns.
+pub const RELAYS_PER_MINUTE_PER_CLIENT: u32 = 10;
+
 /// Above this many tracked clients, stale windows are swept on the next
 /// call (a botnet must not make the map the thing that grows).
 const PRUNE_ABOVE: usize = 10_000;
@@ -44,6 +52,7 @@ pub struct ClientLimits {
     pub trust_proxy: bool,
     uploads: Mutex<HashMap<ClientKey, (Instant, u32)>>,
     relays: Mutex<HashMap<ClientKey, u32>>,
+    relay_minutes: Mutex<HashMap<ClientKey, (Instant, u32)>>,
 }
 
 impl ClientLimits {
@@ -53,6 +62,7 @@ impl ClientLimits {
             trust_proxy,
             uploads: Mutex::new(HashMap::new()),
             relays: Mutex::new(HashMap::new()),
+            relay_minutes: Mutex::new(HashMap::new()),
         }
     }
 
@@ -80,26 +90,14 @@ impl ClientLimits {
     /// Reserve one upload in the client's current minute. `false` when the
     /// budget is spent.
     pub fn take_upload(&self, key: ClientKey) -> bool {
-        let mut uploads = self
-            .uploads
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let now = Instant::now();
-        if uploads.len() > PRUNE_ABOVE {
-            uploads.retain(|_, (started, _)| started.elapsed().as_secs() < 60);
-        }
-        match uploads.get_mut(&key) {
-            Some((started, count)) if started.elapsed().as_secs() < 60 => {
-                if *count >= UPLOADS_PER_MINUTE_PER_CLIENT {
-                    return false;
-                }
-                *count += 1;
-            }
-            _ => {
-                uploads.insert(key, (now, 1));
-            }
-        }
-        true
+        take_in_minute(&self.uploads, key, UPLOADS_PER_MINUTE_PER_CLIENT)
+    }
+
+    /// Reserve one relay in the client's current minute. `false` when the
+    /// budget is spent. Checked before the in-flight slot, so a refused
+    /// request holds nothing.
+    pub fn take_relay(&self, key: ClientKey) -> bool {
+        take_in_minute(&self.relay_minutes, key, RELAYS_PER_MINUTE_PER_CLIENT)
     }
 
     /// Reserve a relay slot; released when the returned guard drops.
@@ -118,6 +116,33 @@ impl ClientLimits {
             key,
         })
     }
+}
+
+/// Count one event in the client's current minute against `budget`.
+fn take_in_minute(
+    windows: &Mutex<HashMap<ClientKey, (Instant, u32)>>,
+    key: ClientKey,
+    budget: u32,
+) -> bool {
+    let mut windows = windows
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let now = Instant::now();
+    if windows.len() > PRUNE_ABOVE {
+        windows.retain(|_, (started, _)| started.elapsed().as_secs() < 60);
+    }
+    match windows.get_mut(&key) {
+        Some((started, count)) if started.elapsed().as_secs() < 60 => {
+            if *count >= budget {
+                return false;
+            }
+            *count += 1;
+        }
+        _ => {
+            windows.insert(key, (now, 1));
+        }
+    }
+    true
 }
 
 /// One in-flight relay; dropping it frees the slot, whatever the outcome.
@@ -203,6 +228,24 @@ mod tests {
         }
         assert!(!limits.take_upload(alice), "alice spent her minute");
         assert!(limits.take_upload(bob), "bob is unaffected");
+    }
+
+    #[test]
+    fn the_relay_budget_is_per_client_and_separate_from_slots() {
+        let limits = Arc::new(ClientLimits::new(false));
+        let alice = limits.key_for(Some("203.0.113.4".parse().unwrap()));
+        let bob = limits.key_for(Some("203.0.113.5".parse().unwrap()));
+        for _ in 0..RELAYS_PER_MINUTE_PER_CLIENT {
+            assert!(limits.take_relay(alice));
+            // Each relay settles before the next: never more than one in flight.
+            drop(limits.begin_relay(alice).expect("slot free"));
+        }
+        assert!(!limits.take_relay(alice), "alice spent her minute");
+        assert!(
+            limits.begin_relay(alice).is_some(),
+            "slots are a separate bound"
+        );
+        assert!(limits.take_relay(bob), "bob is unaffected");
     }
 
     #[test]

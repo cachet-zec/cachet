@@ -50,6 +50,72 @@ pub struct AppState {
     /// Per-client write-path throttles keyed by a salted hash of the
     /// client address (PRIVACY.md P2): memory only, never logged.
     pub client_limits: Arc<client_key::ClientLimits>,
+    /// The operator's pause switch: while set, the relay and metadata
+    /// uploads answer 503 and the mint studio says so. Read on every
+    /// request, so a flip takes effect immediately; persisted through the
+    /// store so a restart keeps it (see [`mints_paused_at_boot`]).
+    pub mints_paused: Arc<std::sync::atomic::AtomicBool>,
+}
+
+/// Store key under which the pause decision is persisted.
+pub const MINTS_PAUSED_SETTING: &str = "mints_paused";
+
+/// The persisted pause decision, as written by the admin surface.
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PauseState {
+    pub paused: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// Unix time (seconds) of the last change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub since: Option<u64>,
+}
+
+/// Read the persisted pause decision, for the router to start from. A
+/// store that cannot persist settings, or holds none, means "open".
+pub async fn pause_state_at_boot(store: &dyn MetadataStore) -> PauseState {
+    match store.setting_get(MINTS_PAUSED_SETTING).await {
+        Ok(Some(text)) => serde_json::from_str(&text).unwrap_or_default(),
+        _ => PauseState::default(),
+    }
+}
+
+/// Everything the router needs, with the environment-derived defaults in
+/// one place so tests can override them explicitly.
+pub struct RouterOptions {
+    pub chain: Arc<dyn ChainBackend>,
+    pub metadata: Option<Arc<dyn MetadataStore>>,
+    pub read_only: bool,
+    pub snapshot_key: Option<Arc<ed25519_dalek::SigningKey>>,
+    /// Vetted like the environment value: under 32 characters disables
+    /// the surface.
+    pub admin_token: Option<String>,
+    pub mint_webhook: Option<String>,
+    pub trust_proxy: bool,
+    /// The pause decision to start from (persisted; see
+    /// [`pause_state_at_boot`]).
+    pub mints_paused: bool,
+}
+
+impl RouterOptions {
+    /// The binary's configuration: operator surfaces from the environment.
+    pub fn from_env(
+        chain: Arc<dyn ChainBackend>,
+        metadata: Option<Arc<dyn MetadataStore>>,
+        read_only: bool,
+        snapshot_key: Option<Arc<ed25519_dalek::SigningKey>>,
+    ) -> Self {
+        Self {
+            chain,
+            metadata,
+            read_only,
+            snapshot_key,
+            admin_token: std::env::var("CACHET_ADMIN_TOKEN").ok(),
+            mint_webhook: std::env::var("CACHET_DISCORD_WEBHOOK").ok(),
+            trust_proxy: client_key::ClientLimits::trust_proxy_from_env(),
+            mints_paused: false,
+        }
+    }
 }
 
 /// Minimum length of an accepted `CACHET_ADMIN_TOKEN`: 32 characters,
@@ -151,6 +217,8 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         admin::hide,
         admin::unhide,
         admin::list,
+        admin::pause_get,
+        admin::pause_set,
     ),
     components(schemas(
         dto::ChainInfoResponse,
@@ -175,6 +243,8 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         dto::AssetEventResponse,
         admin::ModerationRequest,
         admin::ModerationEntryResponse,
+        admin::PauseRequest,
+        admin::PauseResponse,
         error::ProblemDetails,
     ))
 )]
@@ -191,19 +261,28 @@ pub fn router(
     read_only: bool,
     snapshot_key: Option<Arc<ed25519_dalek::SigningKey>>,
 ) -> Router {
-    let state = AppState {
+    router_with(RouterOptions::from_env(
         chain,
         metadata,
         read_only,
         snapshot_key,
-        admin_token: accepted_admin_token(std::env::var("CACHET_ADMIN_TOKEN").ok()),
-        mint_webhook: std::env::var("CACHET_DISCORD_WEBHOOK")
-            .ok()
+    ))
+}
+
+/// Build the application router from explicit options.
+pub fn router_with(options: RouterOptions) -> Router {
+    let state = AppState {
+        chain: options.chain,
+        metadata: options.metadata,
+        read_only: options.read_only,
+        snapshot_key: options.snapshot_key,
+        admin_token: accepted_admin_token(options.admin_token),
+        mint_webhook: options
+            .mint_webhook
             .filter(|url| url.starts_with("https://"))
             .map(Arc::from),
-        client_limits: Arc::new(client_key::ClientLimits::new(
-            client_key::ClientLimits::trust_proxy_from_env(),
-        )),
+        client_limits: Arc::new(client_key::ClientLimits::new(options.trust_proxy)),
+        mints_paused: Arc::new(std::sync::atomic::AtomicBool::new(options.mints_paused)),
     };
     Router::new()
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))

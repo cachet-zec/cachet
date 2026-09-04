@@ -80,6 +80,58 @@
         }
       }
     },
+    "/api/v1/admin/pause": {
+      "get": {
+        "tags": ["ops"],
+        "summary": "The current pause decision.",
+        "operationId": "pause_get",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Admin surface disabled or bad token"
+          }
+        }
+      },
+      "put": {
+        "tags": ["ops"],
+        "summary": "Pause or resume minting through this instance. Effective on the next\nrequest; persisted so a restart keeps it. The chain is not involved:\na paused instance simply stops relaying and storing.",
+        "operationId": "pause_set",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PauseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PauseResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Admin surface disabled or bad token"
+          }
+        }
+      }
+    },
     "/api/v1/assets": {
       "get": {
         "tags": ["registry"],
@@ -942,7 +994,7 @@
             }
           },
           "429": {
-            "description": "This client already has the maximum number of relays in flight; retry shortly",
+            "description": "This client already has the maximum number of relays in flight (retry shortly), or has spent its relay budget for the minute (wait a minute)",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1184,8 +1236,12 @@
       "ChainInfoResponse": {
         "type": "object",
         "description": "Connected network, chain tip, and deployment mode.",
-        "required": ["network", "tip_height", "read_only"],
+        "required": ["network", "tip_height", "read_only", "mints_paused"],
         "properties": {
+          "mints_paused": {
+            "type": "boolean",
+            "description": "When true, the operator has paused minting through this instance:\nthe relay and metadata uploads answer 503 until it is lifted. The\nchain itself is unaffected."
+          },
           "network": {
             "type": "string",
             "description": "Network name, e.g. `regtest`, `zsa-testnet`, `in-memory`.",
@@ -1373,6 +1429,40 @@
           "reason": {
             "type": ["string", "null"],
             "description": "Optional operator note, stored with the entry (audit trail)."
+          }
+        }
+      },
+      "PauseRequest": {
+        "type": "object",
+        "description": "Set the mint pause.",
+        "required": ["paused"],
+        "properties": {
+          "paused": {
+            "type": "boolean",
+            "description": "`true` pauses the relay and metadata uploads on this instance;\n`false` resumes them."
+          },
+          "reason": {
+            "type": ["string", "null"],
+            "description": "Optional operator note, shown on the admin page and kept with the\ndecision."
+          }
+        }
+      },
+      "PauseResponse": {
+        "type": "object",
+        "description": "The current pause decision.",
+        "required": ["paused"],
+        "properties": {
+          "paused": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": ["string", "null"]
+          },
+          "since": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix time (seconds) of the last change, when known.",
+            "minimum": 0
           }
         }
       },

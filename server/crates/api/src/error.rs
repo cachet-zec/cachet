@@ -49,6 +49,16 @@ pub enum ApiError {
          settle before sending another"
     )]
     RelayBusy,
+    #[error(
+        "this client's relay budget for the minute is spent; a mint takes seconds to prove, so \
+         wait a minute before sending another"
+    )]
+    RelayBudgetSpent,
+    #[error(
+        "minting through this instance is paused by its operator; the chain is unaffected and \
+         a signed transaction can be submitted elsewhere; retry here later"
+    )]
+    MintsPaused,
     #[error("admin authentication failed")]
     AdminUnauthorized,
 }
@@ -63,6 +73,8 @@ impl ApiError {
             Self::NotConfigured { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::UploadPoolFull => StatusCode::TOO_MANY_REQUESTS,
             Self::RelayBusy => StatusCode::TOO_MANY_REQUESTS,
+            Self::RelayBudgetSpent => StatusCode::TOO_MANY_REQUESTS,
+            Self::MintsPaused => StatusCode::SERVICE_UNAVAILABLE,
             Self::AdminUnauthorized => StatusCode::NOT_FOUND,
             Self::Chain(chain_error) => match chain_error {
                 ChainError::Rejected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
@@ -85,6 +97,8 @@ impl ApiError {
             Self::NotConfigured { .. } => "not-configured",
             Self::UploadPoolFull => "upload-pool-full",
             Self::RelayBusy => "relay-busy",
+            Self::RelayBudgetSpent => "relay-budget-spent",
+            Self::MintsPaused => "mints-paused",
             // 404 on purpose: with no token configured (or a wrong one),
             // the admin surface is indistinguishable from absent.
             Self::AdminUnauthorized => "not-found",

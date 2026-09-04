@@ -41,7 +41,8 @@ things are on you:
   entirely: `CACHET_READ_ONLY=1` plus a throwaway seed.
 - **Client-IP headers are trusted only behind a proxy.** The rate
   limiter and the per-client write-path throttles (60 uploads a minute,
-  8 relays in flight, both answering 429) key on the real peer address by
+  10 relays a minute, 8 relays in flight, all answering 429) key on the
+  real peer address by
   default; set `CACHET_TRUST_PROXY=1` **only** when a reverse proxy you
   control sits in front and rewrites `X-Forwarded-For` / `X-Real-IP` (the
   shipped Caddyfile does). Setting it while directly exposed lets an
@@ -54,8 +55,10 @@ things are on you:
   one irreversible action, meant for content an operator must not retain:
   the moderation entry stays so the bytes are refused if re-uploaded, and
   the daily dumps keep a copy for up to seven days unless you delete them
-  too). Availability only — it can never alter or spend anything.
-  Generate it randomly (`openssl rand -hex 32`) and
+  too), and can pause and resume minting through the instance (the
+  relay and metadata uploads answer 503 while paused; the chain is
+  unaffected, and the decision survives a restart). Availability only —
+  it can never alter or spend anything. Generate it randomly (`openssl rand -hex 32`) and
   treat it like a password. Tokens shorter than 32 characters are
   **refused**: the server logs a warning and leaves the admin surface
   disabled rather than accept a guessable one. Unset, the admin routes

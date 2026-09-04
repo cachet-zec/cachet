@@ -67,6 +67,26 @@ pub struct ModerationRequest {
     pub purge: bool,
 }
 
+/// Set the mint pause.
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct PauseRequest {
+    /// `true` pauses the relay and metadata uploads on this instance;
+    /// `false` resumes them.
+    pub paused: bool,
+    /// Optional operator note, shown on the admin page and kept with the
+    /// decision.
+    pub reason: Option<String>,
+}
+
+/// The current pause decision.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct PauseResponse {
+    pub paused: bool,
+    pub reason: Option<String>,
+    /// Unix time (seconds) of the last change, when known.
+    pub since: Option<u64>,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ModerationEntryResponse {
     pub kind: String,
@@ -219,6 +239,86 @@ pub(crate) async fn list(
         });
     }
     Ok(Json(responses))
+}
+
+/// The current pause decision.
+#[utoipa::path(
+    get,
+    path = "/api/v1/admin/pause",
+    tag = "ops",
+    responses(
+        (status = 200, body = PauseResponse),
+        (status = 404, description = "Admin surface disabled or bad token"),
+    )
+)]
+pub(crate) async fn pause_get(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+) -> Result<Json<PauseResponse>, ApiError> {
+    authorize(&state, &headers)?;
+    let persisted = match &state.metadata {
+        Some(store) => crate::pause_state_at_boot(store.as_ref()).await,
+        None => crate::PauseState::default(),
+    };
+    Ok(Json(PauseResponse {
+        // The live flag is the truth; the store adds the note and the time.
+        paused: state
+            .mints_paused
+            .load(std::sync::atomic::Ordering::Relaxed),
+        reason: persisted.reason,
+        since: persisted.since,
+    }))
+}
+
+/// Pause or resume minting through this instance. Effective on the next
+/// request; persisted so a restart keeps it. The chain is not involved:
+/// a paused instance simply stops relaying and storing.
+#[utoipa::path(
+    put,
+    path = "/api/v1/admin/pause",
+    tag = "ops",
+    request_body = PauseRequest,
+    responses(
+        (status = 200, body = PauseResponse),
+        (status = 404, description = "Admin surface disabled or bad token"),
+    )
+)]
+pub(crate) async fn pause_set(
+    State(state): State<AppState>,
+    headers: axum::http::HeaderMap,
+    Json(body): Json<PauseRequest>,
+) -> Result<Json<PauseResponse>, ApiError> {
+    authorize(&state, &headers)?;
+    let reason = body
+        .reason
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .map(|text| text.chars().take(200).collect::<String>());
+    let decision = crate::PauseState {
+        paused: body.paused,
+        reason: reason.clone(),
+        since: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .ok()
+            .map(|elapsed| elapsed.as_secs()),
+    };
+    // Flip first: the decision must hold even if persisting fails.
+    state
+        .mints_paused
+        .store(body.paused, std::sync::atomic::Ordering::Relaxed);
+    if let Some(store) = &state.metadata {
+        let text = serde_json::to_string(&decision).expect("pause state serializes");
+        if let Err(error) = store.setting_set(crate::MINTS_PAUSED_SETTING, &text).await {
+            tracing::warn!(%error, "admin: pause decision applied but not persisted");
+        }
+    }
+    tracing::info!(paused = body.paused, "admin: mint pause changed");
+    Ok(Json(PauseResponse {
+        paused: body.paused,
+        reason,
+        since: decision.since,
+    }))
 }
 
 #[cfg(test)]

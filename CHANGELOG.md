@@ -6,7 +6,26 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The public instance's write paths were adjusted to keep it running
+  smoothly for everyone; a person minting from the browser notices
+  nothing. Working paper v1.4 (4 September).
+
 ### Added
+
+- An uploaded image must start with the file signature of the format it
+  declares (PNG, JPEG, WebP, GIF); the head of the payload is checked
+  without decoding anything. A file that merely claims to be an image is
+  refused at upload instead of being stored and never displayed.
+- The operator page lists assets and issuers 25 rows at a time, and can
+  select several assets and hide them as spam in one action: their
+  issuance keys are hidden with the reason "spam", one confirmation for
+  the batch, reversible under the current entries.
+- The operator page can pause and resume minting through the instance.
+  Paused, the relay and uploads answer 503 and the mint studio says so;
+  the chain is never involved, and the decision survives a restart.
+  `GET /api/v1/chain` reports `mints_paused` so any client can honour it.
 
 - `infra/prod/pull-backup.sh` copies the newest bundle-store dump off the
   host, checks the gzip is whole, and skips what it already has. The

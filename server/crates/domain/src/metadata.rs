@@ -23,8 +23,11 @@ use crate::DomainError;
 pub const MAX_NAME_BYTES: usize = 120;
 /// Maximum long-description length in bytes.
 pub const MAX_LONG_DESCRIPTION_BYTES: usize = 4_096;
-/// Maximum embedded image size in bytes (as a data URI, base64 included).
-pub const MAX_IMAGE_DATA_URI_BYTES: usize = 400_000;
+/// Maximum embedded image size in bytes (as a data URI, base64 included):
+/// about 190 KB of image, generous for a registry that renders thumbnails
+/// and modest asset-page images, and a bound on what one upload can cost
+/// the operator's disk.
+pub const MAX_IMAGE_DATA_URI_BYTES: usize = 256_000;
 
 /// Image mime types the registry accepts. SVG is deliberately excluded:
 /// it can embed scripts and the console renders these images.
@@ -77,15 +80,20 @@ impl MetadataBundle {
         if let Some(image) = &image_data_uri {
             if image.len() > MAX_IMAGE_DATA_URI_BYTES {
                 return Err(DomainError::InvalidMetadata {
-                    reason: "image exceeds 400000 bytes",
+                    reason: "image exceeds 256000 bytes",
                 });
             }
-            if !ALLOWED_IMAGE_PREFIXES
+            let Some(prefix) = ALLOWED_IMAGE_PREFIXES
                 .iter()
-                .any(|prefix| image.starts_with(prefix))
-            {
+                .find(|prefix| image.starts_with(*prefix))
+            else {
                 return Err(DomainError::InvalidMetadata {
                     reason: "image must be a png/jpeg/webp/gif base64 data URI",
+                });
+            };
+            if !image_signature_matches(prefix, &image[prefix.len()..]) {
+                return Err(DomainError::InvalidMetadata {
+                    reason: "image bytes do not start with the signature of the declared format",
                 });
             }
         }
@@ -127,6 +135,31 @@ impl MetadataBundle {
             .decode(&uri[prefix.len()..])
             .ok()?;
         Some((mime, bytes))
+    }
+}
+
+/// Whether the first bytes of the payload carry the file signature of the
+/// declared format. Only the head is decoded (no image library, no full
+/// decode): the check refuses a file that merely claims to be an image,
+/// while the browser stays the only thing that ever interprets pixels.
+fn image_signature_matches(prefix: &str, payload: &str) -> bool {
+    use base64::Engine;
+    // 24 base64 characters decode to 18 bytes: enough for every signature
+    // below (WebP is the longest, 12 bytes).
+    let head = payload.get(..24).unwrap_or(payload);
+    let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(head) else {
+        return false;
+    };
+    match prefix {
+        "data:image/png;base64," => {
+            bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A])
+        }
+        "data:image/jpeg;base64," => bytes.starts_with(&[0xFF, 0xD8, 0xFF]),
+        "data:image/gif;base64," => bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a"),
+        "data:image/webp;base64," => {
+            bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP"
+        }
+        _ => false,
     }
 }
 
@@ -184,6 +217,20 @@ mod tests {
     }
 
     #[test]
+    fn bundle_refuses_an_image_over_the_ceiling() {
+        // A real PNG signature first, so only the size decides.
+        let png_head = "iVBORw0KGgo";
+        let over = format!(
+            "data:image/png;base64,{png_head}{}",
+            "A".repeat(MAX_IMAGE_DATA_URI_BYTES)
+        );
+        assert!(MetadataBundle::new("X", None, Some(over), None).is_err());
+        let room = MAX_IMAGE_DATA_URI_BYTES - "data:image/png;base64,".len() - png_head.len();
+        let under = format!("data:image/png;base64,{png_head}{}", "A".repeat(room));
+        assert!(MetadataBundle::new("X", None, Some(under), None).is_ok());
+    }
+
+    #[test]
     fn bundle_rejects_svg_images() {
         let result = MetadataBundle::new(
             "X",
@@ -197,7 +244,8 @@ mod tests {
     #[test]
     fn bundle_accepts_png_and_decodes_image() {
         use base64::Engine;
-        let png = base64::engine::general_purpose::STANDARD.encode([0x89, b'P', b'N', b'G']);
+        let png = base64::engine::general_purpose::STANDARD
+            .encode([0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
         let bundle = MetadataBundle::new(
             "X",
             Some("desc".into()),
@@ -207,7 +255,40 @@ mod tests {
         .unwrap();
         let (mime, bytes) = bundle.image_parts().unwrap();
         assert_eq!(mime, "image/png");
-        assert_eq!(bytes, [0x89, b'P', b'N', b'G']);
+        assert_eq!(bytes, [0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A]);
+    }
+
+    #[test]
+    fn bundle_refuses_bytes_that_are_not_the_declared_format() {
+        use base64::Engine;
+        let html = base64::engine::general_purpose::STANDARD.encode(b"<html><script>1</script>");
+        for mime in ["png", "jpeg", "webp", "gif"] {
+            let result = MetadataBundle::new(
+                "X",
+                None,
+                Some(format!("data:image/{mime};base64,{html}")),
+                None,
+            );
+            assert!(result.is_err(), "{mime} accepted non-image bytes");
+        }
+        // Every real signature passes.
+        let jpeg = base64::engine::general_purpose::STANDARD.encode([0xFF, 0xD8, 0xFF, 0xE0]);
+        let gif = base64::engine::general_purpose::STANDARD.encode(b"GIF89a");
+        let webp = base64::engine::general_purpose::STANDARD.encode([
+            b'R', b'I', b'F', b'F', 0x10, 0, 0, 0, b'W', b'E', b'B', b'P', b'V', b'P', b'8', b' ',
+        ]);
+        for (mime, payload) in [("jpeg", jpeg), ("gif", gif), ("webp", webp)] {
+            assert!(
+                MetadataBundle::new(
+                    "X",
+                    None,
+                    Some(format!("data:image/{mime};base64,{payload}")),
+                    None
+                )
+                .is_ok(),
+                "{mime} rejected its own signature"
+            );
+        }
     }
 
     #[test]

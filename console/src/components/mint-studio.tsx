@@ -63,6 +63,22 @@ export function MintStudio() {
   const [engineThreads, setEngineThreads] = useState(1);
   const [engineReady, setEngineReady] = useState(false);
   const [provingReady, setProvingReady] = useState(false);
+  // The operator's pause switch, read from the public chain info and
+  // re-read every 15 s so a flip reaches an open page without a reload.
+  const [paused, setPaused] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      const chain = await api.GET("/api/v1/chain");
+      if (!cancelled && chain.data) setPaused(Boolean(chain.data.mints_paused));
+    };
+    void poll();
+    const timer = setInterval(() => void poll(), 15_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, []);
   const provingWarmed = useRef(false);
 
   // Warm up on mount: spawn the worker and let the browser download and
@@ -182,10 +198,21 @@ export function MintStudio() {
       //    answered before anything was submitted - so waiting and
       //    retrying is safe and is exactly what a room full of people
       //    behind one NAT needs. Bounded: the proof is not thrown away for
-      //    a busy minute, but nobody waits forever.
+      //    a busy minute, but nobody waits forever. A spent minute budget
+      //    is the one 429 that will not clear in seconds: say so instead
+      //    of spinning.
       setStage("Relaying the signed transaction…");
       let relayed = await api.POST("/api/v1/relay", { body: { tx_hex: built.tx_hex } });
-      for (let attempt = 1; relayed.response.status === 429 && attempt <= 8; attempt += 1) {
+      const budgetSpent = () =>
+        relayed.response.status === 429 &&
+        String((relayed.error as { type?: string } | undefined)?.type ?? "").endsWith(
+          "/relay-budget-spent",
+        );
+      for (
+        let attempt = 1;
+        relayed.response.status === 429 && !budgetSpent() && attempt <= 8;
+        attempt += 1
+      ) {
         setStage(`Relay busy, waiting for a slot (attempt ${attempt} of 8)…`);
         await new Promise((resolve) => setTimeout(resolve, 2_500));
         relayed = await api.POST("/api/v1/relay", { body: { tx_hex: built.tx_hex } });
@@ -239,7 +266,7 @@ export function MintStudio() {
   };
 
   const canMint =
-    issuer !== null && seedSaved && name.trim() !== "" && Number(amount) > 0 && !stage;
+    issuer !== null && seedSaved && name.trim() !== "" && Number(amount) > 0 && !stage && !paused;
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-5">
@@ -509,6 +536,15 @@ export function MintStudio() {
       {/* Step 3: go */}
       <section className={`${card} rise rise-4`}>
         <h2 className={`${cardTitle} mb-3`}>3 · Prove &amp; relay</h2>
+        {paused && (
+          <p
+            data-testid="mint-paused"
+            className="mb-3 rounded-md border border-[#e8b23a]/40 bg-[#e8b23a]/10 px-3 py-2 text-sm text-[#e8b23a]"
+          >
+            Minting through this instance is paused by its operator. Your keys and this page keep
+            working, the chain is unaffected, and the button comes back the moment it is lifted.
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <button
             data-testid="mint-submit"

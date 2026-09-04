@@ -17,13 +17,16 @@ Design decisions:
   mints seal full bundles (name, description, image). The storage bound
   is chain-anchored — a garbage collector sweeps bundles that no
   resolved asset description references after a 30-minute grace, a
-  per-client upload budget (60/min), a per-client cap of 8 relays in
-  flight and an orphan-pool cap bound the transient window, and a daily
+  per-client upload budget (60/min), a per-client relay budget (10/min)
+  and cap of 8 relays in flight, a 256 KB ceiling per sealed image and
+  an orphan-pool cap bound the transient window, and a daily
   systemd timer on the host backs up the three tables not derivable
   from the chain.
 - **Optional operator surfaces, off by default.** `CACHET_ADMIN_TOKEN`
   enables the token-gated moderation API and the console's `/admin` page
-  (404 everywhere without it; a token under 32 characters is refused);
+  (404 everywhere without it; a token under 32 characters is refused),
+  including the pause switch that stops and resumes minting through the
+  instance during a spam wave;
   `CACHET_DISCORD_WEBHOOK` posts relayed mints — asset ids and txid, never
   a client address — to a Discord webhook. Both live in `.env.prod`; see
   `infra/prod/.env.prod.example`.

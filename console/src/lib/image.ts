@@ -1,6 +1,6 @@
 /**
  * Turn a user-picked image into a data URI that fits the sealed-bundle
- * bound (400 KB server-side). Small files pass through untouched; large
+ * bound (256 KB server-side). Small files pass through untouched; large
  * ones are resized and re-encoded IN THE PAGE, before sealing — so the
  * hash commits to exactly the bytes that will be stored and served, and
  * the preview shows exactly what will be sealed. No integrity caveat.
@@ -9,9 +9,9 @@
 const ALLOWED = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 
 /** Raw file size that fits the server bound without recompression. */
-const MAX_RAW_BYTES = 280_000;
-/** Target for compressed output: margin under the 400 KB data-URI bound. */
-const MAX_DATA_URI_CHARS = 380_000;
+const MAX_RAW_BYTES = 180_000;
+/** Target for compressed output: margin under the 256 KB data-URI bound. */
+const MAX_DATA_URI_CHARS = 240_000;
 
 export type SealableImage = { dataUri: string; compressed: boolean } | { error: string };
 
@@ -38,7 +38,7 @@ export async function imageToSealableDataUri(file: File): Promise<SealableImage>
   if (file.type === "image/gif") {
     // Canvas re-encoding keeps only the first frame; refusing beats
     // silently sealing a frozen GIF.
-    return { error: "GIFs cannot be compressed without losing animation - keep under ~280 KB." };
+    return { error: "GIFs cannot be compressed without losing animation - keep under ~180 KB." };
   }
 
   let bitmap: ImageBitmap;

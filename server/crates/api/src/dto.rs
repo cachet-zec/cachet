@@ -22,6 +22,10 @@ pub struct ChainInfoResponse {
     /// deployment. Relay, description resolution and metadata upload stay
     /// open: they need no key from this instance.
     pub read_only: bool,
+    /// When true, the operator has paused minting through this instance:
+    /// the relay and metadata uploads answer 503 until it is lifted. The
+    /// chain itself is unaffected.
+    pub mints_paused: bool,
     /// Ed25519 public key (hex) that signs this instance's registry
     /// snapshots; absent when snapshots are not enabled. Compare it to
     /// the operator's out-of-band publications (working paper, posts)
@@ -34,12 +38,14 @@ impl ChainInfoResponse {
     pub fn from_info(
         info: ChainInfo,
         read_only: bool,
+        mints_paused: bool,
         snapshot_public_key: Option<String>,
     ) -> Self {
         Self {
             network: info.network,
             tip_height: info.tip_height,
             read_only,
+            mints_paused,
             snapshot_public_key,
         }
     }

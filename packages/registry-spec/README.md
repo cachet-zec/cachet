@@ -34,13 +34,15 @@ A JSON document stored content-addressed (key = SHA-256 of its bytes):
 
 - `name`: ≤ 120 bytes. `description`: optional, ≤ 4096 bytes.
 - `image_data_uri`: optional; png/jpeg/webp/gif only (SVG excluded — it can
-  script), ≤ ~400 KB. Served by the registry at
+  script), ≤ 256 KB as a data URI (about 190 KB of image); the decoded
+  bytes MUST start with the file signature of the declared format (a
+  registry checks the head without decoding the image). Served by the registry at
   `GET /api/v1/metadata/{sha256}/image` so consoles never fetch
   third-party origins (PRIVACY.md P5).
 - Bundle bytes are byte-exact: `GET /api/v1/metadata/{sha256}` returns what
   was stored; re-hash to verify.
 - A producer MAY resize or re-encode an image before sealing (the Cachet
-  console does, above ~280 KB). It must do so **before** hashing: the
+  console does, above ~180 KB). It must do so **before** hashing: the
   commitment covers the bytes that will be served, so what a verifier
   re-hashes is what the issuer sealed.
 
@@ -142,7 +144,10 @@ commitment are untouched, and any other registry can keep serving the
 identical, self-verifying content. Moderation is a per-operator judgment,
 exercised at the server (database access) or through an optional
 token-gated HTTP admin surface, which answers 404 unless the operator
-sets `CACHET_ADMIN_TOKEN`.
+sets `CACHET_ADMIN_TOKEN`. The same surface carries a pause switch: while
+set, the instance's relay and metadata uploads answer 503
+(`mints-paused`) and `GET /api/v1/chain` reports `mints_paused: true`, so
+clients can say so before proving anything. The chain is not involved.
 
 ## Names carry their provenance
 

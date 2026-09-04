@@ -43,6 +43,48 @@ function bundleSha(description: string | null): string | null {
  * CACHET_ADMIN_TOKEN is configured server-side. Availability-only, like
  * the CLI it mirrors: hide/unhide, never alter.
  */
+/** Rows per page in the two long lists. */
+const PAGE_SIZE = 25;
+
+function Pager({
+  page,
+  pages,
+  total,
+  onPage,
+}: {
+  page: number;
+  pages: number;
+  total: number;
+  onPage: (page: number) => void;
+}) {
+  if (pages <= 1) return null;
+  return (
+    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+      <span className="font-data text-xs text-neutral-500">
+        page {page + 1} of {pages} · {total} rows
+      </span>
+      <span className="flex items-center gap-2">
+        <button
+          type="button"
+          className={`${ghostButton} px-3 py-1 text-xs`}
+          disabled={page === 0}
+          onClick={() => onPage(page - 1)}
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          className={`${ghostButton} px-3 py-1 text-xs`}
+          disabled={page >= pages - 1}
+          onClick={() => onPage(page + 1)}
+        >
+          Next
+        </button>
+      </span>
+    </div>
+  );
+}
+
 export function AdminPanel() {
   const [token, setToken] = useState("");
   const [unlocked, setUnlocked] = useState(false);
@@ -55,9 +97,27 @@ export function AdminPanel() {
   const [kind, setKind] = useState("issuer");
   const [key, setKey] = useState("");
   const [reason, setReason] = useState("");
+  const [pause, setPause] = useState<{
+    paused: boolean;
+    reason: string | null;
+    since: number | null;
+  }>({
+    paused: false,
+    reason: null,
+    since: null,
+  });
+  const [pauseReason, setPauseReason] = useState("");
+  // Asset ids ticked in the list, for the batch action below.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [assetsPage, setAssetsPage] = useState(0);
+  const [issuersPage, setIssuersPage] = useState(0);
 
-  async function adminFetch(method: "GET" | "POST" | "DELETE", body?: unknown) {
-    const response = await fetch(`${apiBaseUrl}/api/v1/admin/moderation`, {
+  async function adminFetch(
+    method: "GET" | "POST" | "DELETE" | "PUT",
+    body?: unknown,
+    route = "/api/v1/admin/moderation",
+  ) {
+    const response = await fetch(`${apiBaseUrl}${route}`, {
       method,
       headers: {
         authorization: `Bearer ${token}`,
@@ -77,6 +137,8 @@ export function AdminPanel() {
   async function refresh() {
     const listed = await adminFetch("GET");
     setEntries((await listed.json()) as Entry[]);
+    const switchState = await adminFetch("GET", undefined, "/api/v1/admin/pause");
+    setPause((await switchState.json()) as typeof pause);
     const collections = await api.GET("/api/v1/collections");
     setIssuers((collections.data ?? []) as Collection[]);
     // What a moderator actually looks at: the assets carrying content
@@ -110,6 +172,78 @@ export function AdminPanel() {
     } catch (hideError) {
       setStatus(hideError instanceof Error ? hideError.message : String(hideError));
     }
+  }
+
+  async function setMintsPaused(paused: boolean) {
+    const question = paused
+      ? "Pause minting through this instance? The relay and uploads answer 503 until you resume; the chain is unaffected."
+      : "Resume minting through this instance?";
+    if (!window.confirm(question)) return;
+    setStatus(null);
+    try {
+      await adminFetch(
+        "PUT",
+        { paused, reason: pauseReason.trim() ? pauseReason.trim() : undefined },
+        "/api/v1/admin/pause",
+      );
+      setStatus(paused ? "Minting paused. Effective now." : "Minting resumed.");
+      await refresh();
+    } catch (pauseError) {
+      setStatus(pauseError instanceof Error ? pauseError.message : String(pauseError));
+    }
+  }
+
+  function toggleSelected(assetId: string, on: boolean) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (on) next.add(assetId);
+      else next.delete(assetId);
+      return next;
+    });
+  }
+
+  /**
+   * Hide the issuance key of every selected asset with the reason "spam".
+   * One confirmation for the batch; keys are deduplicated, and a key that
+   * carries more assets than the ones selected is spelled out, since
+   * hiding it withholds all of them.
+   */
+  async function hideSelectedAsSpam() {
+    const chosen = assets.filter((asset) => selected.has(asset.asset_id) && asset.issuer);
+    const keys = [...new Set(chosen.map((asset) => asset.issuer as string))].filter(
+      (issuerKey) => !hiddenIssuerKeys.has(issuerKey),
+    );
+    if (keys.length === 0) {
+      setStatus("Nothing to hide: the selection carries no visible issuer key.");
+      return;
+    }
+    const wider = keys.filter(
+      (issuerKey) =>
+        (issuers.find((collection) => collection.issuer === issuerKey)?.asset_count ?? 0) >
+        chosen.filter((asset) => asset.issuer === issuerKey).length,
+    );
+    const question =
+      `Hide ${keys.length} issuance key${keys.length > 1 ? "s" : ""} as spam? ` +
+      `Every asset under them leaves this registry's listings (reversible).` +
+      (wider.length > 0
+        ? ` ${wider.length} of these keys also carry assets you did not select.`
+        : "");
+    if (!window.confirm(question)) return;
+    setStatus(null);
+    let done = 0;
+    try {
+      for (const issuerKey of keys) {
+        await adminFetch("POST", { kind: "issuer", key: issuerKey, reason: "spam" });
+        done += 1;
+      }
+      setStatus(`Hidden ${done} issuer key${done > 1 ? "s" : ""} as spam.`);
+    } catch (batchError) {
+      setStatus(
+        `${done} hidden, then: ${batchError instanceof Error ? batchError.message : String(batchError)}`,
+      );
+    }
+    setSelected(new Set());
+    await refresh();
   }
 
   async function unhide(entry: Entry) {
@@ -146,13 +280,25 @@ export function AdminPanel() {
     if (confirmed) void hide("bundle", sha, "purged", true);
   }
   const needle = search.trim().toLowerCase();
-  const visibleAssets = needle
+  const matchingAssets = needle
     ? assets.filter((asset) =>
         [asset.display_name ?? "", asset.asset_id, asset.issuer ?? ""].some((field) =>
           field.toLowerCase().includes(needle),
         ),
       )
     : assets;
+  const assetPages = Math.max(1, Math.ceil(matchingAssets.length / PAGE_SIZE));
+  const assetsPageClamped = Math.min(assetsPage, assetPages - 1);
+  const visibleAssets = matchingAssets.slice(
+    assetsPageClamped * PAGE_SIZE,
+    (assetsPageClamped + 1) * PAGE_SIZE,
+  );
+  const issuerPages = Math.max(1, Math.ceil(issuers.length / PAGE_SIZE));
+  const issuersPageClamped = Math.min(issuersPage, issuerPages - 1);
+  const visibleIssuers = issuers.slice(
+    issuersPageClamped * PAGE_SIZE,
+    (issuersPageClamped + 1) * PAGE_SIZE,
+  );
 
   if (!unlocked) {
     return (
@@ -189,18 +335,103 @@ export function AdminPanel() {
       </p>
       {status && <p className="text-sm text-[#e8b23a]">{status}</p>}
 
+      <section className={card} data-testid="admin-pause">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className={cardTitle}>Minting through this instance</h2>
+          <span className={pause.paused ? `${stamp} border-red-400/50 text-red-300` : stamp}>
+            {pause.paused ? "paused" : "open"}
+          </span>
+        </div>
+        <p className="mt-2 max-w-2xl text-xs leading-relaxed text-neutral-500">
+          The switch for a spam wave. Paused, the relay and metadata uploads answer 503 and the mint
+          studio says so; nothing else changes, and the chain is never involved. Effective on the
+          next request, kept across restarts, reversible here.
+          {pause.since && (
+            <>
+              {" "}
+              Last change{" "}
+              {new Date(pause.since * 1000).toISOString().slice(0, 19).replace("T", " ")} UTC
+              {pause.reason ? ` (${pause.reason})` : ""}.
+            </>
+          )}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            className={`${input} max-w-xs`}
+            value={pauseReason}
+            onChange={(event) => setPauseReason(event.target.value)}
+            placeholder="reason (optional, kept with the decision)"
+          />
+          {pause.paused ? (
+            <button
+              type="button"
+              className={ghostButton}
+              onClick={() => void setMintsPaused(false)}
+            >
+              Resume minting
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={dangerButton}
+              onClick={() => void setMintsPaused(true)}
+            >
+              Pause minting
+            </button>
+          )}
+        </div>
+      </section>
+
       <section className={card}>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
           <h2 className={cardTitle}>Assets with content ({assets.length})</h2>
           <input
             className={`${input} max-w-xs`}
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setAssetsPage(0);
+            }}
             placeholder="filter by name, asset id or issuer"
             spellCheck={false}
           />
         </div>
-        {visibleAssets.length === 0 && <p className="text-sm text-neutral-500">Nothing matches.</p>}
+        <div className="mb-2 flex flex-wrap items-center gap-3 border-b border-white/[0.06] pb-2">
+          <label className="flex items-center gap-2 text-xs text-neutral-400">
+            <input
+              type="checkbox"
+              data-testid="admin-select-all"
+              checked={
+                visibleAssets.length > 0 &&
+                visibleAssets.every((asset) => selected.has(asset.asset_id))
+              }
+              onChange={(event) =>
+                setSelected(
+                  event.target.checked
+                    ? new Set(visibleAssets.map((asset) => asset.asset_id))
+                    : new Set(),
+                )
+              }
+            />
+            select the {visibleAssets.length} shown
+          </label>
+          <button
+            type="button"
+            data-testid="admin-hide-spam"
+            className={`${dangerButton} px-3 py-1 text-xs`}
+            disabled={selected.size === 0}
+            title="Hide the issuance key of every selected asset with the reason 'spam'. Reversible under Current entries."
+            onClick={() => void hideSelectedAsSpam()}
+          >
+            Hide selected as spam ({selected.size})
+          </button>
+          <span className="text-xs text-neutral-600">
+            A spam wave mints under fresh keys, so hiding the key hides exactly that asset.
+          </span>
+        </div>
+        {matchingAssets.length === 0 && (
+          <p className="text-sm text-neutral-500">Nothing matches.</p>
+        )}
         <ul className="flex flex-col">
           {visibleAssets.map((asset) => {
             const sha = bundleSha(asset.description);
@@ -210,6 +441,13 @@ export function AdminPanel() {
                 key={asset.asset_id}
                 className="flex flex-wrap items-center gap-4 border-b border-white/[0.06] py-2.5 last:border-b-0"
               >
+                <input
+                  type="checkbox"
+                  aria-label={`select ${asset.display_name ?? asset.asset_id.slice(0, 12)}`}
+                  checked={selected.has(asset.asset_id)}
+                  disabled={!asset.issuer}
+                  onChange={(event) => toggleSelected(asset.asset_id, event.target.checked)}
+                />
                 {asset.image_path ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -290,12 +528,18 @@ export function AdminPanel() {
             );
           })}
         </ul>
+        <Pager
+          page={assetsPageClamped}
+          pages={assetPages}
+          total={matchingAssets.length}
+          onPage={setAssetsPage}
+        />
       </section>
 
       <section className={card}>
-        <h2 className={`${cardTitle} mb-3`}>Issuers on chain</h2>
+        <h2 className={`${cardTitle} mb-3`}>Issuers on chain ({issuers.length})</h2>
         <ul className="flex flex-col">
-          {issuers.map((collection) => (
+          {visibleIssuers.map((collection) => (
             <li
               key={collection.issuer}
               className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] py-2 last:border-b-0"
@@ -322,6 +566,12 @@ export function AdminPanel() {
             </li>
           ))}
         </ul>
+        <Pager
+          page={issuersPageClamped}
+          pages={issuerPages}
+          total={issuers.length}
+          onPage={setIssuersPage}
+        />
       </section>
 
       <section className={card}>

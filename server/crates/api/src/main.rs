@@ -220,11 +220,12 @@ async fn main() -> anyhow::Result<()> {
         std::env::var("CACHET_CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_owned());
     let cors = tower_http::cors::CorsLayer::new()
         .allow_origin(cors_origin.parse::<axum::http::HeaderValue>()?)
-        // DELETE and Authorization exist for the token-gated admin surface
+        // PUT, DELETE and Authorization exist for the token-gated admin surface
         // (404 unless configured); the origin stays exact, never a wildcard.
         .allow_methods([
             axum::http::Method::GET,
             axum::http::Method::POST,
+            axum::http::Method::PUT,
             axum::http::Method::DELETE,
         ])
         .allow_headers([
@@ -276,9 +277,17 @@ async fn main() -> anyhow::Result<()> {
     // Before this ordering, an exhausted burst turned preflights into
     // header-less 429s, which browsers surface as an opaque network
     // failure ("Failed to fetch") instead of a readable 429.
-    let mut app = cachet_api::router(chain, metadata, read_only, snapshot_key)
-        .layer(nosniff)
-        .layer(corp);
+    // The operator's pause decision outlives the process: read it back
+    // before serving, so a redeploy never silently reopens a paused relay.
+    let mut options = cachet_api::RouterOptions::from_env(chain, metadata, read_only, snapshot_key);
+    if let Some(store) = &options.metadata {
+        let pause = cachet_api::pause_state_at_boot(store.as_ref()).await;
+        if pause.paused {
+            tracing::warn!(reason = ?pause.reason, "minting is paused by the operator (persisted)");
+        }
+        options.mints_paused = pause.paused;
+    }
+    let mut app = cachet_api::router_with(options).layer(nosniff).layer(corp);
 
     // Per-client rate limit (public deployments). Keys are client IPs
     // (X-Forwarded-For from the reverse proxy, else the peer address)

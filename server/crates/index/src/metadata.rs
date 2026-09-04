@@ -73,6 +73,19 @@ pub trait MetadataStore: Send + Sync {
         ))
     }
 
+    /// An operator-wide setting (the mint pause, for one), persisted so a
+    /// restart keeps the decision. Default: nothing stored.
+    async fn setting_get(&self, _key: &str) -> Result<Option<String>, IndexError> {
+        Ok(None)
+    }
+
+    /// Write an operator-wide setting.
+    async fn setting_set(&self, _key: &str, _value: &str) -> Result<(), IndexError> {
+        Err(IndexError::OutOfRange(
+            "this metadata store does not persist settings".into(),
+        ))
+    }
+
     /// The subset of `hashes` that are stored, not hidden, and embed an
     /// image — the one question the registry listing asks. Backends
     /// should answer it in a bounded number of round trips; the default
@@ -173,6 +186,26 @@ impl MetadataStore for AssetIndex {
         Ok(result.rows_affected() > 0)
     }
 
+    async fn setting_get(&self, key: &str) -> Result<Option<String>, IndexError> {
+        let row = sqlx::query("SELECT value FROM operator_settings WHERE key = $1")
+            .bind(key)
+            .fetch_optional(self.pool())
+            .await?;
+        Ok(row.map(|row| row.get("value")))
+    }
+
+    async fn setting_set(&self, key: &str, value: &str) -> Result<(), IndexError> {
+        sqlx::query(
+            "INSERT INTO operator_settings (key, value) VALUES ($1, $2)
+             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+        )
+        .bind(key)
+        .bind(value)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
     /// Two round trips regardless of registry size (image test + hidden
     /// filter), instead of the default's two per asset. The image test
     /// runs inside Postgres over the stored bytes, so bundle payloads
@@ -228,6 +261,7 @@ pub struct MemoryMetadataStore {
     bundles: Mutex<HashMap<[u8; 32], Vec<u8>>>,
     hidden: Mutex<HashSet<[u8; 32]>>,
     moderation: Mutex<ModerationMap>,
+    settings: Mutex<HashMap<String, String>>,
 }
 
 impl MemoryMetadataStore {
@@ -340,6 +374,23 @@ impl MetadataStore for MemoryMetadataStore {
             .expect("metadata store lock poisoned")
             .remove(&sha256)
             .is_some())
+    }
+
+    async fn setting_get(&self, key: &str) -> Result<Option<String>, IndexError> {
+        Ok(self
+            .settings
+            .lock()
+            .expect("metadata store lock poisoned")
+            .get(key)
+            .cloned())
+    }
+
+    async fn setting_set(&self, key: &str, value: &str) -> Result<(), IndexError> {
+        self.settings
+            .lock()
+            .expect("metadata store lock poisoned")
+            .insert(key.to_owned(), value.to_owned());
+        Ok(())
     }
 }
 

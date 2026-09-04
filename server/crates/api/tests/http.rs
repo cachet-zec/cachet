@@ -24,6 +24,22 @@ fn app() -> Router {
     ))
 }
 
+/// An app with the admin surface enabled under a known token.
+const ADMIN_TOKEN: &str = "test-admin-token-with-thirty-two-plus-characters";
+
+fn admin_app() -> Router {
+    cachet_api::router_with(cachet_api::RouterOptions {
+        chain: Arc::new(InMemoryChain::new()),
+        metadata: Some(Arc::new(cachet_index::MemoryMetadataStore::new())),
+        read_only: true,
+        snapshot_key: None,
+        admin_token: Some(ADMIN_TOKEN.to_owned()),
+        mint_webhook: None,
+        trust_proxy: false,
+        mints_paused: false,
+    })
+}
+
 fn read_only_app() -> Router {
     cachet_api::router(
         Arc::new(InMemoryChain::new()),
@@ -548,7 +564,7 @@ async fn read_only_mode_blocks_mutations_but_not_reads() {
             json!({
                 "name": "X",
                 "description": "a community asset",
-                "image_data_uri": "data:image/png;base64,AAAA"
+                "image_data_uri": "data:image/png;base64,iVBORw0KGgo="
             }),
         ),
     )
@@ -635,6 +651,131 @@ async fn admin_surface_is_absent_without_a_token() {
     )
     .await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+/// The operator can pause minting through the instance: the relay and
+/// uploads answer 503 with their own problem type, the public chain info
+/// says so, and resuming restores the previous behaviour. Without the
+/// token the switch does not exist.
+#[tokio::test]
+async fn the_operator_can_pause_and_resume_minting() {
+    let app = admin_app();
+    let admin_put = |paused: bool| {
+        Request::put("/api/v1/admin/pause")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("authorization", format!("Bearer {ADMIN_TOKEN}"))
+            .body(Body::from(
+                json!({"paused": paused, "reason": "spam wave"}).to_string(),
+            ))
+            .unwrap()
+    };
+
+    // Open by default, and the switch needs the token.
+    let (status, chain) = send(
+        &app,
+        Request::get("/api/v1/chain").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(chain["mints_paused"], false);
+    let (status, _) = send(
+        &app,
+        Request::put("/api/v1/admin/pause")
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(json!({"paused": true}).to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::NOT_FOUND,
+        "no token: the surface does not exist"
+    );
+
+    // Pause: relay and upload refuse, chain info says so.
+    let (status, body) = send(&app, admin_put(true)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["paused"], true);
+    assert_eq!(body["reason"], "spam wave");
+    let (status, chain) = send(
+        &app,
+        Request::get("/api/v1/chain").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(chain["mints_paused"], true);
+    let (status, body) = send(
+        &app,
+        post_json("/api/v1/relay", json!({"tx_hex": "not-hex"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["type"], "https://cachetzec.com/problems/mints-paused");
+    let (status, body) = send(
+        &app,
+        post_json(
+            "/api/v1/metadata",
+            json!({"name": "Paused", "description": null}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["type"], "https://cachetzec.com/problems/mints-paused");
+    let (status, body) = send(
+        &app,
+        Request::get("/api/v1/admin/pause")
+            .header("authorization", format!("Bearer {ADMIN_TOKEN}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["paused"], true);
+
+    // Resume: back to ordinary validation.
+    let (status, _) = send(&app, admin_put(false)).await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(
+        &app,
+        post_json("/api/v1/relay", json!({"tx_hex": "not-hex"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let (_, chain) = send(
+        &app,
+        Request::get("/api/v1/chain").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(chain["mints_paused"], false);
+}
+
+/// The relay budget refuses the eleventh relay of a minute from one
+/// client with a distinct problem type, before the request is even parsed.
+#[tokio::test]
+async fn relay_budget_refuses_the_eleventh_relay_of_a_minute() {
+    let app = read_only_app();
+    for _ in 0..10 {
+        let (status, _) = send(
+            &app,
+            post_json("/api/v1/relay", json!({"tx_hex": "not-hex"})),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::BAD_REQUEST,
+            "within budget: validated as usual"
+        );
+    }
+    let (status, body) = send(
+        &app,
+        post_json("/api/v1/relay", json!({"tx_hex": "not-hex"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(
+        body["type"],
+        "https://cachetzec.com/problems/relay-budget-spent"
+    );
 }
 
 #[tokio::test]

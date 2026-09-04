@@ -43,6 +43,10 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/api/v1/metadata/{sha256}/image", get(get_metadata_image))
         // Token-gated operator surface; 404 unless CACHET_ADMIN_TOKEN is set.
         .route(
+            "/api/v1/admin/pause",
+            get(crate::admin::pause_get).put(crate::admin::pause_set),
+        )
+        .route(
             "/api/v1/admin/moderation",
             get(crate::admin::list)
                 .post(crate::admin::hide)
@@ -100,6 +104,9 @@ pub(crate) async fn chain_info(
     Ok(Json(ChainInfoResponse::from_info(
         info,
         state.read_only,
+        state
+            .mints_paused
+            .load(std::sync::atomic::Ordering::Relaxed),
         snapshot_public_key,
     )))
 }
@@ -476,7 +483,7 @@ async fn enrich_image_path(
         (status = 202, body = TxResponse, description = "Accepted by the chain"),
         (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This client already has the maximum number of relays in flight; retry shortly"),
+        (status = 429, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This client already has the maximum number of relays in flight (retry shortly), or has spent its relay budget for the minute (wait a minute)"),
         (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -486,9 +493,19 @@ pub(crate) async fn relay_transaction(
     Json(body): Json<RelayRequest>,
 ) -> Result<(StatusCode, Json<TxResponse>), ApiError> {
     // Relays are serialized behind the node (one block at a time), so a
-    // client that keeps one waiting holds everyone. Bound what a single
-    // client can have in flight; the slot frees itself when this handler
-    // returns, whatever happened.
+    // client that keeps one waiting holds everyone. Two bounds per client:
+    // a budget per minute (rate: a script relaying one proof at a time was
+    // never refused by the slot cap), then what it can have in flight; the
+    // slot frees itself when this handler returns, whatever happened.
+    if state
+        .mints_paused
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Err(ApiError::MintsPaused);
+    }
+    if !state.client_limits.take_relay(client) {
+        return Err(ApiError::RelayBudgetSpent);
+    }
     let _slot = state
         .client_limits
         .begin_relay(client)
@@ -575,6 +592,12 @@ pub(crate) async fn upload_metadata(
     //      sweeper and exhaust the disk.
     // The budget is keyed by a salted hash of the address, memory only,
     // never logged (PRIVACY.md P2 holds).
+    if state
+        .mints_paused
+        .load(std::sync::atomic::Ordering::Relaxed)
+    {
+        return Err(ApiError::MintsPaused);
+    }
     if !state.client_limits.take_upload(client) {
         return Err(ApiError::UploadPoolFull);
     }
