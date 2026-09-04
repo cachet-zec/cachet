@@ -119,11 +119,18 @@ impl IntoResponse for ApiError {
         let status = self.status();
         // 5xx details could leak infrastructure internals; log them and keep
         // the response generic. 4xx details are for the caller by design.
-        let detail = if status.is_server_error() {
-            tracing::error!(error = %self, "chain backend failure");
-            "upstream node is unavailable; retry later".to_owned()
-        } else {
-            self.to_string()
+        let detail = match &self {
+            // A pause is a decision, not a failure: its message is for the
+            // caller, and a paused instance must not fill its logs with errors.
+            Self::MintsPaused => {
+                tracing::info!("write path refused: minting is paused");
+                self.to_string()
+            }
+            _ if status.is_server_error() => {
+                tracing::error!(error = %self, "chain backend failure");
+                "upstream node is unavailable; retry later".to_owned()
+            }
+            _ => self.to_string(),
         };
 
         let body = ProblemDetails {

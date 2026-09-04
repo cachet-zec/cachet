@@ -18,6 +18,7 @@ pub use routes::health;
 pub fn with_health(router: axum::Router) -> axum::Router {
     router.route("/healthz", axum::routing::get(routes::health))
 }
+pub mod breaker;
 pub mod snapshot;
 
 use std::sync::Arc;
@@ -53,8 +54,20 @@ pub struct AppState {
     /// The operator's pause switch: while set, the relay and metadata
     /// uploads answer 503 and the mint studio says so. Read on every
     /// request, so a flip takes effect immediately; persisted through the
-    /// store so a restart keeps it (see [`mints_paused_at_boot`]).
+    /// store so a restart keeps it (see [`pause_state_at_boot`]).
     pub mints_paused: Arc<std::sync::atomic::AtomicBool>,
+    /// The instance's own circuit breaker: pauses the write paths by
+    /// itself under a relay flood, reopens on its own (see [`breaker`]).
+    pub breaker: Arc<breaker::Breaker>,
+}
+
+impl AppState {
+    /// Whether the write paths are paused right now, by the operator or
+    /// by the breaker.
+    pub fn write_paths_paused(&self) -> bool {
+        self.mints_paused.load(std::sync::atomic::Ordering::Relaxed)
+            || self.breaker.tripped().is_some()
+    }
 }
 
 /// Store key under which the pause decision is persisted.
@@ -95,6 +108,9 @@ pub struct RouterOptions {
     /// The pause decision to start from (persisted; see
     /// [`pause_state_at_boot`]).
     pub mints_paused: bool,
+    /// Circuit breaker as (relays per five minutes, pause seconds);
+    /// `None` reads the environment.
+    pub relay_breaker: Option<(u32, u64)>,
 }
 
 impl RouterOptions {
@@ -114,6 +130,7 @@ impl RouterOptions {
             mint_webhook: std::env::var("CACHET_DISCORD_WEBHOOK").ok(),
             trust_proxy: client_key::ClientLimits::trust_proxy_from_env(),
             mints_paused: false,
+            relay_breaker: None,
         }
     }
 }
@@ -283,6 +300,12 @@ pub fn router_with(options: RouterOptions) -> Router {
             .map(Arc::from),
         client_limits: Arc::new(client_key::ClientLimits::new(options.trust_proxy)),
         mints_paused: Arc::new(std::sync::atomic::AtomicBool::new(options.mints_paused)),
+        breaker: Arc::new(match options.relay_breaker {
+            Some((threshold, pause_secs)) => {
+                breaker::Breaker::new(threshold, std::time::Duration::from_secs(pause_secs))
+            }
+            None => breaker::Breaker::from_env(),
+        }),
     };
     Router::new()
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))

@@ -85,6 +85,9 @@ pub struct PauseResponse {
     pub reason: Option<String>,
     /// Unix time (seconds) of the last change, when known.
     pub since: Option<u64>,
+    /// Unix time (seconds) at which an automatic pause reopens by itself;
+    /// absent for an operator pause, which holds until resumed.
+    pub until: Option<u64>,
 }
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -260,13 +263,27 @@ pub(crate) async fn pause_get(
         Some(store) => crate::pause_state_at_boot(store.as_ref()).await,
         None => crate::PauseState::default(),
     };
+    let manual = state
+        .mints_paused
+        .load(std::sync::atomic::Ordering::Relaxed);
+    if let (false, Some(trip)) = (manual, state.breaker.tripped()) {
+        // The breaker holds the instance: say so, with when it reopens.
+        return Ok(Json(PauseResponse {
+            paused: true,
+            reason: Some(format!(
+                "auto: {} relays reached the node in five minutes",
+                trip.relays
+            )),
+            since: Some(trip.since_unix),
+            until: Some(trip.until_unix),
+        }));
+    }
     Ok(Json(PauseResponse {
         // The live flag is the truth; the store adds the note and the time.
-        paused: state
-            .mints_paused
-            .load(std::sync::atomic::Ordering::Relaxed),
+        paused: manual,
         reason: persisted.reason,
         since: persisted.since,
+        until: None,
     }))
 }
 
@@ -303,10 +320,14 @@ pub(crate) async fn pause_set(
             .ok()
             .map(|elapsed| elapsed.as_secs()),
     };
-    // Flip first: the decision must hold even if persisting fails.
+    // Flip first: the decision must hold even if persisting fails. A
+    // resume also releases the breaker, which is what "resume" means.
     state
         .mints_paused
         .store(body.paused, std::sync::atomic::Ordering::Relaxed);
+    if !body.paused {
+        state.breaker.reset();
+    }
     if let Some(store) = &state.metadata {
         let text = serde_json::to_string(&decision).expect("pause state serializes");
         if let Err(error) = store.setting_set(crate::MINTS_PAUSED_SETTING, &text).await {
@@ -318,6 +339,7 @@ pub(crate) async fn pause_set(
         paused: body.paused,
         reason,
         since: decision.since,
+        until: None,
     }))
 }
 

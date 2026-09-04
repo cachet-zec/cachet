@@ -1463,6 +1463,12 @@
             "format": "int64",
             "description": "Unix time (seconds) of the last change, when known.",
             "minimum": 0
+          },
+          "until": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Unix time (seconds) at which an automatic pause reopens by itself;\nabsent for an operator pause, which holds until resumed.",
+            "minimum": 0
           }
         }
       },

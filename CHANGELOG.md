@@ -22,6 +22,10 @@ All notable changes to Cachet are documented here. The format follows
   select several assets and hide them as spam in one action: their
   issuance keys are hidden with the reason "spam", one confirmation for
   the batch, reversible under the current entries.
+- The instance pauses its own write paths when relays exceed what a
+  group of people can produce, tells the operator's webhook, and reopens
+  on its own after a while; a resume from the operator page ends it
+  early. The operator page gains a Refresh button.
 - The operator page can pause and resume minting through the instance.
   Paused, the relay and uploads answer 503 and the mint studio says so;
   the chain is never involved, and the decision survives a restart.

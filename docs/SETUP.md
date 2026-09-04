@@ -109,7 +109,10 @@ throttles on `X-Forwarded-For` / `X-Real-IP` — only behind a reverse
 proxy you control; the throttles themselves are fixed: 60 metadata
 uploads a minute, 10 relays a minute and 8 relays in flight per client,
 429 beyond),
-`CACHET_SYNC_INTERVAL_SECS`
+`CACHET_RELAY_BREAKER` (relays reaching the node per five minutes
+before the instance pauses its own write paths, default 40, `0`
+disables) with `CACHET_RELAY_BREAKER_PAUSE_SECS` (how long, default
+1800; the operator can resume earlier), `CACHET_SYNC_INTERVAL_SECS`
 (background registry sync cadence, default 30), `CACHET_SNAPSHOT_KEY` (Ed25519 seed enabling signed registry snapshots;
 generate with `--generate-snapshot-key`), `CACHET_ADMIN_TOKEN` (enables
 the token-gated moderation API and the console's `/admin` page; must be
