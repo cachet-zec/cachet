@@ -26,7 +26,8 @@ Design decisions:
   enables the token-gated moderation API and the console's `/admin` page
   (404 everywhere without it; a token under 32 characters is refused),
   including the pause switch that stops and resumes minting through the
-  instance during a spam wave;
+  instance during a spam wave (the instance also pauses itself under a
+  relay flood and reopens on its own; the webhook below is told);
   `CACHET_DISCORD_WEBHOOK` posts relayed mints — asset ids and txid, never
   a client address — to a Discord webhook. Both live in `.env.prod`; see
   `infra/prod/.env.prod.example`.

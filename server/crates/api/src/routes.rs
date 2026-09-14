@@ -104,9 +104,7 @@ pub(crate) async fn chain_info(
     Ok(Json(ChainInfoResponse::from_info(
         info,
         state.read_only,
-        state
-            .mints_paused
-            .load(std::sync::atomic::Ordering::Relaxed),
+        state.write_paths_paused(),
         snapshot_public_key,
     )))
 }
@@ -497,10 +495,7 @@ pub(crate) async fn relay_transaction(
     // a budget per minute (rate: a script relaying one proof at a time was
     // never refused by the slot cap), then what it can have in flight; the
     // slot frees itself when this handler returns, whatever happened.
-    if state
-        .mints_paused
-        .load(std::sync::atomic::Ordering::Relaxed)
-    {
+    if state.write_paths_paused() {
         return Err(ApiError::MintsPaused);
     }
     if !state.client_limits.take_relay(client) {
@@ -515,6 +510,38 @@ pub(crate) async fn relay_transaction(
             reason: "tx_hex must be hex-encoded transaction bytes",
         })
     })?;
+    // Every relay that reaches the node counts toward the instance's own
+    // breaker, whoever sent it: per-client budgets stop one address, this
+    // stops a crowd of them. The relay that trips it is refused too.
+    if let Some(trip) = state.breaker.record() {
+        tracing::warn!(
+            relays = trip.relays,
+            pause_secs = trip.until_unix - trip.since_unix,
+            "circuit breaker: relay flood, write paths paused automatically"
+        );
+        if let Some(webhook) = &state.mint_webhook {
+            let webhook = webhook.clone();
+            let content = format!(
+                "⛔ **Minting paused automatically**: {} relays reached the node in five minutes \
+                 (threshold {}). Reopens by itself in {} minutes; resume earlier from /admin.",
+                trip.relays,
+                state.breaker.threshold(),
+                (trip.until_unix - trip.since_unix) / 60
+            );
+            tokio::spawn(async move {
+                let sent = reqwest::Client::new()
+                    .post(webhook.as_ref())
+                    .json(&serde_json::json!({ "content": content }))
+                    .timeout(std::time::Duration::from_secs(5))
+                    .send()
+                    .await;
+                if let Err(error) = sent {
+                    tracing::warn!(%error, "breaker webhook delivery failed");
+                }
+            });
+        }
+        return Err(ApiError::MintsPaused);
+    }
     let receipt = state.chain.relay(tx_bytes).await?;
     // Operator notification for MINTS relayed through this instance —
     // fire-and-forget, public facts only (asset ids and txid are chain
@@ -592,10 +619,7 @@ pub(crate) async fn upload_metadata(
     //      sweeper and exhaust the disk.
     // The budget is keyed by a salted hash of the address, memory only,
     // never logged (PRIVACY.md P2 holds).
-    if state
-        .mints_paused
-        .load(std::sync::atomic::Ordering::Relaxed)
-    {
+    if state.write_paths_paused() {
         return Err(ApiError::MintsPaused);
     }
     if !state.client_limits.take_upload(client) {

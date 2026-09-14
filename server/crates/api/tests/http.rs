@@ -37,6 +37,22 @@ fn admin_app() -> Router {
         mint_webhook: None,
         trust_proxy: false,
         mints_paused: false,
+        relay_breaker: None,
+    })
+}
+
+/// An admin app whose breaker trips at three relays in the window.
+fn breaker_app() -> Router {
+    cachet_api::router_with(cachet_api::RouterOptions {
+        chain: Arc::new(InMemoryChain::new()),
+        metadata: Some(Arc::new(cachet_index::MemoryMetadataStore::new())),
+        read_only: true,
+        snapshot_key: None,
+        admin_token: Some(ADMIN_TOKEN.to_owned()),
+        mint_webhook: None,
+        trust_proxy: false,
+        mints_paused: false,
+        relay_breaker: Some((3, 600)),
     })
 }
 
@@ -747,6 +763,72 @@ async fn the_operator_can_pause_and_resume_minting() {
     )
     .await;
     assert_eq!(chain["mints_paused"], false);
+}
+
+/// The circuit breaker: past the threshold, the relay that trips it and
+/// everything after answer 503 mints-paused, uploads too, the chain info
+/// says so, the admin surface names the cause, and an operator resume
+/// reopens at once.
+#[tokio::test]
+async fn a_relay_flood_trips_the_breaker_until_the_operator_resumes() {
+    let app = breaker_app();
+    let relay = || post_json("/api/v1/relay", json!({"tx_hex": "deadbeef"}));
+    for _ in 0..3 {
+        let (status, _) = send(&app, relay()).await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "reached the node");
+    }
+    let (status, body) = send(&app, relay()).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["type"], "https://cachetzec.com/problems/mints-paused");
+    assert!(
+        body["detail"]
+            .as_str()
+            .unwrap()
+            .contains("paused by its operator"),
+        "the pause keeps its own message, not the generic 5xx one"
+    );
+    let (status, _) = send(
+        &app,
+        post_json("/api/v1/metadata", json!({"name": "flood"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "uploads pause too");
+    let (_, chain) = send(
+        &app,
+        Request::get("/api/v1/chain").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(chain["mints_paused"], true);
+    let (status, body) = send(
+        &app,
+        Request::get("/api/v1/admin/pause")
+            .header("authorization", format!("Bearer {ADMIN_TOKEN}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["paused"], true);
+    assert!(body["reason"].as_str().unwrap().starts_with("auto:"));
+    assert!(body["until"].as_u64().is_some());
+
+    // The operator resumes: open again, window restarted.
+    let (status, _) = send(
+        &app,
+        Request::put("/api/v1/admin/pause")
+            .header(header::CONTENT_TYPE, "application/json")
+            .header("authorization", format!("Bearer {ADMIN_TOKEN}"))
+            .body(Body::from(json!({"paused": false}).to_string()))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let (status, _) = send(&app, relay()).await;
+    assert_eq!(
+        status,
+        StatusCode::UNPROCESSABLE_ENTITY,
+        "reaches the node again"
+    );
 }
 
 /// The relay budget refuses the eleventh relay of a minute from one

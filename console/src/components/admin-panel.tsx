@@ -101,10 +101,12 @@ export function AdminPanel() {
     paused: boolean;
     reason: string | null;
     since: number | null;
+    until: number | null;
   }>({
     paused: false,
     reason: null,
     since: null,
+    until: null,
   });
   const [pauseReason, setPauseReason] = useState("");
   // Asset ids ticked in the list, for the batch action below.
@@ -132,6 +134,22 @@ export function AdminPanel() {
       throw new Error(`Admin call failed (${response.status}).`);
     }
     return response;
+  }
+
+  const [refreshing, setRefreshing] = useState(false);
+
+  /** The Refresh button: the same reload the actions run, with feedback. */
+  async function reload() {
+    setRefreshing(true);
+    setStatus(null);
+    try {
+      await refresh();
+      setStatus("Refreshed.");
+    } catch (reloadError) {
+      setStatus(reloadError instanceof Error ? reloadError.message : String(reloadError));
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   async function refresh() {
@@ -325,7 +343,21 @@ export function AdminPanel() {
 
   return (
     <div className="flex flex-col gap-5">
-      <h1 className="font-display text-2xl font-semibold text-neutral-100">Operator moderation</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="font-display text-2xl font-semibold text-neutral-100">
+          Operator moderation
+        </h1>
+        <button
+          type="button"
+          data-testid="admin-refresh"
+          className={`${ghostButton} px-3 py-1 text-xs`}
+          disabled={refreshing}
+          title="Reload the pause state, the assets, the issuers and the moderation entries."
+          onClick={() => void reload()}
+        >
+          {refreshing ? "Refreshing…" : "Refresh"}
+        </button>
+      </div>
       <p className="max-w-2xl text-sm text-neutral-500">
         Hiding withholds distribution on THIS registry (listings, bundles, images answer 410) and is
         reversible. Purging also deletes a bundle&apos;s bytes from disk, for content an operator
@@ -345,7 +377,18 @@ export function AdminPanel() {
         <p className="mt-2 max-w-2xl text-xs leading-relaxed text-neutral-500">
           The switch for a spam wave. Paused, the relay and metadata uploads answer 503 and the mint
           studio says so; nothing else changes, and the chain is never involved. Effective on the
-          next request, kept across restarts, reversible here.
+          next request, kept across restarts, reversible here. The instance also pauses itself when
+          relays exceed what a group of people can produce, and reopens on its own; a resume here
+          ends that early.
+          {pause.until && (
+            <>
+              {" "}
+              Automatic pause, reopens at {new Date(pause.until * 1000)
+                .toISOString()
+                .slice(11, 16)}{" "}
+              UTC.
+            </>
+          )}
           {pause.since && (
             <>
               {" "}
