@@ -8,6 +8,10 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Changed
 
+- The continuity page and the README say what a chain reset means: the
+  public ZSA testnet restarted from a new genesis on 10 September 2026, the
+  registry followed the node and re-indexed on its own, and the sealed
+  bundles stayed served for a re-mint under the same key.
 - The public instance's write paths were adjusted to keep it running
   smoothly for everyone; a person minting from the browser notices
   nothing. Working paper v1.4 (4 September).

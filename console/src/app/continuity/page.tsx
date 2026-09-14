@@ -41,6 +41,15 @@ export default function ContinuityPage() {
           it costs about a minute of resyncing, not a single fact. There is no ownership table, no
           private ledger, and nothing that exists only because this server says so.
         </p>
+        <p className="mt-3 text-sm leading-relaxed text-neutral-300">
+          The same rule holds when the chain itself changes under the registry. A test network can
+          be reset by its operators and start again from a new genesis; it happened on 10 September
+          2026. Everything issued before then exists only on the abandoned chain, so this registry
+          followed the node, dropped its index and re-indexed from the new genesis within a minute,
+          on its own. What was never on the chain stays: the sealed bundles are still served, so a
+          re-mint under the same key carries the same name and image, under a new asset id. A
+          registry that kept showing assets its node can no longer see would be lying.
+        </p>
       </section>
 
       <section className={`${card} mt-4`}>

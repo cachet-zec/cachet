@@ -96,7 +96,10 @@ while balances and transfers stay shielded, as Zcash intends.
   proof.
 
 Works against a local OrchardZSA **regtest** (Docker) or the public **ZSA
-testnet** (`CACHET_NETWORK=zsa-testnet`).
+testnet** (`CACHET_NETWORK=zsa-testnet`). Either chain can be reset by its
+operators: the registry detects it, drops its index and re-indexes from the
+new genesis on its own; what was issued before exists only on the abandoned
+chain, while sealed bundles stay served for a re-mint under the same key.
 
 ## Scope and non-goals
 
