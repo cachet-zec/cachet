@@ -8,6 +8,10 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Changed
 
+- An unverified description that is a JSON document in another tool's
+  format displays its `name` instead of the whole document. It stays an
+  unverified label, and the raw description is still what the page checks
+  the asset id against.
 - The continuity page and the README say what a chain reset means: the
   public ZSA testnet restarted from a new genesis on 10 September 2026, the
   registry followed the node and re-indexed on its own, and the sealed

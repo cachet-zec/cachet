@@ -155,7 +155,11 @@ The API labels every display name with its provenance (`name_source`:
 `envelope` or `free_text`) so clients can render trust states honestly.
 A description that is not a Cachet envelope is an issuer-chosen label:
 displayed, but never as a verified name, per the anti-phishing display
-rule ZIP 227 asks wallets to adopt.
+rule ZIP 227 asks wallets to adopt. When that label is a JSON object in
+another tool's format, the registry displays its `name` (bounded, with
+control and bidirectional-override characters dropped) rather than the
+whole document; it remains `free_text`, and the raw description is still
+served for the identity check.
 
 ## Signed registry snapshots (v1)
 

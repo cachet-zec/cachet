@@ -37,7 +37,84 @@ pub fn display_name_for(description: &str) -> (String, NameSource) {
     if let Some(envelope) = ChainDescription::parse(description) {
         return (envelope.name, NameSource::Envelope);
     }
+    if let Some(name) = foreign_json_name(description) {
+        return (name, NameSource::FreeText);
+    }
     (description.to_owned(), NameSource::FreeText)
+}
+
+/// Longest name taken from a foreign JSON description, in characters.
+const MAX_FOREIGN_NAME_CHARS: usize = 120;
+
+/// The `name` of a description that is a JSON object in somebody else's
+/// format. Still an issuer-chosen, unverified label (the caller keeps it
+/// `FreeText`): showing the whole document as the name helps nobody, and
+/// the raw description stays available for the identity check. Control
+/// and bidirectional-override characters are dropped, since this string
+/// is attacker-authored and ends up in listings.
+fn foreign_json_name(description: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(description).ok()?;
+    let name = value.as_object()?.get("name")?.as_str()?;
+    let clean: String = name
+        .trim()
+        .chars()
+        .filter(|c| {
+            !c.is_control()
+                && !matches!(c, '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+        })
+        .take(MAX_FOREIGN_NAME_CHARS)
+        .collect();
+    (!clean.trim().is_empty()).then(|| clean.trim().to_owned())
+}
+
+#[cfg(test)]
+mod name_tests {
+    use super::*;
+
+    #[test]
+    fn a_foreign_json_description_shows_its_name_as_an_unverified_label() {
+        let description =
+            r#"{"v":1,"name":"Sample Pass #7","standard":"SAMPLE-1","tokenId":"0007"}"#;
+        assert_eq!(
+            display_name_for(description),
+            ("Sample Pass #7".to_owned(), NameSource::FreeText)
+        );
+    }
+
+    #[test]
+    fn json_without_a_usable_name_stays_raw() {
+        for description in [
+            r#"{"title":"x"}"#,
+            r#"{"name":"   "}"#,
+            r#"{"name":42}"#,
+            r#"["name"]"#,
+        ] {
+            assert_eq!(
+                display_name_for(description),
+                (description.to_owned(), NameSource::FreeText)
+            );
+        }
+    }
+
+    #[test]
+    fn foreign_names_are_bounded_and_stripped_of_override_characters() {
+        let long = format!(r#"{{"name":"{}"}}"#, "a".repeat(500));
+        assert_eq!(
+            display_name_for(&long).0.chars().count(),
+            MAX_FOREIGN_NAME_CHARS
+        );
+        let tricky = "{\"name\":\"safe\u{202E}evil\"}";
+        assert_eq!(display_name_for(tricky).0, "safeevil");
+    }
+
+    #[test]
+    fn a_real_envelope_still_wins() {
+        let text = ChainDescription::compose("Zcon Ticket", &"ab".repeat(32)).unwrap();
+        assert_eq!(
+            display_name_for(&text),
+            ("Zcon Ticket".to_owned(), NameSource::Envelope)
+        );
+    }
 }
 
 /// Errors produced by domain validation rules.
