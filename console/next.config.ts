@@ -5,13 +5,35 @@ import type { NextConfig } from "next";
 // to compile the mint engine. Everything else is same-origin plus the
 // API (fetches and bundle images). Dev builds skip the CSP: next dev
 // relies on eval for fast refresh.
+// Other registries (src/lib/registries.ts) are named at build time too, so
+// connect-src stays a short list of known origins.
 const apiOrigin = new URL(process.env.NEXT_PUBLIC_CACHET_API_URL ?? "http://localhost:8080").origin;
+const registryOrigins = [
+  ...new Set([
+    apiOrigin,
+    ...(process.env.NEXT_PUBLIC_CACHET_REGISTRIES ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .flatMap((entry) => {
+        try {
+          const url = new URL(entry);
+          const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+          return url.protocol === "https:" || (url.protocol === "http:" && local)
+            ? [url.origin]
+            : [];
+        } catch {
+          return [];
+        }
+      }),
+  ]),
+].join(" ");
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'",
   "style-src 'self' 'unsafe-inline'",
-  `connect-src 'self' ${apiOrigin}`,
-  `img-src 'self' data: ${apiOrigin}`,
+  `connect-src 'self' ${registryOrigins}`,
+  `img-src 'self' data: ${registryOrigins}`,
   "font-src 'self'",
   // blob: because wasm-bindgen-rayon spawns its thread-pool workers from
   // blob: URLs (the blob wraps a same-origin module script).

@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import { AssetName } from "@/components/asset-name";
 import { api, apiBaseUrl } from "@/lib/api";
+import { AssetRowsSkeleton } from "@/components/skeleton";
 import { FEATURED_ASSET_IDS } from "@/lib/site";
 import { rowIndex, stamp } from "@/lib/ui";
 
@@ -65,18 +66,12 @@ export function FeaturedAssets() {
   });
 
   if (isPending) {
-    return (
-      <div className="flex flex-col">
-        {Array.from({ length: 5 }, (_, i) => (
-          <div key={i} className="h-14 animate-pulse border-b border-white/[0.06]" />
-        ))}
-      </div>
-    );
+    return <AssetRowsSkeleton rows={FEATURED_COUNT} thumb="h-10 w-10" />;
   }
   if (error) {
     return (
       <p className="border-y border-white/[0.07] py-8 text-sm text-neutral-500">
-        Registry unreachable. Start the Cachet server to see live entries.
+        Registry unreachable right now. Entries come back when it answers.
       </p>
     );
   }
@@ -94,12 +89,13 @@ export function FeaturedAssets() {
   const total = entries.length;
 
   return (
-    <div className="border-t border-white/[0.07]">
+    // The rows settle one after the other once the section is in view.
+    <div className="stagger">
       {entries.map((asset, index) => (
         <Link
           key={asset.asset_id}
           href={`/assets/${asset.asset_id}`}
-          className="group flex items-center gap-4 border-b border-white/[0.07] py-3 pl-1 pr-2 transition hover:bg-white/[0.025]"
+          className="group flex items-center gap-4 border-b border-line py-4 pl-1 pr-2 transition last:border-b-0 hover:bg-white/[0.025]"
         >
           <span className={rowIndex}>{String(total - index).padStart(2, "0")}</span>
           {asset.image_path ? (
@@ -107,10 +103,12 @@ export function FeaturedAssets() {
             <img
               src={apiBaseUrl + asset.image_path}
               alt=""
-              className="h-9 w-9 shrink-0 rounded-sm object-cover"
+              loading="lazy"
+              decoding="async"
+              className="h-11 w-11 shrink-0 rounded-[2px] object-cover"
             />
           ) : (
-            <span className="font-data flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-white/10 text-[10px] text-neutral-600">
+            <span className="font-data flex h-11 w-11 shrink-0 items-center justify-center rounded-[2px] border border-line text-[13px] text-neutral-600">
               {asset.asset_id.slice(0, 2)}
             </span>
           )}
@@ -135,10 +133,10 @@ export function FeaturedAssets() {
             )}
           </span>
           {asset.finalized && <span className={stamp}>sealed</span>}
-          <span className="font-data shrink-0 text-sm text-[#e8b23a]">
+          <span className="font-data shrink-0 text-base text-accent tabular-nums">
             {asset.total_supply.toLocaleString("en-US")}
           </span>
-          <span className="font-data shrink-0 text-neutral-600 transition group-hover:translate-x-0.5 group-hover:text-[#e8b23a]">
+          <span className="font-data shrink-0 text-neutral-600 transition group-hover:translate-x-0.5 group-hover:text-accent">
             →
           </span>
         </Link>

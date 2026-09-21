@@ -95,6 +95,9 @@ HELPERS="$OUT_MT/snippets"/wasm-bindgen-rayon-*/src/workerHelpers.no-bundler.js
 for f in $HELPERS; do
     [ -f "$f" ] || continue
     sed -i 's/await pkg\.default(data\.module, data\.memory);/await pkg.default({ module_or_path: data.module, memory: data.memory });/' "$f"
+    # The snippet can come out with CRLF line endings; the repository stores
+    # LF (.gitattributes), and the engine manifest hashes exact bytes.
+    sed -i 's/\r$//' "$f"
 done
 
 ls -la "$OUT" "$OUT_MT" "$OUT_VERIFY"

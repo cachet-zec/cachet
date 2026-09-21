@@ -17,9 +17,12 @@ pub mod metadata;
 
 pub use metadata::{MemoryMetadataStore, MetadataStore};
 
-use cachet_domain::{AssetEvent, AssetEventKind, AssetId, AssetSummary, TxId};
-use sqlx::Row;
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use cachet_domain::{
+    AssetEvent, AssetEventKind, AssetId, AssetListPage, AssetListQuery, AssetSummary, ListingOrder,
+    SupplyState, TxId,
+};
+use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
+use sqlx::{Postgres, QueryBuilder, Row};
 
 #[derive(Debug, thiserror::Error)]
 pub enum IndexError {
@@ -111,8 +114,194 @@ fn kind_to_str(kind: &AssetEventKind) -> &'static str {
     }
 }
 
+/// What a listing searches and orders by, derived from a description by the
+/// domain's naming rules: the lowercased display name and description on
+/// two lines, and the rank of the name's attestation.
+fn derived_names(description: &str) -> (String, i16) {
+    let (name, _) = cachet_domain::display_name_for(description);
+    (
+        format!("{}\n{}", name.to_lowercase(), description.to_lowercase()),
+        cachet_domain::name_rank(Some(description)),
+    )
+}
+
+/// A listing row: the asset, its journaled description unless the operator
+/// withholds it.
+const LISTING_FROM: &str = "
+             FROM assets a
+             LEFT JOIN asset_descriptions d USING (asset_id)
+             LEFT JOIN moderation_hidden m
+                    ON m.kind = 'description' AND m.key = a.asset_id";
+
+/// Journal rows whose asset is not on the indexed chain, and that the
+/// operator does not withhold, by description or by issuer (the journal
+/// keeps the issuance key for exactly this: `assets` is empty after a
+/// reset). A constant: no caller text.
+const KEPT_FROM: &str = "
+             FROM asset_descriptions d
+             WHERE NOT EXISTS (SELECT 1 FROM assets a WHERE a.asset_id = d.asset_id)
+               AND NOT EXISTS (SELECT 1 FROM moderation_hidden m
+                               WHERE (m.kind = 'description' AND m.key = d.asset_id)
+                                  OR (m.kind = 'issuer' AND m.key = d.issuer_ik))";
+
+/// The row's description is known to a caller.
+const DESCRIPTION_KNOWN: &str = "(d.description IS NOT NULL AND m.key IS NULL)";
+
+/// A count or offset as the database takes it. Anything past `i64` is past
+/// every registry.
+fn bounded(value: usize) -> i64 {
+    i64::try_from(value.min(cachet_domain::listing::MAX_OFFSET)).unwrap_or(i64::MAX)
+}
+
+/// `WHERE`: the operator's scope, which also bounds the registry count.
+fn push_operator_scope<'a>(sql: &mut QueryBuilder<'a, Postgres>, query: &'a AssetListQuery) {
+    sql.push(" WHERE TRUE");
+    if !query.hidden_issuers.is_empty() {
+        sql.push(" AND (a.issuer_ik IS NULL OR a.issuer_ik <> ALL(");
+        sql.push_bind(&query.hidden_issuers);
+        sql.push("))");
+    }
+}
+
+/// The caller's own filters, each one `AND`ed onto what precedes.
+fn push_caller_filters<'a>(sql: &mut QueryBuilder<'a, Postgres>, query: &'a AssetListQuery) {
+    if query.resolved_only {
+        sql.push(" AND ");
+        sql.push(DESCRIPTION_KNOWN);
+    }
+    if let Some(issuer) = &query.issuer {
+        sql.push(" AND a.issuer_ik = ");
+        sql.push_bind(issuer);
+    }
+    if let Some(supply) = query.supply {
+        sql.push(" AND a.finalized = ");
+        sql.push_bind(supply == SupplyState::Sealed);
+    }
+    if let Some(needle) = &query.search {
+        // Each of the three tests is one an index can answer: a trigram
+        // index for "contains", the primary key and the issuer index for
+        // "starts with". What the caller typed is data all the way: it is
+        // escaped before it becomes a LIKE pattern, and bound.
+        sql.push(" AND ((");
+        sql.push(DESCRIPTION_KNOWN);
+        sql.push(" AND d.search_text LIKE ");
+        sql.push_bind(contains_pattern(needle));
+        sql.push(" ESCAPE '\\')");
+        for (column, width) in [("a.asset_id", 32), ("a.issuer_ik", 33)] {
+            if let Some((low, high)) = hex_prefix_range(needle, width) {
+                sql.push(" OR ");
+                sql.push(column);
+                sql.push(" BETWEEN ");
+                sql.push_bind(low);
+                sql.push(" AND ");
+                sql.push_bind(high);
+            }
+        }
+        sql.push(")");
+    }
+}
+
+/// `%needle%` with the needle's own `%`, `_` and `\` made literal.
+fn contains_pattern(needle: &str) -> String {
+    let mut pattern = String::with_capacity(needle.len() + 2);
+    pattern.push('%');
+    for character in needle.chars() {
+        if matches!(character, '%' | '_' | '\\') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
+}
+
+/// Every `width`-byte value whose lowercase hex starts with `needle`, as an
+/// inclusive range: the needle padded with `0`s, and with `f`s. `None` when
+/// the needle is not hex or is longer than the value.
+fn hex_prefix_range(needle: &str, width: usize) -> Option<(Vec<u8>, Vec<u8>)> {
+    let digits = width * 2;
+    if needle.is_empty()
+        || needle.len() > digits
+        || !needle
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    {
+        return None;
+    }
+    let padded = |with: char| {
+        let mut text = needle.to_owned();
+        text.extend(std::iter::repeat_n(with, digits - needle.len()));
+        hex::decode(text).ok()
+    };
+    Some((padded('0')?, padded('f')?))
+}
+
+/// `assets.name_rank` as the journal and the operator's list make it: the
+/// journaled rank when the description is known to a caller, 2 otherwise.
+/// Only rows that differ are written.
+const RECONCILE_NAME_RANKS: &str = "
+    UPDATE assets a SET name_rank = r.rank
+      FROM (SELECT a2.asset_id,
+                   CASE WHEN d.description IS NOT NULL AND m.key IS NULL
+                        THEN COALESCE(d.name_rank, 1) ELSE 2 END AS rank
+              FROM assets a2
+              LEFT JOIN asset_descriptions d USING (asset_id)
+              LEFT JOIN moderation_hidden m
+                     ON m.kind = 'description' AND m.key = a2.asset_id) r
+     WHERE r.asset_id = a.asset_id AND a.name_rank IS DISTINCT FROM r.rank";
+
+fn summary_from_row(row: &PgRow) -> Result<AssetSummary, IndexError> {
+    let bytes: Vec<u8> = row.get("asset_id");
+    let bytes: [u8; 32] = bytes
+        .try_into()
+        .map_err(|_| IndexError::OutOfRange("asset_id is not 32 bytes".into()))?;
+    let issued: i64 = row.get("issued");
+    let burned: i64 = row.get("burned");
+    Ok(AssetSummary {
+        asset_id: AssetId::from_bytes(bytes),
+        description: row.get("description"),
+        issuer: row.get::<Option<Vec<u8>>, _>("issuer_ik").map(hex::encode),
+        total_supply: (issued.max(0) as u64).saturating_sub(burned.max(0) as u64),
+        finalized: row.get("finalized"),
+    })
+}
+
 pub struct AssetIndex {
     pool: PgPool,
+    /// The three counts of a listing, per set of filters, for a few
+    /// seconds. They cost a pass over the whole table, a page costs an
+    /// index walk, and a registry is polled far more often than it changes:
+    /// without this every poll of every open page paid for the pass, even
+    /// the ones answered `304`. Emptied by every write this index makes.
+    counts: std::sync::Mutex<std::collections::HashMap<CountsKey, (std::time::Instant, Counts)>>,
+}
+
+/// What the counts depend on: the operator's scope and the caller's filters,
+/// not the order or the page.
+type CountsKey = (
+    Vec<Vec<u8>>,
+    bool,
+    Option<Vec<u8>>,
+    Option<bool>,
+    Option<String>,
+);
+/// Registry, total, unresolved.
+type Counts = (usize, usize, usize);
+
+/// How long counts stand. The console polls every fifteen seconds.
+const COUNTS_FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(3);
+/// Search text is caller-chosen, so the keys are too: past this many the
+/// cache is emptied rather than grown.
+const COUNTS_CACHE_MAX: usize = 512;
+
+fn counts_key(query: &AssetListQuery) -> CountsKey {
+    (
+        query.hidden_issuers.clone(),
+        query.resolved_only,
+        query.issuer.clone(),
+        query.supply.map(|supply| supply == SupplyState::Sealed),
+        query.search.clone(),
+    )
 }
 
 impl AssetIndex {
@@ -124,12 +313,99 @@ impl AssetIndex {
     /// unreachable so callers can fall back to scan-only mode.
     pub async fn connect(database_url: &str) -> Result<Self, IndexError> {
         let pool = PgPoolOptions::new()
-            .max_connections(5)
+            // Postgres allows a hundred; five made a burst of page
+            // requests queue behind each other for a connection.
+            .max_connections(12)
             .acquire_timeout(std::time::Duration::from_secs(5))
             .connect(database_url)
             .await?;
         sqlx::migrate!("./migrations").run(&pool).await?;
-        Ok(Self { pool })
+        let index = Self {
+            pool,
+            counts: Default::default(),
+        };
+        index.refresh_derived_names().await?;
+        Ok(index)
+    }
+
+    /// Bring `search_text` and `name_rank` in line with the naming rules
+    /// this build runs: rows written before the columns existed, or under
+    /// an older rule, are recomputed. Rows already right are left alone.
+    async fn refresh_derived_names(&self) -> Result<(), IndexError> {
+        // Read and written in bounded batches, by key: the journal can
+        // outgrow memory, and one batch is one short transaction.
+        const BATCH: i64 = 2_000;
+        let mut recomputed = 0usize;
+        let mut after: Vec<u8> = Vec::new();
+        loop {
+            let rows = sqlx::query(
+                "SELECT asset_id, description, search_text, name_rank
+                 FROM asset_descriptions WHERE asset_id > $1
+                 ORDER BY asset_id LIMIT $2",
+            )
+            .bind(after.as_slice())
+            .bind(BATCH)
+            .fetch_all(&self.pool)
+            .await?;
+            let Some(last) = rows.last() else { break };
+            after = last.get("asset_id");
+
+            let mut stale = Vec::new();
+            for row in &rows {
+                let description: String = row.get("description");
+                let (search_text, name_rank) = derived_names(&description);
+                let stored_text: Option<String> = row.get("search_text");
+                let stored_rank: Option<i16> = row.get("name_rank");
+                if stored_text.as_deref() != Some(search_text.as_str())
+                    || stored_rank != Some(name_rank)
+                {
+                    stale.push((row.get::<Vec<u8>, _>("asset_id"), search_text, name_rank));
+                }
+            }
+            if stale.is_empty() {
+                continue;
+            }
+            let mut tx = self.pool.begin().await?;
+            for (asset_id, search_text, name_rank) in &stale {
+                sqlx::query(
+                    "UPDATE asset_descriptions SET search_text = $2, name_rank = $3
+                     WHERE asset_id = $1",
+                )
+                .bind(asset_id.as_slice())
+                .bind(search_text)
+                .bind(name_rank)
+                .execute(&mut *tx)
+                .await?;
+            }
+            tx.commit().await?;
+            recomputed += stale.len();
+        }
+        if recomputed > 0 {
+            tracing::info!(rows = recomputed, "listing names recomputed");
+        }
+        // The rank kept on each asset follows from the above and from the
+        // operator's list: brought in line, whatever wrote them last.
+        let ranked = sqlx::query(RECONCILE_NAME_RANKS)
+            .execute(&self.pool)
+            .await?
+            .rows_affected();
+        if ranked > 0 {
+            tracing::info!(rows = ranked, "listing ranks reconciled");
+        }
+        Ok(())
+    }
+
+    /// Bring `assets.name_rank` in line for these assets.
+    async fn reconcile_name_ranks<'e>(
+        executor: impl sqlx::PgExecutor<'e>,
+        asset_ids: &[&[u8]],
+    ) -> Result<(), IndexError> {
+        let mut sql = QueryBuilder::<Postgres>::new(RECONCILE_NAME_RANKS);
+        sql.push(" AND a.asset_id = ANY(");
+        sql.push_bind(asset_ids);
+        sql.push(")");
+        sql.build().execute(executor).await?;
+        Ok(())
     }
 
     pub async fn checkpoint(&self) -> Result<Option<Checkpoint>, IndexError> {
@@ -151,7 +427,15 @@ impl AssetIndex {
     /// Drop all derived rows (chain reset detected). The description
     /// journal survives: it is keyed by asset id, which is
     /// derivation-stable across chain resets for the same issuer+description.
+    fn forget_counts(&self) {
+        self.counts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clear();
+    }
+
     pub async fn reset(&self) -> Result<(), IndexError> {
+        self.forget_counts();
         let mut tx = self.pool.begin().await?;
         sqlx::query("DELETE FROM assets").execute(&mut *tx).await?;
         sqlx::query("DELETE FROM asset_events")
@@ -173,7 +457,44 @@ impl AssetIndex {
         events: &[EventRow],
         checkpoint: Checkpoint,
     ) -> Result<(), IndexError> {
+        self.apply_inner(false, deltas, events, checkpoint).await
+    }
+
+    /// The chain was reset or reorganised past the checkpoint: what was
+    /// folded from the new chain REPLACES the derived rows, in one
+    /// transaction. Until it commits, readers keep seeing the last complete
+    /// picture this registry had, never an index emptied and half refilled
+    /// (which would, for one, list every journaled asset as lost). The
+    /// description journal survives, as with `reset`.
+    pub async fn replace(
+        &self,
+        deltas: &[AssetDelta],
+        events: &[EventRow],
+        checkpoint: Checkpoint,
+    ) -> Result<(), IndexError> {
+        self.apply_inner(true, deltas, events, checkpoint).await?;
+        tracing::info!("asset index replaced (chain reorg or reset detected)");
+        Ok(())
+    }
+
+    async fn apply_inner(
+        &self,
+        replacing: bool,
+        deltas: &[AssetDelta],
+        events: &[EventRow],
+        checkpoint: Checkpoint,
+    ) -> Result<(), IndexError> {
+        self.forget_counts();
         let mut tx = self.pool.begin().await?;
+        if replacing {
+            sqlx::query("DELETE FROM assets").execute(&mut *tx).await?;
+            sqlx::query("DELETE FROM asset_events")
+                .execute(&mut *tx)
+                .await?;
+            sqlx::query("DELETE FROM index_checkpoint")
+                .execute(&mut *tx)
+                .await?;
+        }
 
         for delta in deltas {
             let issued = i64::try_from(delta.issued)
@@ -196,6 +517,36 @@ impl AssetIndex {
             .bind(delta.finalized)
             .bind(delta.asset_desc_hash.as_ref().map(|hash| hash.as_slice()))
             .bind(delta.issuer_ik.as_ref().map(|ik| ik.as_slice()))
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        // An asset that (re)appears may already have a journaled description
+        // (minted again after a reset): its rank follows at once.
+        let touched: Vec<&[u8]> = deltas
+            .iter()
+            .map(|delta| delta.asset_id.as_slice())
+            .collect();
+        if !touched.is_empty() {
+            Self::reconcile_name_ranks(&mut *tx, &touched).await?;
+        }
+
+        // The journal keeps the issuance key beside the description, so
+        // issuer-level moderation still holds once `assets` is emptied.
+        let issued: Vec<&[u8]> = deltas
+            .iter()
+            .filter(|delta| delta.issuer_ik.is_some())
+            .map(|delta| delta.asset_id.as_slice())
+            .collect();
+        if !issued.is_empty() {
+            sqlx::query(
+                "UPDATE asset_descriptions d SET issuer_ik = a.issuer_ik
+                   FROM assets a
+                  WHERE a.asset_id = d.asset_id AND d.asset_id = ANY($1)
+                    AND a.issuer_ik IS NOT NULL
+                    AND d.issuer_ik IS DISTINCT FROM a.issuer_ik",
+            )
+            .bind(&issued)
             .execute(&mut *tx)
             .await?;
         }
@@ -278,6 +629,7 @@ impl AssetIndex {
         key: &[u8],
         reason: Option<&str>,
     ) -> Result<(), IndexError> {
+        self.forget_counts();
         sqlx::query(
             "INSERT INTO moderation_hidden (kind, key, reason) VALUES ($1, $2, $3)
              ON CONFLICT (kind, key) DO UPDATE SET reason = EXCLUDED.reason",
@@ -287,16 +639,23 @@ impl AssetIndex {
         .bind(reason)
         .execute(&self.pool)
         .await?;
+        if matches!(kind, ModerationKind::Description) {
+            Self::reconcile_name_ranks(&self.pool, &[key]).await?;
+        }
         Ok(())
     }
 
     /// Lift a moderation entry. Returns whether one existed.
     pub async fn unhide(&self, kind: ModerationKind, key: &[u8]) -> Result<bool, IndexError> {
+        self.forget_counts();
         let result = sqlx::query("DELETE FROM moderation_hidden WHERE kind = $1 AND key = $2")
             .bind(kind.as_str())
             .bind(key)
             .execute(&self.pool)
             .await?;
+        if matches!(kind, ModerationKind::Description) {
+            Self::reconcile_name_ranks(&self.pool, &[key]).await?;
+        }
         Ok(result.rows_affected() > 0)
     }
 
@@ -403,15 +762,66 @@ impl AssetIndex {
         asset_id: AssetId,
         description: &str,
     ) -> Result<(), IndexError> {
+        self.forget_counts();
+        let (search_text, name_rank) = derived_names(description);
         sqlx::query(
-            "INSERT INTO asset_descriptions (asset_id, description) VALUES ($1, $2)
+            "INSERT INTO asset_descriptions
+                    (asset_id, description, search_text, name_rank, issuer_ik)
+             VALUES ($1, $2, $3, $4, (SELECT issuer_ik FROM assets WHERE asset_id = $1))
              ON CONFLICT (asset_id) DO NOTHING",
         )
         .bind(asset_id.as_bytes().as_slice())
         .bind(description)
+        .bind(search_text)
+        .bind(name_rank)
         .execute(&self.pool)
         .await?;
+        Self::reconcile_name_ranks(&self.pool, &[asset_id.as_bytes().as_slice()]).await?;
         Ok(())
+    }
+
+    /// Descriptions the journal keeps for assets the chain no longer
+    /// carries (a test network that was reset takes its assets with it;
+    /// the journal is keyed by asset id and survives). Withheld
+    /// descriptions are left out. Returns the page and the total.
+    pub async fn kept_off_chain(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<(AssetId, String)>, usize), IndexError> {
+        let mut count = QueryBuilder::<Postgres>::new("SELECT COUNT(*) AS total");
+        count.push(KEPT_FROM);
+        let total: i64 = count.build().fetch_one(&self.pool).await?.get("total");
+
+        let mut page = QueryBuilder::<Postgres>::new("SELECT d.asset_id, d.description");
+        page.push(KEPT_FROM);
+        page.push(" ORDER BY d.name_rank ASC NULLS LAST, d.asset_id ASC OFFSET ");
+        page.push_bind(bounded(offset));
+        page.push(" LIMIT ");
+        page.push_bind(bounded(limit));
+        let rows = page.build().fetch_all(&self.pool).await?;
+        let page = rows
+            .iter()
+            .map(|row| {
+                let bytes: Vec<u8> = row.get("asset_id");
+                let bytes: [u8; 32] = bytes
+                    .try_into()
+                    .map_err(|_| IndexError::OutOfRange("asset_id is not 32 bytes".into()))?;
+                Ok((AssetId::from_bytes(bytes), row.get("description")))
+            })
+            .collect::<Result<_, IndexError>>()?;
+        Ok((page, usize::try_from(total).unwrap_or(0)))
+    }
+
+    /// The kept description of one asset the chain no longer carries.
+    /// `None` when the asset is on chain, unknown, or withheld.
+    pub async fn kept_description(&self, asset_id: AssetId) -> Result<Option<String>, IndexError> {
+        let mut one = QueryBuilder::<Postgres>::new("SELECT d.description");
+        one.push(KEPT_FROM);
+        one.push(" AND d.asset_id = ");
+        one.push_bind(asset_id.as_bytes().as_slice());
+        let row = one.build().fetch_optional(&self.pool).await?;
+        Ok(row.map(|row| row.get("description")))
     }
 
     /// Single-asset lookup from the index (same shape as one `list` row).
@@ -457,23 +867,91 @@ impl AssetIndex {
         .fetch_all(&self.pool)
         .await?;
 
-        rows.into_iter()
-            .map(|row| {
-                let bytes: Vec<u8> = row.get("asset_id");
-                let bytes: [u8; 32] = bytes
-                    .try_into()
-                    .map_err(|_| IndexError::OutOfRange("asset_id is not 32 bytes".into()))?;
-                let issued: i64 = row.get("issued");
-                let burned: i64 = row.get("burned");
-                Ok(AssetSummary {
-                    asset_id: AssetId::from_bytes(bytes),
-                    description: row.get("description"),
-                    issuer: row.get::<Option<Vec<u8>>, _>("issuer_ik").map(hex::encode),
-                    total_supply: (issued.max(0) as u64).saturating_sub(burned.max(0) as u64),
-                    finalized: row.get("finalized"),
-                })
-            })
-            .collect()
+        rows.iter().map(summary_from_row).collect()
+    }
+
+    /// One page of the listing, with the counts a pager needs: what
+    /// `AssetListQuery::apply` returns from the whole listing, answered by
+    /// the database instead of read out of it.
+    ///
+    /// Every value a caller supplied reaches the database as a bound
+    /// parameter. The only text assembled here is made of the constants
+    /// below, chosen by matching on enums.
+    pub async fn list_page(&self, query: &AssetListQuery) -> Result<AssetListPage, IndexError> {
+        let key = counts_key(query);
+        let remembered = self
+            .counts
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&key)
+            .filter(|(at, _)| at.elapsed() < COUNTS_FRESH_FOR)
+            .map(|(_, counts)| *counts);
+
+        // Counted afresh, both statements must see the same registry.
+        let mut tx = self.pool.begin().await?;
+        let (registry_count, total_count, unresolved_count) = match remembered {
+            Some(counts) => counts,
+            None => {
+                sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                    .execute(&mut *tx)
+                    .await?;
+                let mut counts = QueryBuilder::<Postgres>::new(
+                    "SELECT COUNT(*) AS registry, COUNT(*) FILTER (WHERE TRUE",
+                );
+                push_caller_filters(&mut counts, query);
+                counts.push(") AS total, COUNT(*) FILTER (WHERE NOT ");
+                counts.push(DESCRIPTION_KNOWN);
+                push_caller_filters(&mut counts, query);
+                counts.push(") AS unresolved");
+                counts.push(LISTING_FROM);
+                push_operator_scope(&mut counts, query);
+                let row = counts.build().fetch_one(&mut *tx).await?;
+                let count = |name: &str| -> Result<usize, IndexError> {
+                    usize::try_from(row.get::<i64, _>(name))
+                        .map_err(|_| IndexError::OutOfRange(format!("{name} count is negative")))
+                };
+                let counted = (count("registry")?, count("total")?, count("unresolved")?);
+                let mut cache = self
+                    .counts
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner());
+                if cache.len() >= COUNTS_CACHE_MAX {
+                    cache.clear();
+                }
+                cache.insert(key, (std::time::Instant::now(), counted));
+                counted
+            }
+        };
+
+        let mut page = QueryBuilder::<Postgres>::new(
+            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik,
+                    CASE WHEN m.key IS NULL THEN d.description END AS description",
+        );
+        page.push(LISTING_FROM);
+        push_operator_scope(&mut page, query);
+        push_caller_filters(&mut page, query);
+        page.push(match query.order {
+            ListingOrder::Newest => " ORDER BY a.ord DESC",
+            ListingOrder::NamedFirst => " ORDER BY a.name_rank ASC, a.ord DESC",
+        });
+        page.push(" OFFSET ");
+        page.push_bind(bounded(query.offset));
+        if let Some(limit) = query.limit {
+            page.push(" LIMIT ");
+            page.push_bind(bounded(limit));
+        }
+        let rows = page.build().fetch_all(&mut *tx).await?;
+        tx.commit().await?;
+
+        Ok(AssetListPage {
+            items: rows
+                .iter()
+                .map(summary_from_row)
+                .collect::<Result<_, _>>()?,
+            registry_count,
+            total_count,
+            unresolved_count,
+        })
     }
 
     /// Chain-level collections: assets grouped by issuance key, largest
@@ -507,5 +985,35 @@ impl AssetIndex {
                 }
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    #[test]
+    fn what_was_typed_is_never_a_pattern() {
+        assert_eq!(contains_pattern("harbor"), "%harbor%");
+        assert_eq!(contains_pattern(r"100%_a\b"), r"%100\%\_a\\b%");
+    }
+
+    #[test]
+    fn a_hex_prefix_is_a_range_of_keys() {
+        let (low, high) = hex_prefix_range("0a", 32).unwrap();
+        assert_eq!((low[0], low[1], low.len()), (0x0a, 0x00, 32));
+        assert_eq!((high[0], high[1]), (0x0a, 0xff));
+        // An odd number of digits: the last nibble spans 0 to f.
+        let (low, high) = hex_prefix_range("0a5", 33).unwrap();
+        assert_eq!((low[1], high[1], low.len()), (0x50, 0x5f, 33));
+        // A whole key is a range of one.
+        let whole = "ab".repeat(32);
+        let (low, high) = hex_prefix_range(&whole, 32).unwrap();
+        assert_eq!(low, high);
+        // Not hex, empty, or longer than a key: no identifier can match.
+        assert!(hex_prefix_range("harbor", 32).is_none());
+        assert!(hex_prefix_range("", 32).is_none());
+        assert!(hex_prefix_range(&"a".repeat(65), 32).is_none());
+        assert!(hex_prefix_range(&"a".repeat(65), 33).is_some());
     }
 }

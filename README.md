@@ -7,7 +7,7 @@
 **An issuance console and verifiable registry for Zcash Shielded Assets.**
 
 [![CI](https://github.com/cachet-zec/cachet/actions/workflows/ci.yml/badge.svg)](https://github.com/cachet-zec/cachet/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-gold.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-dc9a76.svg)](LICENSE)
 
 Cachet is where ZSAs are born and verified: mint an asset with metadata
 cryptographically sealed into its on-chain id, browse a registry that anyone
@@ -23,9 +23,10 @@ while balances and transfers stay shielded, as Zcash intends.
 > **Honest scope.** ZSA (ZIPs 226/227) is not on Zcash mainnet: the v6
 > transaction format was deferred out of NU7, and the protocol lives on a
 > dedicated [public ZSA testnet](https://forum.zcashcommunity.com/t/zsa-testnet/56884)
-> (since August 2026) and on local regtest. Cachet is therefore
-> **production-grade engineering around a testnet-grade product**, built so it
-> is ready the day the protocol ships. No mainnet claims are made.
+> (since August 2026, run by QEDIT, reset once on 10 September 2026) and on
+> local regtest. Cachet is therefore **production-grade engineering around a
+> testnet-grade product**, built so the tooling exists if the protocol
+> ships. No mainnet claims are made.
 
 ## What it does
 
@@ -98,7 +99,7 @@ while balances and transfers stay shielded, as Zcash intends.
 Works against a local OrchardZSA **regtest** (Docker) or the public **ZSA
 testnet** (`CACHET_NETWORK=zsa-testnet`). Either chain can be reset by its
 operators: the registry detects it, drops its index and re-indexes from the
-new genesis on its own; what was issued before exists only on the abandoned
+start on its own; what was issued before exists only on the abandoned
 chain, while sealed bundles stay served for a re-mint under the same key.
 
 ## Scope and non-goals
@@ -128,7 +129,7 @@ deliberately not a marketplace, and some lines are structural:
 console/                 Next.js console: landing, mint studio, registry, asset pages
 server/crates/domain     Pure business types — no chain, no I/O
 server/crates/notes      Shared Orchard note tracking (server wallet + browser wallet)
-server/crates/chain      The ONLY crate that touches the QED-it protocol forks
+server/crates/chain      The ONLY crate that touches the QEDIT protocol forks
 server/crates/index      Postgres: the chain-derived cache, plus what the chain cannot rebuild
 server/crates/api        axum HTTP API, OpenAPI generated from code
 server/crates/mint-engine  The browser engine: the ZSA stack compiled to WASM
@@ -136,6 +137,8 @@ server/crates/verify-engine  Asset-id derivation alone (no circuit): 247 KB wasm
 packages/api-client      TypeScript client generated from the OpenAPI document
 packages/registry-spec   The metadata format: on-chain envelope + content-addressed bundle
 scripts/mirror.py        Mirror any registry, re-hashing every byte (no dependencies)
+scripts/restore.py       Rebuild an instance's content from a mirror, over its public API
+scripts/verify-site.py   Check that a live site serves the engine bytes this repo commits
 infra/                   docker-compose (regtest + Postgres), wasm engine build, prod deploy
 docs/whitepaper          The working paper (generated PDF, measured claims only)
 ```
@@ -143,7 +146,7 @@ docs/whitepaper          The working paper (generated PDF, measured claims only)
 Two rules carry the design (see [docs/adr/001](docs/adr/001-architecture.md)):
 
 1. **The chain boundary.** `cachet-chain` is the only crate allowed to depend
-   on the alpha QED-it forks (orchard/librustzcash with ZSA support), pinned
+   on the alpha QEDIT forks (orchard/librustzcash with ZSA support), pinned
    by exact git rev. When upstream breaks, one crate changes; the domain, the
    API contract, and the console do not.
 2. **One source of truth per direction.** The chain is the source of truth
@@ -212,7 +215,9 @@ with value-bearing keys. To report a vulnerability, see
 ## Support
 
 Cachet is free infrastructure for the Zcash ecosystem. If it is useful to
-you, donations keep it running — shielded, of course:
+you, donations keep it running — shielded, of course. The
+[support page](https://cachetzec.com/support) says the rest. Mainnet ZEC,
+unlike everything else here:
 
 ```
 u1rkcc55ajpuvwxlml7rnk9lx9gu54hzzyzr356n7czrtral9p2zdcw5sm3htj9pvrl2mzx036qkejt7pkjk90kvedk6x9nghdqxv892w4wqdtxmagxsj8pynu9pr9al540dx4jg9saekeea5dmafaa09fqvcdgptxffre68uxdsu674u8
@@ -223,5 +228,5 @@ u1rkcc55ajpuvwxlml7rnk9lx9gu54hzzyzr356n7czrtral9p2zdcw5sm3htj9pvrl2mzx036qkejt7
 [MIT](LICENSE). Started by [0xPierre](https://x.com/0xPierre_com) and meant
 to outgrow him: fork it, self-host it, take it further.
 
-Bundled fonts (Fraunces, IBM Plex Mono — used to render the OpenGraph
-image) are under the [SIL Open Font License](console/src/app/og-fonts/OFL.txt).
+Bundled fonts (Bodoni Moda, DM Mono — used to render the OpenGraph
+images) are under the [SIL Open Font License](console/src/app/og-fonts/OFL.txt).

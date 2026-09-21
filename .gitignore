@@ -43,4 +43,8 @@ infra/prod/.env.prod
 .wasm-tools/
 .claude/
 docs/whitepaper/generate.py
+docs/whitepaper/cachet-whitepaper.pdf
 docs/assets/readme_banner.py
+
+# Python bytecode (scripts/)
+__pycache__/

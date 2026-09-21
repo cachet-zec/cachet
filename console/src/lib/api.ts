@@ -1,10 +1,15 @@
 import { createCachetClient } from "@cachet/api-client";
 
+import { chosenRegistry } from "@/lib/registries";
+
 /**
- * Single client instance for the browser. The base URL is inlined at build
- * time; defaults to the local dev server from docker-compose/SETUP.md.
+ * Single client instance for the browser. The base URL is the registry the
+ * visitor picked among the ones this build knows (lib/registries.ts), or
+ * the build's default: the local dev server from docker-compose/SETUP.md
+ * unless NEXT_PUBLIC_CACHET_API_URL says otherwise. Server-side rendering
+ * always reads the default.
  */
-export const apiBaseUrl = process.env.NEXT_PUBLIC_CACHET_API_URL ?? "http://localhost:8080";
+export const apiBaseUrl = chosenRegistry();
 
 export const api = createCachetClient({ baseUrl: apiBaseUrl });
 

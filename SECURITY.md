@@ -20,10 +20,18 @@ is built by the same single script CI runs (a served asset can be diffed
 against a rebuild), a strict Content-Security-Policy limits what a page
 can do, and the public instance holds nothing that helps an attacker
 mint as anyone else (asset ids derive from user keys it never sees).
-Planned hardening: signed releases and subresource integrity for the
-engine assets. The strongest mitigation is already available: run your
-own instance, or submit signed transactions to the public node directly
-— this instance is a convenience, not a chokepoint.
+The engine a mint executes (the worker and the three wasm builds) is
+committed to the repository, listed with its hashes in
+`console/public/engine-manifest.json`, and `python scripts/verify-site.py`
+checks that a live site serves exactly those bytes. It does not cover the
+console's own JavaScript, which the Next.js build does not yet produce
+reproducibly: the engine is where keys are derived and transactions are
+signed, the application is where the seed is typed. Planned hardening:
+signed releases and a reproducible application bundle. The strongest
+mitigation is already available: run your own instance. Short of that,
+the mint page can hand over the signed transaction instead of relaying
+it, and any instance's relay (or any tool that assembles a block for the
+node) can land it — this instance is a convenience, not a chokepoint.
 
 ## Running your own instance safely
 
@@ -40,11 +48,11 @@ things are on you:
   authenticating reverse proxy. The public deployment avoids the question
   entirely: `CACHET_READ_ONLY=1` plus a throwaway seed.
 - **Client-IP headers are trusted only behind a proxy.** The rate
-  limiter and the per-client write-path throttles (60 uploads a minute,
-  10 relays a minute, 8 relays in flight, all answering 429) key on the
-  real peer address by
-  default; set `CACHET_TRUST_PROXY=1` **only** when a reverse proxy you
-  control sits in front and rewrites `X-Forwarded-For` / `X-Real-IP` (the
+  limiter and the per-client write-path throttles (uploads and relays are
+  budgeted per client, relays capped in flight, all answering 429) key on
+  the real peer address by default; set `CACHET_TRUST_PROXY=1` **only**
+  when a reverse proxy you control sits in front and rewrites
+  `X-Forwarded-For` / `X-Real-IP` (the
   shipped Caddyfile does). Setting it while directly exposed lets an
   attacker spoof the header and bypass every limit. The throttles never
   hold the address itself: their key is a salted hash whose salt is drawn
@@ -58,8 +66,9 @@ things are on you:
   too), and can pause and resume minting through the instance (the
   relay and metadata uploads answer 503 while paused; the chain is
   unaffected, and the decision survives a restart). Availability only —
-  it can never alter or spend anything. Generate it randomly (`openssl rand -hex 32`) and
-  treat it like a password. Tokens shorter than 32 characters are
+  it can never alter or spend anything. Generate it randomly
+  (`openssl rand -hex 32`) and treat it like a password. Tokens shorter
+  than 32 characters are
   **refused**: the server logs a warning and leaves the admin surface
   disabled rather than accept a guessable one. Unset, the admin routes
   answer 404 and the surface does not exist — that is also the right
@@ -120,7 +129,7 @@ side. Currently tracked:
   the reasoning rather than trust it: soundness protects whoever _relies_
   on a proof, and that is consensus, not this software. Cachet produces
   proofs and never validates anyone else's. The only network it runs
-  against is a test network whose assets carry no value, so forging one
+  against is a test network, so forging one
   buys nothing. The defect is in the shared Zcash proving stack at these
   versions, not in anything Cachet does with it.
 
@@ -129,9 +138,8 @@ side. Currently tracked:
   `orchard` without the `circuit` feature, purely for asset-id derivation.
   The alert there is a manifest-level match, not an exposure.
 
-  This is a release blocker for any mainnet story, and it is listed as
-  such in the roadmap: Cachet retargets to mainnet by configuration only
-  once the ZSA branches sit on a fixed stack.
+  This is a release blocker for any mainnet story: Cachet retargets to
+  mainnet by configuration only once the ZSA branches sit on a fixed stack.
 
 - **`postcss` (4 advisories, source-map path traversal and stringify
   XSS).** `next` pins `postcss 8.4.31` exactly as a direct dependency, so
@@ -145,6 +153,6 @@ exploitable in this codebase despite the scope above, please report it.
 
 ## Out of scope
 
-- Vulnerabilities in the QED-it protocol forks, Zebra, or the ZSA testnet
+- Vulnerabilities in the QEDIT protocol forks, Zebra, or the ZSA testnet
   infrastructure — report those upstream (we will gladly relay).
 - Denial of service against your own local regtest.

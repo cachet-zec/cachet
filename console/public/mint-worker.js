@@ -15,7 +15,7 @@ let engineThreads = 1;
 // Bump on every engine rebuild: /mint-engine*/ is cached for an hour
 // (see next.config.ts), and the version query is what busts that cache
 // so a deploy is visible immediately instead of after max-age.
-const ENGINE_VERSION = "8";
+const ENGINE_VERSION = "9";
 
 async function load(variant) {
   const base = `/mint-engine${variant}`;

@@ -101,8 +101,51 @@ assets are script-minted with no description at all, the difference
 between the two views is large; a client that means to show everything
 should simply omit the parameter.
 
-Clients doing their own search, or mirroring, want neither: ask for the
-whole listing.
+Clients mirroring, or keeping their searches to themselves, want neither:
+ask for the whole listing.
+
+A client showing a list asks for a page instead:
+
+```
+GET /api/v1/assets?limit=8&offset=16&q=ticket&supply=sealed&order=named_first
+```
+
+`offset` skips assets before the page. `q` keeps assets whose name or
+description contains the text, or whose id or issuer key starts with it;
+`issuer` keeps one issuance key; `supply` is `sealed` or `open`;
+`order=named_first` puts sealed names first, then free-text labels, then
+unnamed assets, chain order kept inside each group. These are the caller's
+view as well, never moderation. Three response headers carry what a pager
+needs: `X-Registry-Count` (assets listed at all), `X-Total-Count` (assets
+matching, before the page is cut) and `X-Unresolved-Count` (those among
+them without a resolved description). `limit=0` returns the counts alone.
+
+Listings carry an `ETag`. Sent back in `If-None-Match`, an unchanged
+listing answers `304 Not Modified` with no body, which is what a client
+polling for new assets gets most of the time.
+
+## What outlives a chain reset
+
+A test network can be reset by its operators, and a reset takes every asset
+with it. A registry's journal of descriptions and its bundles are keyed by
+asset id, not by chain, and survive. An asset id is derived from the
+issuance key and the description (ZIP 227), so the same key issuing the same
+description on the new chain is the same asset id again.
+
+```
+GET /api/v1/kept?limit=25&offset=0
+GET /api/v1/kept/{asset_id}
+```
+
+The first lists descriptions held for assets the followed chain no longer
+carries, sealed names first, with the total in `X-Total-Count`; the second
+answers for one asset, and is `404` for an asset that is on chain. Entries
+carry no supply and no issuer: those were chain facts. What the operator
+withholds is left out, by description or by issuer; a registry only knows
+the issuer of content it journaled while the asset was on chain. A client offering to mint one again should
+load the bundle the envelope names, check it against the envelope's hash,
+submit it unchanged, and refuse to sign unless the description it gets back
+is the kept one to the character and the key derives the expected id.
 
 ## Permissionless description resolution
 
@@ -223,6 +266,7 @@ The result is a directory that any instance can serve:
 mirror/snapshot.json          the signed envelope, as served
 mirror/payload.json           the decoded, deterministic payload
 mirror/bundles/<sha256>.json  verified bundle bytes, named by their hash
+mirror/cids.json              the IPFS CID of each bundle, derived from its hash
 ```
 
 Two consequences worth stating plainly. A mirror needs no permission and
@@ -230,3 +274,37 @@ no trust: the operator cannot hand it altered content, because altered
 content fails its hash. And a mirror must be taken _while the source is
 up_ — the chain commits to bundle hashes, never to bundle bytes, so
 content nobody mirrored disappears with the last instance that held it.
+
+A mirror is also a way back. `scripts/restore.py --to <api>` sends one to
+any running instance using only the public routes: bundles through
+`POST /api/v1/metadata`, which stores bytes under their own hash, and
+descriptions through `POST /api/v1/assets/{id}/description`, which the
+target checks against the on-chain commitment. No database access and no
+operator permission are involved, and nothing false can be restored. The
+target learns which assets exist from the chain, so it must read the same
+one.
+
+## IPFS: addressable by construction
+
+A bundle's commitment is a SHA-256 over its exact bytes. An IPFS CIDv1 for
+a single raw block is a four-byte prefix followed by that same digest:
+
+```
+CID = "b" + base32lower( 0x01 0x55 0x12 0x20 || sha256 )     ("bafkrei...")
+        version 1, codec raw, multihash sha2-256, 32 bytes
+```
+
+So every sealed bundle has an IPFS address that anyone can compute from the asset's sealed description, with nothing but arithmetic. Nothing is uploaded for that to hold, the envelope does
+not change, and no gateway or pinning service enters the trust model. `scripts/mirror.py` writes them all to
+`cids.json`, and with `--ipfs` stores each verified bundle on the caller's
+own node and checks that the node answers with the derived address.
+
+One condition: the bundle must be stored as ONE block. IPFS accepts blocks
+up to 1 MiB and bundles are capped well below that, but a plain `ipfs add`
+chunks at 256 KiB and would give a large bundle a different root. Use
+`ipfs block put --cid-codec=raw --mhtype=sha2-256`, as the script does.
+
+What this is not: a storage guarantee. IPFS keeps what somebody pins. It
+widens who CAN hold the bytes; the chain still only commits to their hash.
+The reference console does not fetch from public gateways, which would
+show a third party who reads what.

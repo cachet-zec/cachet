@@ -3,7 +3,8 @@
 //! `cachet-chain`.
 
 use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use cachet_domain::AssetId;
@@ -12,8 +13,8 @@ use crate::AppState;
 use crate::dto::{
     AccountBalancesResponse, AssetEventResponse, AssetSummaryResponse, BatchIssueRequest,
     BatchIssueResponse, BurnAssetRequest, ChainInfoResponse, CollectionResponse, IssueAssetRequest,
-    IssueAssetResponse, MetadataUploadRequest, MetadataUploadResponse, RawBlocksResponse,
-    RelayRequest, ResolveDescriptionRequest, TransferAssetRequest, TxResponse,
+    IssueAssetResponse, KeptAssetResponse, MetadataUploadRequest, MetadataUploadResponse,
+    RawBlocksResponse, RelayRequest, ResolveDescriptionRequest, TransferAssetRequest, TxResponse,
 };
 use crate::error::ApiError;
 
@@ -28,6 +29,8 @@ pub(crate) fn router() -> Router<AppState> {
         .route("/api/v1/assets", get(list_assets).post(issue_asset))
         .route("/api/v1/assets/batch", post(issue_asset_batch))
         .route("/api/v1/collections", get(list_collections))
+        .route("/api/v1/kept", get(list_kept))
+        .route("/api/v1/kept/{asset_id}", get(get_kept))
         .route("/api/v1/assets/{asset_id}", get(get_asset))
         .route(
             "/api/v1/assets/{asset_id}/description",
@@ -308,100 +311,211 @@ fn ensure_writable(state: &AppState) -> Result<(), ApiError> {
 
 /// Query parameters for the asset listing.
 #[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+// Said outright: the handler takes the extractor inside a `Result`, where
+// the macro can no longer read it off the signature.
+#[into_params(parameter_in = Query)]
 pub(crate) struct ListAssetsParams {
     /// Keep only the newest N assets. Omitted: the whole registry (what a
     /// client doing its own search or mirroring wants).
     pub limit: Option<usize>,
+    /// Skip this many assets before the first one returned. With `limit`,
+    /// a page. The totals a pager needs come back as headers.
+    pub offset: Option<usize>,
     /// `true`: keep only assets whose description is known, so their name
     /// is attested rather than an id. Omitted: everything, which stays the
     /// default - this is a caller's view preference, never moderation.
     pub resolved: Option<bool>,
+    /// Keep assets whose name or description contains this text (case
+    /// ignored), or whose asset id or issuer key starts with it.
+    pub q: Option<String>,
+    /// Keep only assets minted under this issuance key (hex).
+    pub issuer: Option<String>,
+    /// `sealed`: finalized assets only. `open`: the others.
+    #[param(inline)]
+    pub supply: Option<SupplyFilter>,
+    /// `named_first`: sealed names, then free-text labels, then unnamed,
+    /// chain order kept inside each group. Omitted: newest first.
+    #[param(inline)]
+    pub order: Option<ListOrder>,
+}
+
+/// Which supply states a listing keeps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SupplyFilter {
+    Sealed,
+    Open,
+}
+
+/// How a listing is ordered.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ListOrder {
+    NamedFirst,
+}
+
+/// Assets the registry lists, before the caller's own filters.
+const REGISTRY_COUNT: &str = "x-registry-count";
+/// Assets matching the caller's filters, before `offset` and `limit`.
+const TOTAL_COUNT: &str = "x-total-count";
+/// Among those, the ones without a resolved description.
+const UNRESOLVED_COUNT: &str = "x-unresolved-count";
+
+/// A JSON body the caller can keep: it carries a validator, and comes back
+/// as `304 Not Modified`, without a body, to a caller that already holds
+/// it. A registry is polled far more often than it changes.
+///
+/// The validator is weak and compared by prefix: a proxy that compresses
+/// the response is allowed to decorate it on the way out.
+fn revalidated_json<T: serde::Serialize>(
+    request: &HeaderMap,
+    body: &T,
+    counts: &[(&'static str, usize)],
+) -> Response {
+    use sha2::Digest;
+
+    let bytes = serde_json::to_vec(body).expect("a listing is plain data");
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(&bytes);
+    for (name, value) in counts {
+        hasher.update(name.as_bytes());
+        hasher.update(value.to_le_bytes());
+    }
+    let tag = hex::encode(&hasher.finalize()[..16]);
+
+    let held = request
+        .get(header::IF_NONE_MATCH)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value.split(',').any(|candidate| {
+                candidate
+                    .trim()
+                    .trim_start_matches("W/")
+                    .trim_matches('"')
+                    .starts_with(&tag)
+            })
+        });
+
+    let mut response = if held {
+        StatusCode::NOT_MODIFIED.into_response()
+    } else {
+        ([(header::CONTENT_TYPE, "application/json")], bytes).into_response()
+    };
+    let headers = response.headers_mut();
+    headers.insert(
+        header::ETAG,
+        HeaderValue::from_str(&format!("W/\"{tag}\"")).expect("hex is a valid header value"),
+    );
+    // Keep it, but ask before every reuse.
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    for (name, value) in counts {
+        headers.insert(*name, HeaderValue::from(*value as u64));
+    }
+    response
 }
 
 /// List every asset observed on the chain, newest first.
 ///
-/// `resolved=true` narrows the listing to assets whose description is
-/// known, which is what a client wants when it intends to show names
-/// rather than ids. Everything stays reachable without it.
+/// Without parameters: the whole registry, as before. `limit` and `offset`
+/// cut a page out of it; `q`, `issuer`, `supply` and `resolved` narrow it
+/// first, and `order=named_first` brings attested names to the front. All
+/// of them are the caller's view, never moderation: everything stays
+/// reachable without them.
+///
+/// Three headers carry what a pager needs: `X-Registry-Count` (assets
+/// listed at all), `X-Total-Count` (assets matching the filters, before the
+/// page is cut) and `X-Unresolved-Count` (those among them without a
+/// resolved description). The response carries an `ETag`; send it back in
+/// `If-None-Match` and an unchanged listing answers `304` with no body.
 #[utoipa::path(
     get,
     path = "/api/v1/assets",
     tag = "registry",
     params(ListAssetsParams),
     responses(
-        (status = 200, body = Vec<AssetSummaryResponse>),
+        (status = 200, body = Vec<AssetSummaryResponse>, headers(
+            ("ETag" = String, description = "Validator for `If-None-Match`"),
+            ("X-Registry-Count" = u64, description = "Assets listed, before any filter"),
+            ("X-Total-Count" = u64, description = "Assets matching the filters, before `offset` and `limit`"),
+            ("X-Unresolved-Count" = u64, description = "Matching assets without a resolved description"),
+        )),
+        (status = 304, description = "The listing the caller holds is still current"),
+        (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
         (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 pub(crate) async fn list_assets(
     State(state): State<AppState>,
-    axum::extract::Query(params): axum::extract::Query<ListAssetsParams>,
-) -> Result<Json<Vec<AssetSummaryResponse>>, ApiError> {
-    let assets = state.chain.list_assets().await?;
-    let mut responses: Vec<AssetSummaryResponse> = assets.into_iter().map(Into::into).collect();
+    params: Result<
+        axum::extract::Query<ListAssetsParams>,
+        axum::extract::rejection::QueryRejection,
+    >,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
+    let axum::extract::Query(params) = params?;
     // Operator moderation at issuer granularity: a hidden issuance key
     // removes every asset minted under it from listings. Availability
-    // only, as always — the chain record is untouched and any other
+    // only, as always: the chain record is untouched and any other
     // registry can keep serving it.
-    if let Some(store) = &state.metadata {
-        let hidden = store.hidden_issuers().await.map_err(metadata_error)?;
-        if !hidden.is_empty() {
-            let hidden: std::collections::HashSet<String> =
-                hidden.into_iter().map(hex::encode).collect();
-            responses.retain(|response| {
-                response
-                    .issuer
-                    .as_deref()
-                    .is_none_or(|issuer| !hidden.contains(issuer))
-            });
-        }
-    }
-    // Caller's choice, applied before the limit so `resolved` and
-    // `limit` compose: asking for five resolved assets returns five, not
-    // whatever is resolved among the five newest.
-    if params.resolved == Some(true) {
-        responses.retain(|response| response.name_source.is_some());
-    }
-    // Truncate after moderation (a hidden issuer must not consume a
-    // slot) and before enrichment (only enrich what is actually sent).
-    if let Some(limit) = params.limit {
-        responses.truncate(limit);
-    }
-    // Bulk image enrichment: one bounded store query for the whole
-    // listing instead of two per asset (the endpoint is public and cheap
-    // to call; its cost must not scale with registry size).
-    if let Some(store) = &state.metadata {
-        let hashes: Vec<[u8; 32]> = responses
-            .iter()
-            .filter_map(|response| {
-                response
-                    .description
-                    .as_deref()
-                    .and_then(cachet_domain::ChainDescription::parse)
-                    .and_then(|envelope| parse_sha256(&envelope.sha256).ok())
-            })
-            .collect();
-        let visible = store
-            .visible_image_hashes(&hashes)
-            .await
-            .map_err(metadata_error)?;
-        for response in &mut responses {
-            let Some(envelope) = response
-                .description
+    let hidden_issuers = match &state.metadata {
+        Some(store) => store.hidden_issuers().await.map_err(metadata_error)?,
+        None => Vec::new(),
+    };
+    // An issuer that is not a key matches nothing; say so rather than
+    // answer an empty page that looks like an issuer without assets.
+    let issuer = params
+        .issuer
+        .as_deref()
+        .map(|issuer| {
+            hex::decode(issuer)
+                .ok()
+                .filter(|key| key.len() == 33)
+                .ok_or(ApiError::Validation(
+                    cachet_domain::DomainError::InvalidId {
+                        kind: "issuer",
+                        expected: 66,
+                    },
+                ))
+        })
+        .transpose()?;
+    // The backend filters, orders, cuts the page and counts: the page is
+    // cut after moderation (a hidden issuer must not consume a slot) and
+    // before enrichment (only what is sent gets enriched).
+    let page = state
+        .chain
+        .list_assets_page(&cachet_domain::AssetListQuery {
+            hidden_issuers,
+            resolved_only: params.resolved == Some(true),
+            issuer,
+            supply: params.supply.map(|supply| match supply {
+                SupplyFilter::Sealed => cachet_domain::SupplyState::Sealed,
+                SupplyFilter::Open => cachet_domain::SupplyState::Open,
+            }),
+            search: params
+                .q
                 .as_deref()
-                .and_then(cachet_domain::ChainDescription::parse)
-            else {
-                continue;
-            };
-            if let Ok(sha256) = parse_sha256(&envelope.sha256) {
-                if visible.contains(&sha256) {
-                    response.image_path =
-                        Some(format!("/api/v1/metadata/{}/image", envelope.sha256));
-                }
-            }
-        }
-    }
-    Ok(Json(responses))
+                .and_then(cachet_domain::AssetListQuery::search_text),
+            order: match params.order {
+                Some(ListOrder::NamedFirst) => cachet_domain::ListingOrder::NamedFirst,
+                None => cachet_domain::ListingOrder::Newest,
+            },
+            offset: params.offset.unwrap_or(0),
+            limit: params.limit,
+        })
+        .await?;
+    let (registry_count, total_count, unresolved_count) =
+        (page.registry_count, page.total_count, page.unresolved_count);
+    let mut responses: Vec<AssetSummaryResponse> = page.items.into_iter().map(Into::into).collect();
+    enrich_image_paths(&state, &mut responses).await?;
+    Ok(revalidated_json(
+        &request,
+        &responses,
+        &[
+            (REGISTRY_COUNT, registry_count),
+            (TOTAL_COUNT, total_count),
+            (UNRESOLVED_COUNT, unresolved_count),
+        ],
+    ))
 }
 
 /// Chain-level collections: every asset minted under one issuance key,
@@ -411,13 +525,17 @@ pub(crate) async fn list_assets(
     path = "/api/v1/collections",
     tag = "registry",
     responses(
-        (status = 200, body = Vec<CollectionResponse>),
+        (status = 200, body = Vec<CollectionResponse>, headers(
+            ("ETag" = String, description = "Validator for `If-None-Match`"),
+        )),
+        (status = 304, description = "The listing the caller holds is still current"),
         (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
 pub(crate) async fn list_collections(
     State(state): State<AppState>,
-) -> Result<Json<Vec<CollectionResponse>>, ApiError> {
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
     let collections = state.chain.collections().await?;
     let mut responses: Vec<CollectionResponse> = collections.into_iter().map(Into::into).collect();
     if let Some(store) = &state.metadata {
@@ -428,46 +546,153 @@ pub(crate) async fn list_collections(
             responses.retain(|collection| !hidden.contains(&collection.issuer));
         }
     }
-    Ok(Json(responses))
+    Ok(revalidated_json(&request, &responses, &[]))
 }
 
-/// Registry enrichment: point `image_path` at the stored bundle's image
-/// when the description carries a v1 envelope whose bundle we hold and it
-/// embeds one (true for anything sealed through this instance, browser
-/// mints included, once its description is resolved).
-async fn enrich_image_path(
+/// Point `image_path` at the stored image for every row whose sealed
+/// bundle holds one: one bounded store query for the whole page instead of
+/// two per row, and no bundle payload crosses the wire for a listing (the
+/// endpoints are public and cheap to call; their cost must not scale with
+/// what they list).
+async fn enrich_image_paths(
     state: &AppState,
-    response: &mut AssetSummaryResponse,
+    responses: &mut [AssetSummaryResponse],
 ) -> Result<(), ApiError> {
     let Some(store) = &state.metadata else {
         return Ok(());
     };
-    let Some(envelope) = response
-        .description
-        .as_deref()
-        .and_then(cachet_domain::ChainDescription::parse)
-    else {
-        return Ok(());
+    let sealed_hash = |response: &AssetSummaryResponse| {
+        response
+            .description
+            .as_deref()
+            .and_then(cachet_domain::ChainDescription::parse)
+            .and_then(|envelope| {
+                parse_sha256(&envelope.sha256)
+                    .ok()
+                    .map(|hash| (hash, envelope.sha256))
+            })
     };
-    let Ok(sha256) = parse_sha256(&envelope.sha256) else {
-        return Ok(());
-    };
-    if store.is_hidden(sha256).await.map_err(metadata_error)? {
-        return Ok(()); // operator denylist: don't advertise a hidden bundle
-    }
-    let has_image = store
-        .get(sha256)
+    let hashes: Vec<[u8; 32]> = responses
+        .iter()
+        .filter_map(|response| sealed_hash(response).map(|(hash, _)| hash))
+        .collect();
+    let visible = store
+        .visible_image_hashes(&hashes)
         .await
-        .map_err(metadata_error)?
-        .and_then(|bytes| serde_json::from_slice::<cachet_domain::MetadataBundle>(&bytes).ok())
-        .is_some_and(|bundle| bundle.image_data_uri.is_some());
-    if has_image {
-        response.image_path = Some(format!("/api/v1/metadata/{}/image", envelope.sha256));
+        .map_err(metadata_error)?;
+    for response in responses {
+        if let Some((hash, hex)) = sealed_hash(response) {
+            if visible.contains(&hash) {
+                response.image_path = Some(format!("/api/v1/metadata/{hex}/image"));
+            }
+        }
     }
     Ok(())
 }
 
-/// Relay a fully signed, browser-built issuance transaction to the chain.
+/// A kept description as a response, with its image when still held.
+fn kept_summary(asset_id: AssetId, description: String) -> AssetSummaryResponse {
+    cachet_domain::AssetSummary {
+        asset_id,
+        description: Some(description),
+        issuer: None,
+        total_supply: 0,
+        finalized: false,
+    }
+    .into()
+}
+
+/// Query parameters for the kept listing.
+#[derive(Debug, serde::Deserialize, utoipa::IntoParams)]
+// Said outright: the handler takes the extractor inside a `Result`, where
+// the macro can no longer read it off the signature.
+#[into_params(parameter_in = Query)]
+pub(crate) struct ListKeptParams {
+    /// Rows per page (1-100, default 25).
+    pub limit: Option<usize>,
+    /// Rows to skip.
+    pub offset: Option<usize>,
+}
+
+/// Sealed content kept for assets the chain no longer carries.
+///
+/// A test network can be reset, and a reset takes every asset with it. The
+/// registry's journal of descriptions and its bundles are keyed by asset id
+/// and survive: this lists the ones whose asset is no longer on the chain
+/// the registry follows, sealed names first. `X-Total-Count` carries the
+/// total. Descriptions the operator withholds are left out.
+#[utoipa::path(
+    get,
+    path = "/api/v1/kept",
+    tag = "registry",
+    params(ListKeptParams),
+    responses(
+        (status = 200, body = Vec<KeptAssetResponse>, headers(
+            ("ETag" = String, description = "Validator for `If-None-Match`"),
+            ("X-Total-Count" = u64, description = "Kept assets, before `offset` and `limit`"),
+        )),
+        (status = 304, description = "The listing the caller holds is still current"),
+        (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+pub(crate) async fn list_kept(
+    State(state): State<AppState>,
+    params: Result<axum::extract::Query<ListKeptParams>, axum::extract::rejection::QueryRejection>,
+    request: HeaderMap,
+) -> Result<Response, ApiError> {
+    let axum::extract::Query(params) = params?;
+    let limit = params.limit.unwrap_or(25).clamp(1, 100);
+    let (kept, total) = state
+        .chain
+        .kept_off_chain(limit, params.offset.unwrap_or(0))
+        .await?;
+    let mut summaries: Vec<AssetSummaryResponse> = kept
+        .into_iter()
+        .map(|(asset_id, description)| kept_summary(asset_id, description))
+        .collect();
+    enrich_image_paths(&state, &mut summaries).await?;
+    let responses: Vec<KeptAssetResponse> = summaries.into_iter().map(Into::into).collect();
+    Ok(revalidated_json(
+        &request,
+        &responses,
+        &[(TOTAL_COUNT, total)],
+    ))
+}
+
+/// The sealed content kept for one asset the chain no longer carries.
+///
+/// `404` when the asset is on chain (ask `/api/v1/assets/{asset_id}`), was
+/// never known here, or its description is withheld by the operator.
+#[utoipa::path(
+    get,
+    path = "/api/v1/kept/{asset_id}",
+    tag = "registry",
+    params(("asset_id" = String, Path, description = "Asset id, hex-encoded 32 bytes")),
+    responses(
+        (status = 200, body = KeptAssetResponse),
+        (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+pub(crate) async fn get_kept(
+    State(state): State<AppState>,
+    Path(asset_id): Path<String>,
+) -> Result<Json<KeptAssetResponse>, ApiError> {
+    let asset_id: AssetId = asset_id.parse().map_err(ApiError::Validation)?;
+    let description = state
+        .chain
+        .kept_description(asset_id)
+        .await?
+        .ok_or(ApiError::NotFound {
+            what: "kept content for this asset",
+        })?;
+    let mut summary = kept_summary(asset_id, description);
+    enrich_image_paths(&state, std::slice::from_mut(&mut summary)).await?;
+    Ok(Json(summary.into()))
+}
+
+/// Relay a fully signed, browser-built ZSA transaction (issuance, transfer or burn).
 ///
 /// Deliberately open on read-only deployments: read-only means "this
 /// instance signs nothing", and a relayed transaction was signed by the
@@ -556,8 +781,12 @@ pub(crate) async fn relay_transaction(
             .map(|asset| asset.to_string())
             .collect();
         tokio::spawn(async move {
+            // The first origin listed is this instance's own console.
             let origin = std::env::var("CACHET_CORS_ORIGIN")
-                .unwrap_or_else(|_| "http://localhost:3000".to_owned());
+                .ok()
+                .and_then(|value| value.split(',').next().map(|first| first.trim().to_owned()))
+                .filter(|first| !first.is_empty())
+                .unwrap_or_else(|| "http://localhost:3000".to_owned());
             let mut lines = vec![format!(
                 "🪙 **Browser mint relayed** — {} asset{}",
                 assets.len(),
@@ -885,7 +1114,7 @@ pub(crate) async fn resolve_description(
         .resolve_description(asset_id, &body.description)
         .await?;
     let mut response: AssetSummaryResponse = state.chain.asset_state(asset_id).await?.into();
-    enrich_image_path(&state, &mut response).await?;
+    enrich_image_paths(&state, std::slice::from_mut(&mut response)).await?;
     Ok(Json(response))
 }
 
@@ -967,6 +1196,6 @@ pub(crate) async fn get_asset(
     let asset_id: AssetId = asset_id.parse().map_err(ApiError::Validation)?;
     let mut response: AssetSummaryResponse = state.chain.asset_state(asset_id).await?.into();
     refuse_hidden_issuer(&state, response.issuer.as_deref()).await?;
-    enrich_image_path(&state, &mut response).await?;
+    enrich_image_paths(&state, std::slice::from_mut(&mut response)).await?;
     Ok(Json(response))
 }

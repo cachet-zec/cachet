@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 
 import { FeaturedAssets } from "@/components/landing/featured-assets";
@@ -5,6 +6,12 @@ import { Reveal } from "@/components/reveal";
 import { LiveStats } from "@/components/landing/live-stats";
 import { SealWatermark } from "@/components/seal-mark";
 import { ghostButton, primaryButton } from "@/lib/ui";
+import { pageMetadata } from "@/lib/seo";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Cachet · shielded asset issuance on Zcash",
+  path: "/",
+});
 
 const steps = [
   {
@@ -32,20 +39,17 @@ export default function LandingPage() {
       <section className="rise relative grid items-start gap-10 lg:grid-cols-[7fr_4fr]">
         <div
           aria-hidden
-          className="pointer-events-none absolute -left-24 -top-48 -z-10 h-[440px] w-[420px] bg-[radial-gradient(closest-side,rgba(232,178,58,0.06),transparent)] sm:-left-40 sm:w-[680px]"
+          className="pointer-events-none absolute -left-24 -top-48 -z-10 h-[440px] w-[420px] bg-[radial-gradient(closest-side,rgba(213,154,124,0.06),transparent)] sm:-left-40 sm:w-[680px]"
         />
-        <SealWatermark className="absolute -right-52 -top-40 -z-10 hidden w-[620px] opacity-[0.05] lg:block" />
+        <SealWatermark className="absolute -right-64 -top-72 -z-10 w-[560px] sm:w-[760px] lg:-right-[26rem]" />
         <div>
-          <p className="font-data text-[11px] uppercase tracking-[0.24em] text-[#e8b23a]">
-            Issuance console &amp; verifiable registry
-          </p>
-          <h1 className="font-display mt-4 max-w-xl text-5xl font-semibold leading-[1.05] tracking-tight text-neutral-50 sm:text-6xl">
-            Mint <em className="italic text-[#e8b23a]">shielded</em> assets on&nbsp;Zcash.
+          <h1 className="font-display max-w-2xl text-5xl font-medium leading-[1.02] text-neutral-50 sm:text-7xl">
+            Issue shielded assets on&nbsp;Zcash.
           </h1>
-          <p className="mt-6 max-w-lg text-[15px] leading-relaxed text-neutral-400">
+          <p className="mt-7 max-w-xl text-lg leading-relaxed text-neutral-300">
             Mint, transfer and burn shielded assets from your browser: your keys never leave the
             page, and the registry cannot even see which notes are yours. Public, auditable
-            supplies; metadata sealed on-chain forever.
+            supplies; metadata sealed into the asset id.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link href="/mint" className={primaryButton}>
@@ -67,7 +71,7 @@ export default function LandingPage() {
           <h2 className="font-display text-2xl font-medium text-neutral-100">The registry</h2>
           <Link
             href="/console"
-            className="font-data text-[13px] text-neutral-400 transition hover:text-[#e8b23a]"
+            className="font-data text-sm text-neutral-400 transition hover:text-accent"
           >
             browse all →
           </Link>
@@ -82,65 +86,69 @@ export default function LandingPage() {
           <br />
           Your assets. Verifiably.
         </h2>
-        <ol className="stagger flex flex-col">
-          {steps.map((step, index) => (
-            <li
-              key={step.title}
-              className="grid grid-cols-[auto_1fr] gap-5 border-t border-white/[0.07] py-6 last:border-b"
-            >
-              <span className="font-data pt-0.5 text-sm text-[#e8b23a]">
-                {String(index + 1).padStart(2, "0")}
-              </span>
-              <div>
-                <h3 className="font-display text-lg font-medium text-neutral-100">{step.title}</h3>
-                <p className="mt-1.5 max-w-md text-sm leading-relaxed text-neutral-400">
-                  {step.body}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ol>
+        <div className="relative pl-7">
+          <span aria-hidden className="steps-thread">
+            <span className="steps-thread-fill" />
+          </span>
+          <ol className="stagger flex flex-col">
+            {steps.map((step, index) => (
+              <li key={step.title} className="grid grid-cols-[auto_1fr] gap-5 py-5">
+                <span className="step-num font-display pt-0.5 text-lg text-accent">
+                  {index + 1}
+                </span>
+                <div>
+                  <h3 className="font-display text-2xl font-medium text-neutral-100">
+                    {step.title}
+                  </h3>
+                  <p className="mt-2 max-w-lg text-base leading-relaxed text-neutral-300">
+                    {step.body}
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
       </Reveal>
 
       {/* Honest framing: an official notice, set as ledger lines and
-          stamped like a document. Facts, not prose. */}
-      <Reveal className="rounded-lg border border-white/[0.08] bg-[#12100d] p-6 [background-image:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0)_45%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_3px_rgba(0,0,0,0.35)] sm:p-7">
+          stamped like a document. */}
+      <Reveal className="rounded-lg border border-white/[0.08] bg-surface p-6 [background-image:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0)_45%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_3px_rgba(0,0,0,0.35)] sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <h2 className="font-data text-[11px] uppercase tracking-[0.24em] text-neutral-500">
-            Notice · read before believing
+          <h2 className="font-display text-2xl font-medium text-neutral-100">
+            Read before believing
           </h2>
           <span
             aria-hidden
-            className="font-data stamp-press select-none rounded-sm border border-[#e8b23a]/70 px-2.5 py-1 text-[11px] uppercase tracking-[0.2em] text-[#e8b23a]/90 outline outline-1 outline-offset-4 outline-[#e8b23a]/30"
+            className="font-data stamp-press select-none rounded-sm border border-accent/70 px-2.5 py-1 text-[13px] uppercase tracking-[0.2em] text-accent/90 outline outline-1 outline-offset-4 outline-accent/30"
           >
             testnet
           </span>
         </div>
-        <dl className="mt-5 max-w-2xl">
+        {/* The questions a visitor actually has, each with its answer under it. */}
+        <dl className="stagger mt-6 grid gap-x-10 gap-y-6 sm:grid-cols-2">
           {[
-            ["zsa on mainnet", "not yet; it ships with a future network upgrade"],
-            ["this site runs on", "the public ZSA testnet, live since August 2026"],
-            ["proofs, blocks, assets", "real"],
-          ].map(([fact, value]) => (
-            <div
-              key={fact}
-              className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-0.5 border-b border-white/[0.06] py-2.5 last:border-b-0"
-            >
-              <dt className="font-data text-[11px] uppercase tracking-[0.16em] text-neutral-500">
-                {fact}
-              </dt>
-              <dd className="font-data text-right text-[13px] text-neutral-200">{value}</dd>
+            ["Are ZSAs on mainnet?", "Not yet, and not scheduled. It takes a network upgrade."],
+            ["What does this site run on?", "The public ZSA testnet, run by QEDIT, not by Cachet."],
+            [
+              "What if that testnet is reset?",
+              "Every asset on it is gone; it has happened once. What you sealed is kept, and your seed mints it back under the same asset id.",
+            ],
+            ["So what is real here?", "The proofs, the blocks and the assets: all of it."],
+          ].map(([question, answer]) => (
+            <div key={question}>
+              <dt className="text-base font-semibold text-neutral-50">{question}</dt>
+              <dd className="mt-1 text-base leading-relaxed text-neutral-300">{answer}</dd>
             </div>
           ))}
         </dl>
-        <p className="mt-5 max-w-2xl text-sm leading-relaxed text-neutral-400">
-          We build as if the protocol ships tomorrow. When it does, Cachet is ready. Every claim
+        <p className="mt-7 max-w-2xl text-sm leading-relaxed text-neutral-400">
+          We build as if the protocol could ship tomorrow. If it does, Cachet is ready. Every claim
           above is measured or checkable:{" "}
           <a
             href="/cachet-whitepaper.pdf"
             target="_blank"
             rel="noreferrer"
-            className="text-[#e8b23a] underline decoration-[#e8b23a]/30 transition hover:decoration-[#e8b23a]"
+            className="text-accent underline decoration-accent/30 transition hover:decoration-accent"
           >
             read the working paper
           </a>

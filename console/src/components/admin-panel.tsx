@@ -4,8 +4,11 @@ import { useState } from "react";
 
 import Link from "next/link";
 
-import { api, apiBaseUrl } from "@/lib/api";
-import { card, cardTitle, dangerButton, ghostButton, input, label, stamp } from "@/lib/ui";
+import { SealMark } from "@/components/seal-mark";
+import { createCachetClient } from "@cachet/api-client";
+
+import { DEFAULT_REGISTRY } from "@/lib/registries";
+import { card, dangerButton, input, label, primaryButton, stamp } from "@/lib/ui";
 
 type Entry = {
   kind: string;
@@ -43,8 +46,31 @@ function bundleSha(description: string | null): string | null {
  * CACHET_ADMIN_TOKEN is configured server-side. Availability-only, like
  * the CLI it mirrors: hide/unhide, never alter.
  */
+/**
+ * The operator page is pinned to this build's own API. A visitor may read
+ * another registry (lib/registries.ts); an admin token must never follow
+ * that choice to somebody else's server.
+ */
+const apiBaseUrl = DEFAULT_REGISTRY;
+const api = createCachetClient({ baseUrl: apiBaseUrl });
+
 /** Rows per page in the two long lists. */
 const PAGE_SIZE = 25;
+
+const sectionTitle = "font-display text-2xl font-medium text-neutral-100";
+
+/** Row-sized buttons: the shared ones are sized for a form's main action. */
+const smallGhost =
+  "rounded-[2px] border border-line-strong px-3 py-1.5 text-sm text-neutral-200 transition " +
+  "hover:border-accent/60 hover:text-accent disabled:opacity-40";
+const smallDanger =
+  "rounded-[2px] border border-red-400/40 px-3 py-1.5 text-sm text-red-300 transition " +
+  "hover:border-red-400/70 hover:bg-red-400/10 disabled:opacity-40";
+
+/** Thousands separators without going through Number: a supply can exceed 2^53. */
+function formatSupply(value: string | number): string {
+  return String(value).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
 
 function Pager({
   page,
@@ -59,14 +85,14 @@ function Pager({
 }) {
   if (pages <= 1) return null;
   return (
-    <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-      <span className="font-data text-xs text-neutral-500">
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+      <span className="font-data text-[13px] text-neutral-500">
         page {page + 1} of {pages} · {total} rows
       </span>
       <span className="flex items-center gap-2">
         <button
           type="button"
-          className={`${ghostButton} px-3 py-1 text-xs`}
+          className={smallGhost}
           disabled={page === 0}
           onClick={() => onPage(page - 1)}
         >
@@ -74,7 +100,7 @@ function Pager({
         </button>
         <button
           type="button"
-          className={`${ghostButton} px-3 py-1 text-xs`}
+          className={smallGhost}
           disabled={page >= pages - 1}
           onClick={() => onPage(page + 1)}
         >
@@ -320,116 +346,195 @@ export function AdminPanel() {
 
   if (!unlocked) {
     return (
-      <div className="mx-auto flex max-w-md flex-col gap-4 pt-16">
-        <h1 className="font-display text-2xl font-semibold text-neutral-100">Operator</h1>
-        <p className="text-sm text-neutral-500">Paste your admin token.</p>
-        <input
-          className={input}
-          type="password"
-          value={token}
-          onChange={(event) => setToken(event.target.value)}
-          placeholder="admin token"
-          onKeyDown={(event) => {
-            if (event.key === "Enter") void unlock();
-          }}
-        />
-        <button type="button" className={ghostButton} onClick={() => void unlock()}>
-          Unlock
-        </button>
-        {status && <p className="text-sm text-red-400">{status}</p>}
+      <div className="mx-auto flex max-w-md flex-col pt-14">
+        <div className={`${card} flex flex-col gap-4`}>
+          <div className="flex items-center gap-3">
+            <SealMark size={34} />
+            <h1 className="font-display text-3xl font-medium text-neutral-50">Operator</h1>
+          </div>
+          <p className="text-base leading-relaxed text-neutral-300">
+            Paste this instance&apos;s admin token. It stays in this tab&apos;s memory: never
+            stored, never in a cookie, gone when the tab closes.
+          </p>
+          <p className="font-data text-[13px] text-neutral-500">
+            Sent only to <span className="text-neutral-300">{new URL(apiBaseUrl).host}</span>
+          </p>
+          <input
+            className={input}
+            type="password"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            placeholder="admin token"
+            autoComplete="off"
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void unlock();
+            }}
+          />
+          <button
+            type="button"
+            className={primaryButton}
+            disabled={token.trim() === ""}
+            onClick={() => void unlock()}
+          >
+            Unlock
+          </button>
+          {status && <p className="text-sm text-red-300">{status}</p>}
+        </div>
       </div>
     );
   }
 
-  return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-semibold text-neutral-100">
-          Operator moderation
-        </h1>
-        <button
-          type="button"
-          data-testid="admin-refresh"
-          className={`${ghostButton} px-3 py-1 text-xs`}
-          disabled={refreshing}
-          title="Reload the pause state, the assets, the issuers and the moderation entries."
-          onClick={() => void reload()}
-        >
-          {refreshing ? "Refreshing…" : "Refresh"}
-        </button>
-      </div>
-      <p className="max-w-2xl text-sm text-neutral-500">
-        Hiding withholds distribution on THIS registry (listings, bundles, images answer 410) and is
-        reversible. Purging also deletes a bundle&apos;s bytes from disk, for content an operator
-        must not keep; the entry stays so the bytes cannot return. Either way the chain record is
-        untouched and any other registry can keep serving the identical content. A registry can
-        withhold; it can never lie.
-      </p>
-      {status && <p className="text-sm text-[#e8b23a]">{status}</p>}
+  const purgedCount = entries.filter((entry) => entry.bytes_present === false).length;
 
-      <section className={card} data-testid="admin-pause">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className={cardTitle}>Minting through this instance</h2>
-          <span className={pause.paused ? `${stamp} border-red-400/50 text-red-300` : stamp}>
-            {pause.paused ? "paused" : "open"}
-          </span>
+  return (
+    <div className="flex flex-col gap-8">
+      <header className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-4xl font-medium leading-[1.08] text-neutral-50 sm:text-5xl">
+            Operator
+          </h1>
+          <p className="mt-3 max-w-xl text-base leading-relaxed text-neutral-300">
+            What this registry serves, and whether it takes mints. The chain is never touched from
+            here.
+          </p>
         </div>
-        <p className="mt-2 max-w-2xl text-xs leading-relaxed text-neutral-500">
-          The switch for a spam wave. Paused, the relay and metadata uploads answer 503 and the mint
-          studio says so; nothing else changes, and the chain is never involved. Effective on the
-          next request, kept across restarts, reversible here. The instance also pauses itself when
-          relays exceed what a group of people can produce, and reopens on its own; a resume here
-          ends that early.
-          {pause.until && (
-            <>
-              {" "}
-              Automatic pause, reopens at {new Date(pause.until * 1000)
-                .toISOString()
-                .slice(11, 16)}{" "}
-              UTC.
-            </>
+        <div className="flex items-center gap-3">
+          {status && (
+            <span role="status" className="font-data text-sm text-accent">
+              {status}
+            </span>
           )}
-          {pause.since && (
-            <>
-              {" "}
-              Last change{" "}
-              {new Date(pause.since * 1000).toISOString().slice(0, 19).replace("T", " ")} UTC
-              {pause.reason ? ` (${pause.reason})` : ""}.
-            </>
-          )}
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            className={`${input} max-w-xs`}
-            value={pauseReason}
-            onChange={(event) => setPauseReason(event.target.value)}
-            placeholder="reason (optional, kept with the decision)"
-          />
-          {pause.paused ? (
-            <button
-              type="button"
-              className={ghostButton}
-              onClick={() => void setMintsPaused(false)}
+          <button
+            type="button"
+            data-testid="admin-refresh"
+            className={smallGhost}
+            disabled={refreshing}
+            title="Reload the pause state, the assets, the issuers and the moderation entries."
+            onClick={() => void reload()}
+          >
+            {refreshing ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
+      </header>
+
+      {/* The state of the instance, before any list. */}
+      <dl className="grid grid-cols-2 lg:grid-cols-4">
+        {[
+          {
+            label: "Minting",
+            value: pause.paused ? "Paused" : "Open",
+            tone: pause.paused ? "text-red-300" : "text-emerald-300",
+          },
+          { label: "Assets with content", value: assets.length.toLocaleString("en-US") },
+          { label: "Issuers on chain", value: issuers.length.toLocaleString("en-US") },
+          {
+            label: "Hidden entries",
+            value: entries.length.toLocaleString("en-US"),
+            detail: purgedCount > 0 ? `${purgedCount} purged` : undefined,
+          },
+        ].map((figure) => (
+          <div
+            key={figure.label}
+            className="border-line py-5 pr-4 max-lg:even:border-l max-lg:even:pl-6 max-lg:[&:nth-child(n+3)]:border-t lg:border-l lg:pl-6 lg:first:border-l-0 lg:first:pl-0"
+          >
+            <dt className="font-data text-sm text-neutral-400">{figure.label}</dt>
+            <dd
+              className={`font-display mt-1.5 text-4xl font-medium leading-none tabular-nums ${
+                figure.tone ?? "text-neutral-50"
+              }`}
             >
-              Resume minting
-            </button>
-          ) : (
-            <button
-              type="button"
-              className={dangerButton}
-              onClick={() => void setMintsPaused(true)}
-            >
-              Pause minting
-            </button>
-          )}
+              {figure.value}
+            </dd>
+            {figure.detail && (
+              <dd className="font-data mt-1.5 text-[13px] text-red-300">{figure.detail}</dd>
+            )}
+          </div>
+        ))}
+      </dl>
+
+      <section
+        data-testid="admin-pause"
+        className={`${card} ${pause.paused ? "border-red-400/40" : ""}`}
+      >
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)] lg:gap-10">
+          <div>
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className={sectionTitle}>Minting through this instance</h2>
+              <span
+                className={
+                  pause.paused
+                    ? "rounded-full border border-red-400/50 px-3 py-0.5 font-data text-[13px] text-red-300"
+                    : "rounded-full border border-emerald-400/40 px-3 py-0.5 font-data text-[13px] text-emerald-300"
+                }
+              >
+                {pause.paused ? "paused" : "open"}
+              </span>
+            </div>
+            <p className="mt-2.5 max-w-prose text-base leading-relaxed text-neutral-300">
+              The switch for a spam wave. Paused, the relay and the uploads answer 503 and the mint
+              page says so. Nothing else changes, and it applies from the next request.
+            </p>
+            <p className="font-data mt-3 text-[13px] leading-relaxed text-neutral-500">
+              {pause.until && (
+                <>
+                  Automatic pause, reopens at{" "}
+                  {new Date(pause.until * 1000).toISOString().slice(11, 16)} UTC.{" "}
+                </>
+              )}
+              {pause.since ? (
+                <>
+                  Last change{" "}
+                  {new Date(pause.since * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC
+                  {pause.reason ? ` · ${pause.reason}` : ""}
+                </>
+              ) : (
+                "Never changed on this instance."
+              )}
+            </p>
+          </div>
+          <div className="flex flex-col justify-end gap-2.5">
+            <label className={label} htmlFor="admin-pause-reason">
+              Reason <span className="font-normal text-neutral-500">· optional, kept with it</span>
+            </label>
+            <input
+              id="admin-pause-reason"
+              className={input}
+              value={pauseReason}
+              onChange={(event) => setPauseReason(event.target.value)}
+              placeholder="spam wave, maintenance…"
+            />
+            {pause.paused ? (
+              <button
+                type="button"
+                className={primaryButton}
+                onClick={() => void setMintsPaused(false)}
+              >
+                Resume minting
+              </button>
+            ) : (
+              <button
+                type="button"
+                className={`${dangerButton} rounded-[2px] py-3 text-base`}
+                onClick={() => void setMintsPaused(true)}
+              >
+                Pause minting
+              </button>
+            )}
+          </div>
         </div>
       </section>
 
-      <section className={card}>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-          <h2 className={cardTitle}>Assets with content ({assets.length})</h2>
+      <section>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className={sectionTitle}>Assets with content</h2>
+            <p className="mt-1.5 max-w-prose text-base text-neutral-400">
+              What a moderator looks at: assets carrying a name or an image. Hiding is reversible
+              below; purging deletes the bytes from this disk.
+            </p>
+          </div>
           <input
-            className={`${input} max-w-xs`}
+            className={`${input} sm:max-w-xs`}
             value={search}
             onChange={(event) => {
               setSearch(event.target.value);
@@ -439,11 +544,14 @@ export function AdminPanel() {
             spellCheck={false}
           />
         </div>
-        <div className="mb-2 flex flex-wrap items-center gap-3 border-b border-white/[0.06] pb-2">
-          <label className="flex items-center gap-2 text-xs text-neutral-400">
+
+        {/* The batch action lives with the selection it acts on. */}
+        <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[3px] bg-surface px-3 py-2.5">
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm text-neutral-300">
             <input
               type="checkbox"
               data-testid="admin-select-all"
+              className="accent-[var(--color-accent)]"
               checked={
                 visibleAssets.length > 0 &&
                 visibleAssets.every((asset) => selected.has(asset.asset_id))
@@ -456,38 +564,43 @@ export function AdminPanel() {
                 )
               }
             />
-            select the {visibleAssets.length} shown
+            Select the {visibleAssets.length} shown
           </label>
           <button
             type="button"
             data-testid="admin-hide-spam"
-            className={`${dangerButton} px-3 py-1 text-xs`}
+            className={smallDanger}
             disabled={selected.size === 0}
-            title="Hide the issuance key of every selected asset with the reason 'spam'. Reversible under Current entries."
+            title="Hide the issuance key of every selected asset with the reason 'spam'. Reversible under Hidden on this instance."
             onClick={() => void hideSelectedAsSpam()}
           >
             Hide selected as spam ({selected.size})
           </button>
-          <span className="text-xs text-neutral-600">
+          <span className="text-[13px] text-neutral-500">
             A spam wave mints under fresh keys, so hiding the key hides exactly that asset.
           </span>
         </div>
+
         {matchingAssets.length === 0 && (
-          <p className="text-sm text-neutral-500">Nothing matches.</p>
+          <p className="py-6 text-base text-neutral-400">Nothing matches.</p>
         )}
-        <ul className="flex flex-col">
+        <ul>
           {visibleAssets.map((asset) => {
             const sha = bundleSha(asset.description);
             const bundleHidden = sha !== null && hiddenBundleKeys.has(sha);
+            const isSelected = selected.has(asset.asset_id);
             return (
               <li
                 key={asset.asset_id}
-                className="flex flex-wrap items-center gap-4 border-b border-white/[0.06] py-2.5 last:border-b-0"
+                className={`flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line px-3 py-3 transition last:border-b-0 ${
+                  isSelected ? "bg-accent/[0.06]" : "hover:bg-white/[0.02]"
+                }`}
               >
                 <input
                   type="checkbox"
+                  className="accent-[var(--color-accent)]"
                   aria-label={`select ${asset.display_name ?? asset.asset_id.slice(0, 12)}`}
-                  checked={selected.has(asset.asset_id)}
+                  checked={isSelected}
                   disabled={!asset.issuer}
                   onChange={(event) => toggleSelected(asset.asset_id, event.target.checked)}
                 />
@@ -496,74 +609,72 @@ export function AdminPanel() {
                   <img
                     src={apiBaseUrl + asset.image_path}
                     alt=""
-                    className="h-12 w-12 shrink-0 rounded-sm border border-white/10 object-cover"
+                    className="h-14 w-14 shrink-0 border border-line-strong bg-ground object-cover"
                   />
                 ) : (
-                  <div className="font-data flex h-12 w-12 shrink-0 items-center justify-center rounded-sm border border-white/10 text-sm text-neutral-600">
+                  <div className="font-data flex h-14 w-14 shrink-0 items-center justify-center border border-line text-base text-neutral-500">
                     {asset.asset_id.slice(0, 2)}
                   </div>
                 )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <div className="min-w-0 flex-1 basis-56">
+                  <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                     <Link
                       href={`/assets/${asset.asset_id}`}
                       target="_blank"
-                      className="font-display min-w-0 max-w-full truncate text-base text-neutral-100 transition hover:text-[#e8b23a]"
+                      className="min-w-0 max-w-full truncate text-[17px] text-neutral-100 transition hover:text-accent"
                       title={asset.display_name ?? asset.asset_id}
                     >
                       {asset.display_name ?? asset.asset_id.slice(0, 16)}
                     </Link>
-                    <span className="font-data text-xs text-neutral-500">
-                      supply {String(asset.total_supply)}
-                    </span>
                     {asset.finalized && <span className={stamp}>sealed</span>}
                     {bundleHidden && (
-                      <span className="font-data text-xs text-red-300">
+                      <span className="rounded-full border border-red-400/50 px-3 py-0.5 font-data text-[13px] text-red-300">
                         {sha !== null && purgedBundleKeys.has(sha)
                           ? "bundle purged"
                           : "bundle hidden"}
                       </span>
                     )}
                   </div>
-                  <div className="font-data mt-0.5 truncate text-[11px] text-neutral-600">
-                    <span title={asset.asset_id}>{asset.asset_id.slice(0, 20)}&hellip;</span>
+                  <div className="font-data mt-1 truncate text-[13px] text-neutral-500">
+                    supply {formatSupply(asset.total_supply)} ·{" "}
+                    <span title={asset.asset_id}>{asset.asset_id.slice(0, 16)}&hellip;</span>
                     {asset.issuer && (
                       <span title={asset.issuer}>
                         {" "}
-                        &middot; issuer {asset.issuer.slice(0, 14)}&hellip;
+                        · issuer {asset.issuer.slice(0, 12)}&hellip;
                       </span>
                     )}
                   </div>
                 </div>
-                <span className="flex items-center gap-2">
+                <span className="flex flex-wrap items-center gap-2">
                   {sha && !bundleHidden && (
                     <button
                       type="button"
-                      className={`${dangerButton} px-3 py-1 text-xs`}
+                      className={smallGhost}
                       title="Withhold this asset's bundle: description and image answer 410. The chain record and the name stay."
                       onClick={() => void hide("bundle", sha, asset.display_name ?? undefined)}
                     >
                       Hide bundle
                     </button>
                   )}
-                  {sha && !purgedBundleKeys.has(sha) && (
-                    <button
-                      type="button"
-                      className={`${dangerButton} px-3 py-1 text-xs`}
-                      title="Delete this asset's bundle bytes from this registry's disk. Irreversible here; the chain record stays."
-                      onClick={() => purge(sha, asset.display_name)}
-                    >
-                      Purge
-                    </button>
-                  )}
                   {asset.issuer && !hiddenIssuerKeys.has(asset.issuer) && (
                     <button
                       type="button"
-                      className={`${ghostButton} px-3 py-1 text-xs`}
+                      className={smallGhost}
                       title="Withhold every asset of this issuance key from listings."
                       onClick={() => void hide("issuer", asset.issuer as string)}
                     >
                       Hide issuer
+                    </button>
+                  )}
+                  {sha && !purgedBundleKeys.has(sha) && (
+                    <button
+                      type="button"
+                      className={smallDanger}
+                      title="Delete this asset's bundle bytes from this registry's disk. Irreversible here; the chain record stays."
+                      onClick={() => purge(sha, asset.display_name)}
+                    >
+                      Purge
                     </button>
                   )}
                 </span>
@@ -579,105 +690,116 @@ export function AdminPanel() {
         />
       </section>
 
-      <section className={card}>
-        <h2 className={`${cardTitle} mb-3`}>Issuers on chain ({issuers.length})</h2>
-        <ul className="flex flex-col">
-          {visibleIssuers.map((collection) => (
-            <li
-              key={collection.issuer}
-              className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] py-2 last:border-b-0"
-            >
-              <span className="font-data text-xs text-neutral-300" title={collection.issuer}>
-                {collection.issuer.slice(0, 24)}&hellip;
-              </span>
-              <span className="flex items-center gap-3">
-                <span className="font-data text-xs text-neutral-500">
-                  {collection.asset_count} assets
+      <div className="grid gap-8 lg:grid-cols-2 lg:gap-12">
+        <section>
+          <h2 className={sectionTitle}>Issuers on chain</h2>
+          <p className="mt-1.5 text-base text-neutral-400">
+            Hiding a key withholds every asset minted under it.
+          </p>
+          <ul className="mt-3">
+            {visibleIssuers.map((collection) => (
+              <li
+                key={collection.issuer}
+                className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-line py-3 last:border-b-0"
+              >
+                <span className="min-w-0">
+                  <Link
+                    href={`/issuers/${collection.issuer}`}
+                    target="_blank"
+                    className="font-data block truncate text-sm text-neutral-200 transition hover:text-accent"
+                    title={collection.issuer}
+                  >
+                    {collection.issuer.slice(0, 22)}&hellip;
+                  </Link>
+                  <span className="font-data text-[13px] text-neutral-500">
+                    {collection.asset_count} {collection.asset_count === 1 ? "asset" : "assets"}
+                  </span>
                 </span>
                 {hiddenIssuerKeys.has(collection.issuer) ? (
-                  <span className="font-data text-xs text-red-300">hidden</span>
+                  <span className="rounded-full border border-red-400/50 px-3 py-0.5 font-data text-[13px] text-red-300">
+                    hidden
+                  </span>
                 ) : (
                   <button
                     type="button"
-                    className={`${dangerButton} px-3 py-1 text-xs`}
+                    className={smallGhost}
                     onClick={() => void hide("issuer", collection.issuer)}
                   >
                     Hide issuer
                   </button>
                 )}
-              </span>
-            </li>
-          ))}
-        </ul>
-        <Pager
-          page={issuersPageClamped}
-          pages={issuerPages}
-          total={issuers.length}
-          onPage={setIssuersPage}
-        />
-      </section>
+              </li>
+            ))}
+          </ul>
+          <Pager
+            page={issuersPageClamped}
+            pages={issuerPages}
+            total={issuers.length}
+            onPage={setIssuersPage}
+          />
+        </section>
 
-      <section className={card}>
-        <h2 className={`${cardTitle} mb-3`}>Hide by key</h2>
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1.5">
-            <span className={label}>Kind</span>
-            {/* Segmented control instead of a native select: three known
-                choices deserve three visible states, in the site's own
-                language — no OS popup to fight. */}
-            <div
-              role="radiogroup"
-              aria-label="Moderation kind"
-              className="flex w-fit overflow-hidden rounded-md border border-white/10 bg-black/30 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)]"
-            >
-              {[
-                { value: "issuer", title: "issuer", hint: "validating key" },
-                { value: "bundle", title: "bundle", hint: "sha-256" },
-                { value: "description", title: "description", hint: "asset id" },
-              ].map((option, index) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={kind === option.value}
-                  onClick={() => setKind(option.value)}
-                  className={`flex flex-col items-start px-4 py-2 text-left transition ${
-                    index > 0 ? "border-l border-white/[0.07]" : ""
-                  } ${
-                    kind === option.value
-                      ? "bg-[#e8b23a]/[0.08] text-[#e8b23a]"
-                      : "text-neutral-400 hover:bg-white/[0.03] hover:text-neutral-200"
-                  }`}
-                >
-                  <span className="font-data text-[13px]">{option.title}</span>
-                  <span
-                    className={`font-data text-[10px] uppercase tracking-[0.14em] ${
-                      kind === option.value ? "text-[#e8b23a]/60" : "text-neutral-600"
+        <section>
+          <h2 className={sectionTitle}>Hide by key</h2>
+          <p className="mt-1.5 text-base text-neutral-400">
+            For what the lists above do not show, such as an unresolved asset.
+          </p>
+          <div className="mt-5 flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <span className={label}>Kind</span>
+              {/* Three known choices deserve three visible states. */}
+              <div
+                role="radiogroup"
+                aria-label="Moderation kind"
+                className="grid grid-cols-3 overflow-hidden rounded-[2px] border border-line"
+              >
+                {[
+                  { value: "issuer", title: "Issuer", hint: "validating key" },
+                  { value: "bundle", title: "Bundle", hint: "sha-256" },
+                  { value: "description", title: "Description", hint: "asset id" },
+                ].map((option, index) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={kind === option.value}
+                    onClick={() => setKind(option.value)}
+                    className={`flex flex-col items-start px-3.5 py-2.5 text-left transition ${
+                      index > 0 ? "border-l border-line" : ""
+                    } ${
+                      kind === option.value
+                        ? "bg-accent/[0.08] text-accent"
+                        : "text-neutral-300 hover:bg-white/[0.03]"
                     }`}
                   >
-                    {option.hint}
-                  </span>
-                </button>
-              ))}
+                    <span className="text-sm font-medium">{option.title}</span>
+                    <span
+                      className={`font-data text-[13px] ${
+                        kind === option.value ? "text-accent/80" : "text-neutral-500"
+                      }`}
+                    >
+                      {option.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-            <label className={label} htmlFor="admin-key">
-              Key · hex
-            </label>
-            <input
-              id="admin-key"
-              className={input}
-              value={key}
-              onChange={(event) => setKey(event.target.value)}
-              placeholder="issuer key, bundle sha256 or asset id"
-              spellCheck={false}
-            />
-          </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div className="flex flex-col gap-1.5">
+              <label className={label} htmlFor="admin-key">
+                Key <span className="font-normal text-neutral-500">· hex</span>
+              </label>
+              <input
+                id="admin-key"
+                className={input}
+                value={key}
+                onChange={(event) => setKey(event.target.value)}
+                placeholder="issuer key, bundle sha256 or asset id"
+                spellCheck={false}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
               <label className={label} htmlFor="admin-reason">
-                Reason · stored with the entry
+                Reason <span className="font-normal text-neutral-500">· stored with the entry</span>
               </label>
               <input
                 id="admin-reason"
@@ -689,51 +811,50 @@ export function AdminPanel() {
             </div>
             <button
               type="button"
-              className={dangerButton}
+              className={`${dangerButton} self-start rounded-[2px]`}
               onClick={() => void hide(kind, key.trim(), reason)}
               disabled={key.trim() === ""}
             >
               Hide
             </button>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
-      <section className={card}>
-        <h2 className={`${cardTitle} mb-3`}>Current entries ({entries.length})</h2>
-        {entries.length === 0 && (
-          <p className="text-sm text-neutral-500">Nothing is hidden on this instance.</p>
-        )}
-        <ul className="flex flex-col">
-          {entries.map((entry) => (
-            <li
-              key={`${entry.kind}-${entry.key}`}
-              className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06] py-2 last:border-b-0"
-            >
-              <span className="min-w-0">
-                <span className="font-data mr-2 text-[10px] uppercase tracking-[0.14em] text-neutral-500">
-                  {entry.kind}
-                </span>
-                <span className="font-data break-all text-xs text-neutral-300">{entry.key}</span>
-                {entry.reason && (
-                  <span className="ml-2 text-xs italic text-neutral-500">{entry.reason}</span>
-                )}
-                {entry.bytes_present === false && (
-                  <span className="font-data ml-2 text-[10px] uppercase tracking-[0.14em] text-red-300">
-                    purged
-                  </span>
-                )}
-              </span>
-              <button
-                type="button"
-                className={`${ghostButton} px-3 py-1 text-xs`}
-                onClick={() => void unhide(entry)}
+      <section>
+        <h2 className={sectionTitle}>Hidden on this instance</h2>
+        <p className="mt-1.5 max-w-prose text-base text-neutral-400">
+          Listings, bundles and images of these answer 410 here. Any other registry can still serve
+          them: a registry can withhold, it can never lie.
+        </p>
+        {entries.length === 0 ? (
+          <p className="mt-5 text-base text-neutral-400">Nothing is hidden on this instance.</p>
+        ) : (
+          <ul className="mt-3">
+            {entries.map((entry) => (
+              <li
+                key={`${entry.kind}-${entry.key}`}
+                className="grid items-center gap-x-6 gap-y-2 border-b border-line py-3 last:border-b-0 sm:grid-cols-[7rem_minmax(0,1fr)_auto]"
               >
-                Unhide
-              </button>
-            </li>
-          ))}
-        </ul>
+                <span className={`${stamp} w-fit`}>{entry.kind}</span>
+                <span className="min-w-0">
+                  <span className="font-data block break-all text-sm text-neutral-200">
+                    {entry.key}
+                  </span>
+                  <span className="font-data text-[13px] text-neutral-500">
+                    {entry.reason ?? "no reason given"}
+                    {entry.bytes_present === false && (
+                      <span className="text-red-300"> · bytes purged</span>
+                    )}
+                  </span>
+                </span>
+                <button type="button" className={smallGhost} onClick={() => void unhide(entry)}>
+                  Unhide
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </div>
   );

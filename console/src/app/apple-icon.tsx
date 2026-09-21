@@ -1,24 +1,22 @@
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
-
 import { ImageResponse } from "next/og";
+
+import { SEAL_C_PATH, SEAL_EDGE_PATH } from "@/components/seal-mark";
 
 export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
-const GOLD = "#e8b23a";
+const ACCENT = "#dc9a76";
+const GROUND = "#0b1d18";
 
 /**
  * Home-screen icon for iOS.
  *
  * Safari probes /apple-touch-icon.png on every visit and was getting a 404;
  * this both silences that and gives the site a real icon when someone saves
- * it. Same lockup as icon.svg - double band, serif C - drawn with borders
- * rather than SVG because satori renders those predictably.
+ * it. Same mark as icon.svg: the scalloped seal edge around an open ring.
+ * Pure geometry, so no font file is read here.
  */
-export default async function AppleIcon() {
-  const display = await readFile(join(process.cwd(), "src/app/og-fonts/Fraunces-SemiBold.ttf"));
-
+export default function AppleIcon() {
   return new ImageResponse(
     <div
       style={{
@@ -27,46 +25,15 @@ export default async function AppleIcon() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        backgroundColor: "#0b0a08",
+        backgroundColor: GROUND,
       }}
     >
-      <div
-        style={{
-          width: 153,
-          height: 153,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          border: `8px solid ${GOLD}`,
-          borderRadius: "50%",
-        }}
-      >
-        <div
-          style={{
-            width: 122,
-            height: 122,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            border: "4px solid rgba(232, 178, 58, 0.4)",
-            borderRadius: "50%",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              fontFamily: "Fraunces",
-              fontSize: 78,
-              color: GOLD,
-              // Optical centering: the serif C sits high on its baseline.
-              marginTop: 6,
-            }}
-          >
-            C
-          </div>
-        </div>
-      </div>
+      <svg width="150" height="150" viewBox="0 0 32 32" fill="none">
+        <path d={SEAL_EDGE_PATH} stroke={ACCENT} strokeWidth="1.3" />
+        <circle cx="16" cy="16" r="10.4" stroke={ACCENT} strokeOpacity="0.45" strokeWidth="0.6" />
+        <path d={SEAL_C_PATH} stroke={ACCENT} strokeWidth="2.7" />
+      </svg>
     </div>,
-    { ...size, fonts: [{ name: "Fraunces", data: display, style: "normal", weight: 600 }] },
+    size,
   );
 }

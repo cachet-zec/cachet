@@ -11,13 +11,14 @@ export function NavLinks() {
   const issuersActive = pathname.startsWith("/issuers");
   const mintActive = pathname.startsWith("/mint");
 
+  // py-2.5: the text is 21px tall, a finger needs about twice that.
   const linkClass = (active: boolean) =>
     active
-      ? "border-b border-[#e8b23a] pb-0.5 text-[#e8b23a]"
-      : "text-neutral-400 transition hover:text-[#e8b23a]";
+      ? "py-2.5 text-accent underline decoration-accent decoration-1 underline-offset-[7px]"
+      : "py-2.5 text-neutral-400 transition hover:text-accent";
 
   return (
-    <nav className="font-data flex items-center gap-6 text-[13px]">
+    <nav className="font-data flex items-center gap-6 text-sm">
       <Link
         href="/console"
         aria-current={consoleActive ? "page" : undefined}
@@ -40,20 +41,11 @@ export function NavLinks() {
         Issuers
       </Link>
       <a
-        href="https://x.com/Cachet_zec"
-        target="_blank"
-        rel="noreferrer"
-        aria-label="Cachet on X"
-        className="text-neutral-400 transition hover:text-[#e8b23a]"
-      >
-        X
-      </a>
-      <a
         href="https://github.com/cachet-zec/cachet"
         target="_blank"
         rel="noreferrer"
         aria-label="Cachet on GitHub"
-        className="text-neutral-400 transition hover:text-[#e8b23a]"
+        className="py-2.5 text-neutral-400 transition hover:text-accent"
       >
         GitHub
       </a>

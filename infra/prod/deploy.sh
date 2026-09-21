@@ -43,10 +43,19 @@ docker build -f "$DIR/Dockerfile.server" -t cachet-server:prod "$ROOT"
 # they may live in .env.prod next to the secrets for convenience; an
 # explicit CACHET_FEATURED_ASSETS in the environment wins.
 FEATURED="${CACHET_FEATURED_ASSETS:-$(grep -E '^CACHET_FEATURED_ASSETS=' "$DIR/.env.prod" | cut -d= -f2- || true)}"
+# Other registries the console can read (comma separated origins). Each
+# must allow this console in its own CACHET_CORS_ORIGIN.
+REGISTRIES="${CACHET_REGISTRIES:-$(grep -E '^CACHET_REGISTRIES=' "$DIR/.env.prod" | cut -d= -f2- || true)}"
+# Optional block explorer: URL templates with `{height}` and `{txid}`.
+EXPLORER_BLOCK="${CACHET_EXPLORER_BLOCK_URL:-$(grep -E '^CACHET_EXPLORER_BLOCK_URL=' "$DIR/.env.prod" | cut -d= -f2- || true)}"
+EXPLORER_TX="${CACHET_EXPLORER_TX_URL:-$(grep -E '^CACHET_EXPLORER_TX_URL=' "$DIR/.env.prod" | cut -d= -f2- || true)}"
 docker build -f "$DIR/Dockerfile.console" \
     --build-arg NEXT_PUBLIC_CACHET_API_URL="${CACHET_API_URL:-https://api.cachetzec.com}" \
     --build-arg NEXT_PUBLIC_CACHET_SITE_URL="${CACHET_SITE_URL:-https://cachetzec.com}" \
     --build-arg NEXT_PUBLIC_CACHET_FEATURED_ASSETS="$FEATURED" \
+    --build-arg NEXT_PUBLIC_CACHET_REGISTRIES="$REGISTRIES" \
+    --build-arg NEXT_PUBLIC_CACHET_EXPLORER_BLOCK_URL="$EXPLORER_BLOCK" \
+    --build-arg NEXT_PUBLIC_CACHET_EXPLORER_TX_URL="$EXPLORER_TX" \
     -t cachet-console:prod "$ROOT"
 
 echo "==> shipping images to $HOST (this is the slow part)"

@@ -1286,3 +1286,318 @@ async fn snapshot_signed_and_verifiable() {
         .expect("minted asset is in the snapshot");
     assert_eq!(entry["total_supply"], 3);
 }
+
+/// Like `send`, with the response headers.
+async fn send_with_headers(
+    app: &Router,
+    request: Request<Body>,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body = if bytes.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&bytes).unwrap()
+    };
+    (status, headers, body)
+}
+
+async fn mint_three(app: &Router) {
+    for (description, amount, finalize) in [
+        ("First", 10, false),
+        ("Second", 20, true),
+        ("Third", 30, false),
+    ] {
+        send(
+            app,
+            post_json(
+                "/api/v1/assets",
+                json!({"description": description, "amount": amount, "finalize": finalize}),
+            ),
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn listing_is_cut_into_pages_and_says_how_many_there_are() {
+    let app = app();
+    mint_three(&app).await;
+
+    let (status, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?limit=1&offset=1")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let page = body.as_array().unwrap();
+    assert_eq!(page.len(), 1);
+    assert_eq!(page[0]["description"], "Second");
+    assert_eq!(headers["x-registry-count"], "3");
+    assert_eq!(headers["x-total-count"], "3");
+
+    // Past the end: an empty page, not an error, and the totals still stand.
+    let (status, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?limit=5&offset=40")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.as_array().unwrap().is_empty());
+    assert_eq!(headers["x-total-count"], "3");
+
+    // `limit=0` is how a caller asks for the counts alone.
+    let (_, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?limit=0")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert!(body.as_array().unwrap().is_empty());
+    assert_eq!(headers["x-registry-count"], "3");
+}
+
+#[tokio::test]
+async fn listing_filters_narrow_the_total_not_the_registry_count() {
+    let app = app();
+    mint_three(&app).await;
+
+    let (_, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?q=SECO")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let list = body.as_array().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0]["description"], "Second");
+    assert_eq!(headers["x-total-count"], "1");
+    assert_eq!(headers["x-registry-count"], "3");
+
+    let (_, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?supply=sealed")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(headers["x-total-count"], "1");
+    assert_eq!(body[0]["finalized"], true);
+
+    let (_, headers, _) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?supply=open")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(headers["x-total-count"], "2");
+
+    // One issuer minted everything here: its key keeps all three, an
+    // unknown key keeps none.
+    let (_, _, all) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets").body(Body::empty()).unwrap(),
+    )
+    .await;
+    let issuer = all[0]["issuer"].as_str().unwrap().to_owned();
+    let (_, headers, _) = send_with_headers(
+        &app,
+        Request::get(format!("/api/v1/assets?issuer={issuer}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(headers["x-total-count"], "3");
+    let (_, headers, _) = send_with_headers(
+        &app,
+        Request::get(format!("/api/v1/assets?issuer={}", "ab".repeat(33)))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(headers["x-total-count"], "0");
+
+    // An unknown value is refused rather than silently ignored.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get("/api/v1/assets?supply=everything")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn unchanged_listing_answers_not_modified() {
+    let app = app();
+    mint_three(&app).await;
+
+    let (status, headers, _) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?limit=2")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers[header::CACHE_CONTROL], "no-cache");
+    let tag = headers[header::ETAG].to_str().unwrap().to_owned();
+    assert!(tag.starts_with("W/\""));
+
+    let (status, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?limit=2")
+            .header(header::IF_NONE_MATCH, &tag)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_MODIFIED);
+    assert_eq!(body, Value::Null);
+    assert_eq!(headers[header::ETAG].to_str().unwrap(), tag);
+    assert_eq!(headers["x-total-count"], "3");
+
+    // A compressing proxy may hand the tag back decorated.
+    let decorated = format!(
+        "{}-gzip\"",
+        tag.trim_start_matches("W/").trim_end_matches('"')
+    );
+    let (status, _, _) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?limit=2")
+            .header(header::IF_NONE_MATCH, decorated)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_MODIFIED);
+
+    // A new asset changes the first page: the old tag no longer holds.
+    send(
+        &app,
+        post_json(
+            "/api/v1/assets",
+            json!({"description": "Fourth", "amount": 1}),
+        ),
+    )
+    .await;
+    let (status, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/assets?limit=2")
+            .header(header::IF_NONE_MATCH, &tag)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body[0]["description"], "Fourth");
+    assert_ne!(headers[header::ETAG].to_str().unwrap(), tag);
+
+    let (status, headers, _) = send_with_headers(
+        &app,
+        Request::get("/api/v1/collections")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let tag = headers[header::ETAG].to_str().unwrap().to_owned();
+    let (status, _, _) = send_with_headers(
+        &app,
+        Request::get("/api/v1/collections")
+            .header(header::IF_NONE_MATCH, tag)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_MODIFIED);
+}
+
+#[tokio::test]
+async fn an_issuer_that_is_not_a_key_is_refused() {
+    let (status, body) = send(
+        &app(),
+        Request::get("/api/v1/assets?issuer=not-hex")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["detail"].as_str().unwrap().contains("issuer"));
+
+    // Hex, but not the length of a key.
+    let (status, _) = send(
+        &app(),
+        Request::get("/api/v1/assets?issuer=ab")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn a_query_that_does_not_parse_is_a_problem_document() {
+    for uri in [
+        "/api/v1/assets?supply=everything",
+        "/api/v1/assets?offset=-1",
+        "/api/v1/kept?limit=many",
+    ] {
+        let response = app()
+            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{uri}");
+        assert_eq!(
+            response.headers()[header::CONTENT_TYPE],
+            "application/problem+json",
+            "{uri}"
+        );
+        let bytes = response.into_body().collect().await.unwrap().to_bytes();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(body["detail"].as_str().unwrap().contains("invalid query"));
+    }
+}
+
+#[tokio::test]
+async fn a_backend_without_a_journal_keeps_nothing() {
+    let app = app();
+    let (status, headers, body) = send_with_headers(
+        &app,
+        Request::get("/api/v1/kept").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body.as_array().unwrap().is_empty());
+    assert_eq!(headers["x-total-count"], "0");
+
+    let (status, _) = send(
+        &app,
+        Request::get(format!("/api/v1/kept/{}", "11".repeat(32)))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, _) = send(
+        &app,
+        Request::get("/api/v1/kept/not-an-id")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

@@ -104,6 +104,20 @@ pub struct OrchardZsaBackend {
     /// Serializes index syncs: deltas are additive, so two concurrent
     /// syncs folding the same block range would double-count supplies.
     sync_lock: tokio::sync::Mutex<()>,
+    /// When the index was last found at the chain tip. A read within
+    /// `INDEX_FRESH_FOR` of it answers from the index as it stands, without
+    /// asking the node and without queuing behind other reads. Cleared by
+    /// every block this instance submits, so its own writes show at once.
+    index_synced_at: std::sync::Mutex<Option<std::time::Instant>>,
+    /// Counts the blocks this instance submitted. A sync that started before
+    /// one of them landed read an older tip: it must not mark the index
+    /// fresh, or the instance's own write would stay out of sight for the
+    /// length of the window.
+    index_writes: std::sync::atomic::AtomicU64,
+    /// The chain tip as last read, for the public `chain_info` only: every
+    /// open page polls it, and each read is a block template from the node.
+    /// Cleared with `index_synced_at`. Syncs always ask the node.
+    chain_info_cache: std::sync::Mutex<Option<(std::time::Instant, ChainInfo)>>,
     /// Incrementally synced hot wallet: rebuilt from scratch only when the
     /// chain resets under it. The mutex both caches and serializes.
     wallet_cache: tokio::sync::Mutex<Option<WalletCache>>,
@@ -155,6 +169,9 @@ impl OrchardZsaBackend {
             scan_start_height: config.scan_start_height.max(1),
             index: None,
             sync_lock: tokio::sync::Mutex::new(()),
+            index_synced_at: std::sync::Mutex::new(None),
+            index_writes: std::sync::atomic::AtomicU64::new(0),
+            chain_info_cache: std::sync::Mutex::new(None),
             wallet_cache: tokio::sync::Mutex::new(None),
             relay_lock: tokio::sync::Mutex::new(()),
             block_cache: tokio::sync::RwLock::new(BlockCache::default()),
@@ -214,38 +231,108 @@ impl OrchardZsaBackend {
     /// Bring the index up to the chain tip, wiping it first when the chain
     /// was reset or reorged past the checkpoint (routine on the ephemeral
     /// regtest).
+    /// What a read does before answering from the index. A read never waits
+    /// behind someone else's sync, and never starts a long one itself:
+    ///
+    ///  - a sync is running: the index is answered from as it stands (it is
+    ///    always a complete picture, see `AssetIndex::replace`);
+    ///  - the index is a few blocks behind: caught up here, one reader pays
+    ///    a few node calls and everyone after it is fresh;
+    ///  - it is far behind (a restart after downtime, a chain reset): left
+    ///    to the background loop, and answered from as it stands.
+    ///
+    /// Only an index that has never been built makes a reader wait: there is
+    /// nothing to answer from yet.
+    async fn sync_index_for_read(
+        &self,
+        index: &cachet_index::AssetIndex,
+    ) -> Result<(), ChainError> {
+        if self.index_is_fresh() {
+            return Ok(());
+        }
+        let built = index
+            .checkpoint()
+            .await
+            .map_err(|error| ChainError::Unavailable {
+                reason: format!("asset index: {error}"),
+            })?
+            .is_some();
+        if !built {
+            return self.sync_index(index).await;
+        }
+        match self.sync_lock.try_lock() {
+            Ok(guard) => {
+                self.sync_index_locked(index, Some(Self::READER_MAX_BLOCKS), guard)
+                    .await
+            }
+            Err(_) => Ok(()),
+        }
+    }
+
+    /// The most blocks a reader folds on its way to an answer.
+    const READER_MAX_BLOCKS: u64 = 10;
+
+    /// Bring the index to the chain tip, however far that is, waiting for
+    /// any sync already running. For the background loop, and for the paths
+    /// that must see the chain as it is (resolving a description against an
+    /// asset minted a moment ago).
     async fn sync_index(&self, index: &cachet_index::AssetIndex) -> Result<(), ChainError> {
+        if self.index_is_fresh() {
+            return Ok(());
+        }
         // One sync at a time: concurrent folds of the same range would
         // apply the same additive deltas repeatedly. Waiters re-read the
         // checkpoint after acquiring the lock, so they see the finished
         // sync and fold nothing.
-        let _guard = self.sync_lock.lock().await;
+        let guard = self.sync_lock.lock().await;
+        self.sync_index_locked(index, None, guard).await
+    }
+
+    /// `at_most`: give up, leaving the index as it stands, when more blocks
+    /// than this separate it from the tip.
+    async fn sync_index_locked(
+        &self,
+        index: &cachet_index::AssetIndex,
+        at_most: Option<u64>,
+        _guard: tokio::sync::MutexGuard<'_, ()>,
+    ) -> Result<(), ChainError> {
+        // Whoever held the lock may just have done the work.
+        if self.index_is_fresh() {
+            return Ok(());
+        }
 
         let map_index_error = |error: cachet_index::IndexError| ChainError::Unavailable {
             reason: format!("asset index: {error}"),
         };
 
+        let writes_at_start = self.index_writes.load(std::sync::atomic::Ordering::SeqCst);
         let tip_height = self.chain_info_inner().await?.tip_height;
 
-        // Validate the stored checkpoint against the live chain.
+        // Validate the stored checkpoint against the live chain. A chain
+        // that was reset or reorganised is folded again from the start, and
+        // the result replaces the index in one go: nothing is emptied first.
         let mut from_height = self.scan_start_height;
+        let mut replacing = false;
         match index.checkpoint().await.map_err(map_index_error)? {
             Some(checkpoint) if checkpoint.tip_height <= tip_height => {
                 let on_chain = self.rpc.block_summary(checkpoint.tip_height).await?;
                 if on_chain.hash == checkpoint.tip_hash {
                     from_height = checkpoint.tip_height + 1;
                 } else {
-                    index.reset().await.map_err(map_index_error)?;
+                    replacing = true;
                 }
             }
-            Some(_) => {
-                // Chain shrank below the checkpoint: definite reset.
-                index.reset().await.map_err(map_index_error)?;
-            }
+            // Chain shrank below the checkpoint: definite reset.
+            Some(_) => replacing = true,
             None => {}
         }
 
-        if from_height > tip_height {
+        if from_height > tip_height && !replacing {
+            self.mark_index_synced(writes_at_start);
+            return Ok(());
+        }
+        if at_most.is_some_and(|blocks| tip_height.saturating_sub(from_height) >= blocks) {
+            // Too far for a reader: the background loop does it.
             return Ok(());
         }
 
@@ -281,17 +368,56 @@ impl OrchardZsaBackend {
             .collect();
 
         let tip_hash = self.rpc.block_summary(tip_height).await?.hash;
-        index
-            .apply(
-                &deltas,
-                &events,
-                cachet_index::Checkpoint {
-                    tip_height,
-                    tip_hash,
-                },
-            )
-            .await
-            .map_err(map_index_error)
+        let checkpoint = cachet_index::Checkpoint {
+            tip_height,
+            tip_hash,
+        };
+        if replacing {
+            index.replace(&deltas, &events, checkpoint).await
+        } else {
+            index.apply(&deltas, &events, checkpoint).await
+        }
+        .map_err(map_index_error)?;
+        self.mark_index_synced(writes_at_start);
+        Ok(())
+    }
+
+    /// How long a sync stands for the reads that follow it. Short against
+    /// the block time and against the console's polling, long against the
+    /// cost it removes: two node calls per read, one read at a time.
+    const INDEX_FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(3);
+
+    fn index_is_fresh(&self) -> bool {
+        self.index_synced_at
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_some_and(|at| at.elapsed() < Self::INDEX_FRESH_FOR)
+    }
+
+    /// `writes_at_start`: what `index_writes` read before the sync asked for
+    /// the tip. If a block of ours landed since, this sync is already old.
+    fn mark_index_synced(&self, writes_at_start: u64) {
+        if self.index_writes.load(std::sync::atomic::Ordering::SeqCst) != writes_at_start {
+            return;
+        }
+        *self
+            .index_synced_at
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(std::time::Instant::now());
+    }
+
+    /// The chain is about to move under the index, or just did.
+    fn mark_index_stale(&self) {
+        self.index_writes
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        *self
+            .index_synced_at
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        *self
+            .chain_info_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
     }
 
     /// The asset id our issuer key produces for a description — known
@@ -356,7 +482,7 @@ impl OrchardZsaBackend {
                 keys.issuance_key(),
                 first.desc_hash,
                 Some(IssueInfo {
-                    recipient: keys.default_address(),
+                    recipient: keys.issuance_address(),
                     value: NoteValue::from_raw(first.amount),
                 }),
                 first.first_issuance,
@@ -367,7 +493,7 @@ impl OrchardZsaBackend {
             builder
                 .add_recipient::<FeeError>(
                     item.desc_hash,
-                    keys.default_address(),
+                    keys.issuance_address(),
                     NoteValue::from_raw(item.amount),
                     item.first_issuance,
                 )
@@ -439,6 +565,8 @@ impl OrchardZsaBackend {
         let block_hex = block::assemble_block_hex(template, vec![transaction])?;
 
         let verdict = self.rpc.submit_block(block_hex).await?;
+        // Whatever the verdict, the next read asks the node again.
+        self.mark_index_stale();
         if let Some(text) = &verdict {
             tracing::debug!(verdict = %text, "submitblock returned a verdict string");
             // A verdict is the node's answer, not a hint: anything other
@@ -461,6 +589,9 @@ impl OrchardZsaBackend {
             let next_height = self.rpc.block_template().await?.height;
             if next_height > block_height {
                 advanced = true;
+                // A read may have synced while the node was still
+                // validating: it must not stand for the block that landed.
+                self.mark_index_stale();
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -703,7 +834,24 @@ impl OrchardZsaBackend {
 #[async_trait]
 impl ChainBackend for OrchardZsaBackend {
     async fn chain_info(&self) -> Result<ChainInfo, ChainError> {
-        self.chain_info_inner().await
+        const FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(2);
+        let cached = self
+            .chain_info_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone();
+        if let Some((at, info)) = cached {
+            if at.elapsed() < FRESH_FOR {
+                return Ok(info);
+            }
+        }
+        let info = self.chain_info_inner().await?;
+        *self
+            .chain_info_cache
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+            Some((std::time::Instant::now(), info.clone()));
+        Ok(info)
     }
 
     async fn issue(&self, request: IssuanceRequest) -> Result<IssuanceReceipt, ChainError> {
@@ -953,7 +1101,7 @@ impl ChainBackend for OrchardZsaBackend {
         // Served from the index when available: a full chain scan per
         // lookup is prohibitive against the remote public testnet.
         if let Some(index) = &self.index {
-            self.sync_index(index).await?;
+            self.sync_index_for_read(index).await?;
             return match index.get_asset(asset_id).await {
                 Ok(Some(summary)) => Ok(summary),
                 Ok(None) => Err(ChainError::UnknownAsset(asset_id)),
@@ -982,7 +1130,7 @@ impl ChainBackend for OrchardZsaBackend {
 
     async fn list_assets(&self) -> Result<Vec<AssetSummary>, ChainError> {
         if let Some(index) = &self.index {
-            self.sync_index(index).await?;
+            self.sync_index_for_read(index).await?;
             return index.list().await.map_err(|error| ChainError::Unavailable {
                 reason: format!("asset index: {error}"),
             });
@@ -1006,9 +1154,57 @@ impl ChainBackend for OrchardZsaBackend {
             .collect())
     }
 
+    async fn list_assets_page(
+        &self,
+        query: &cachet_domain::AssetListQuery,
+    ) -> Result<cachet_domain::AssetListPage, ChainError> {
+        if let Some(index) = &self.index {
+            self.sync_index_for_read(index).await?;
+            return index
+                .list_page(query)
+                .await
+                .map_err(|error| ChainError::Unavailable {
+                    reason: format!("asset index: {error}"),
+                });
+        }
+        // Scan-only fallback: no database to ask, cut the scan here.
+        Ok(query.apply(self.list_assets().await?))
+    }
+
+    async fn kept_off_chain(
+        &self,
+        limit: usize,
+        offset: usize,
+    ) -> Result<(Vec<(AssetId, String)>, usize), ChainError> {
+        let Some(index) = &self.index else {
+            return Ok((Vec::new(), 0));
+        };
+        // "Not on chain" is only true of an index that is at the tip.
+        self.sync_index_for_read(index).await?;
+        index
+            .kept_off_chain(limit, offset)
+            .await
+            .map_err(|error| ChainError::Unavailable {
+                reason: format!("asset index: {error}"),
+            })
+    }
+
+    async fn kept_description(&self, asset_id: AssetId) -> Result<Option<String>, ChainError> {
+        let Some(index) = &self.index else {
+            return Ok(None);
+        };
+        self.sync_index_for_read(index).await?;
+        index
+            .kept_description(asset_id)
+            .await
+            .map_err(|error| ChainError::Unavailable {
+                reason: format!("asset index: {error}"),
+            })
+    }
+
     async fn collections(&self) -> Result<Vec<cachet_domain::CollectionSummary>, ChainError> {
         if let Some(index) = &self.index {
-            self.sync_index(index).await?;
+            self.sync_index_for_read(index).await?;
             return index
                 .collections()
                 .await
@@ -1067,7 +1263,7 @@ impl ChainBackend for OrchardZsaBackend {
 
     async fn asset_events(&self, asset_id: AssetId) -> Result<Vec<AssetEvent>, ChainError> {
         if let Some(index) = &self.index {
-            self.sync_index(index).await?;
+            self.sync_index_for_read(index).await?;
             return index
                 .events(asset_id)
                 .await

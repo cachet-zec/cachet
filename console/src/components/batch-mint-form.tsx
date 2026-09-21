@@ -66,7 +66,7 @@ export function BatchMintForm() {
   return (
     <section className={card}>
       <h2 className={`${cardTitle} mb-1`}>Batch mint</h2>
-      <p className="mb-4 text-xs leading-relaxed text-neutral-500">
+      <p className="mb-4 text-[13px] leading-relaxed text-neutral-500">
         Up to {MAX_ITEMS} assets in one transaction: one issuance bundle, one signature, all or
         nothing. Name-only metadata; use the single mint for images.
       </p>
@@ -109,7 +109,7 @@ export function BatchMintForm() {
             />
             <input
               type="checkbox"
-              className="h-4 w-4 accent-[#e8b23a]"
+              className="h-4 w-4 accent-accent"
               title="Finalize: supply becomes permanent"
               checked={row.finalize}
               onChange={(event) => setRow(index, { finalize: event.target.checked })}
@@ -128,7 +128,7 @@ export function BatchMintForm() {
         <div className="flex items-center gap-3">
           <button
             type="button"
-            className={`${ghostButton} px-3 py-1.5 text-xs`}
+            className={`${ghostButton} px-3 py-1.5 text-[13px]`}
             onClick={() => setRows((rows) => [...rows, emptyRow()])}
             disabled={rows.length >= MAX_ITEMS}
           >
@@ -147,22 +147,22 @@ export function BatchMintForm() {
                 : `Mint ${rows.length} asset${rows.length > 1 ? "s" : ""}`}
           </button>
           {stage && (
-            <span className="flex items-center gap-2 text-xs text-[#e8b23a]/90">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e8b23a]" />
+            <span className="flex items-center gap-2 text-[13px] text-accent/90">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
               {stage}
             </span>
           )}
         </div>
       </form>
       {mint.isSuccess && (
-        <div className="mt-4 rounded-md border border-emerald-400/25 p-3.5 text-xs">
+        <div className="mt-4 rounded-md border border-emerald-400/25 p-3.5 text-[13px]">
           <p className="text-neutral-400">
             One transaction, {mint.data.asset_ids.length} assets. Txid{" "}
             <span className="font-data break-all text-emerald-300">{mint.data.txid}</span>
           </p>
           <ul className="mt-2 flex flex-col gap-1">
             {mint.data.asset_ids.map((assetId) => (
-              <li key={assetId} className="font-data break-all text-[#e8b23a]">
+              <li key={assetId} className="font-data break-all text-accent">
                 {assetId}
               </li>
             ))}

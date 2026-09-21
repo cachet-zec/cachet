@@ -32,6 +32,9 @@ check "working paper served"          http_200 "$SITE/cachet-whitepaper.pdf"
 check "engine (threaded) served"      http_200 "$SITE/mint-engine-mt/cachet_mint_engine_bg.wasm"
 check "api chain info"                http_200 "$API/api/v1/chain"
 check "api asset listing"             http_200 "$API/api/v1/assets"
+# "^x-total-count:" and not the bare name: the CORS expose header lists it too.
+check "paged listing says its total"  bash -c "curl -s -D- -o /dev/null '$API/api/v1/assets?limit=1' | grep -qi '^x-total-count:'"
+check "kept listing up"               http_200 "$API/api/v1/kept"
 check "raw blocks page"               http_200 "$API/api/v1/chain/transactions?start_height=1&limit=5"
 check "snapshot signed"               body_has "$API/api/v1/snapshot" '"signature"'
 check "snapshot key exposed"          body_has "$API/api/v1/chain" '"snapshot_public_key"'

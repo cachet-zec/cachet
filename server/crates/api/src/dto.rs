@@ -295,6 +295,39 @@ impl From<TxId> for TxResponse {
     }
 }
 
+/// Sealed content this registry still holds for an asset the chain it
+/// follows no longer carries (a reset test network takes its assets with
+/// it). No supply, no issuer: those were chain facts and went with the
+/// chain. What is left is what the asset id commits to, so minting it again
+/// under the same key gives the same asset id.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct KeptAssetResponse {
+    /// Asset id (hex-encoded 32 bytes) the description was journaled under.
+    pub asset_id: String,
+    /// The on-chain description as it was: for a Cachet asset, the v1
+    /// envelope naming the sealed bundle.
+    pub description: String,
+    pub display_name: String,
+    /// `envelope` or `free_text`, as on a listed asset.
+    #[schema(example = "envelope")]
+    pub name_source: String,
+    /// Server-relative path to the sealed image, when the bundle is still
+    /// held and embeds one.
+    pub image_path: Option<String>,
+}
+
+impl From<AssetSummaryResponse> for KeptAssetResponse {
+    fn from(summary: AssetSummaryResponse) -> Self {
+        Self {
+            asset_id: summary.asset_id,
+            description: summary.description.unwrap_or_default(),
+            display_name: summary.display_name.unwrap_or_default(),
+            name_source: summary.name_source.unwrap_or_default(),
+            image_path: summary.image_path,
+        }
+    }
+}
+
 /// The public record of one asset: a registry listing row, and also the
 /// full response of the single-asset endpoint.
 #[derive(Debug, Serialize, ToSchema)]

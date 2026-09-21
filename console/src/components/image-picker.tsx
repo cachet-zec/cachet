@@ -70,13 +70,13 @@ export function ImagePicker({
             className="h-11 w-11 shrink-0 rounded-sm border border-white/10 object-cover"
           />
           <span className="min-w-0 flex-1">
-            <span className="block text-[13px] text-neutral-300">Image sealed with the asset</span>
-            <span className="font-data block text-[11px] text-neutral-500">{note}</span>
+            <span className="block text-sm text-neutral-300">Image sealed with the asset</span>
+            <span className="font-data block text-[13px] text-neutral-500">{note}</span>
           </span>
-          <span className="flex shrink-0 items-center gap-3 text-xs">
+          <span className="flex shrink-0 items-center gap-3 text-[13px]">
             <button
               type="button"
-              className="text-neutral-400 underline decoration-white/20 underline-offset-2 transition hover:text-[#e8b23a]"
+              className="text-neutral-400 underline decoration-white/20 underline-offset-2 transition hover:text-accent"
               onClick={() => fileInput.current?.click()}
             >
               Replace
@@ -106,7 +106,7 @@ export function ImagePicker({
           }}
           className={`flex w-full items-center gap-3 rounded-md border border-dashed px-3.5 py-3 text-left transition ${
             dragging
-              ? "border-[#e8b23a]/60 bg-[#e8b23a]/[0.05]"
+              ? "border-accent/60 bg-accent/[0.05]"
               : "border-white/15 hover:border-white/30 hover:bg-white/[0.02]"
           }`}
         >
@@ -117,17 +117,17 @@ export function ImagePicker({
             +
           </span>
           <span className="min-w-0">
-            <span className="block text-[13px] text-neutral-300">
+            <span className="block text-sm text-neutral-300">
               {busy ? "Preparing the image…" : "Add an image"}
             </span>
-            <span className="block text-[11px] leading-snug text-neutral-500">
+            <span className="block text-[13px] leading-snug text-neutral-500">
               PNG, JPEG, WebP or GIF. Drop one here; large files are resized before sealing.
             </span>
           </span>
         </button>
       )}
 
-      {error && <span className="text-xs text-red-400">{error}</span>}
+      {error && <span className="text-[13px] text-red-400">{error}</span>}
     </div>
   );
 }

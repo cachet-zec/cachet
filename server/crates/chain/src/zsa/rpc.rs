@@ -59,7 +59,14 @@ pub struct BlockSummary {
 impl NodeRpc {
     pub fn new(url: impl Into<String>) -> Self {
         Self {
-            http: reqwest::Client::new(),
+            // A node that stops answering must not hold a reader, or the
+            // sync lock, for ever: every call gives up. Generous next to a
+            // block template or a block page, short next to a hung socket.
+            http: reqwest::Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(4))
+                .timeout(std::time::Duration::from_secs(20))
+                .build()
+                .expect("a plain HTTP client always builds"),
             url: url.into(),
         }
     }

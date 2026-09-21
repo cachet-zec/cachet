@@ -9,6 +9,10 @@ hash and is refused, a tampered snapshot fails its digest.
 
     python scripts/mirror.py                       # mirror cachetzec.com
     python scripts/mirror.py --api https://your.instance --out ./mirror
+    python scripts/mirror.py --ipfs                # ...then pin to a local IPFS node
+
+Bundle IPFS addresses (derived from the hashes) go to `cids.json`; `--ipfs`
+also pins each verified bundle to your own node as a single block.
 
 Standard library only. If the `cryptography` package happens to be
 installed, the snapshot's Ed25519 signature is verified too; without it
@@ -24,6 +28,8 @@ import argparse
 import base64
 import hashlib
 import json
+import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -37,14 +43,69 @@ REQUEST_PAUSE_SECONDS = 0.1
 SNAPSHOT_DOMAIN = b"cachet-snapshot-v1"
 
 
+# CIDv1, codec raw (0x55), multihash sha2-256 (0x12), 32 bytes (0x20).
+CID_RAW_SHA256_PREFIX = bytes([0x01, 0x55, 0x12, 0x20])
+
+
 class MirrorError(RuntimeError):
     pass
+
+# Everything below talks to a server this script does not trust. Reads are
+# capped, redirects are refused (a hostile registry could otherwise steer
+# requests at another host), and what it says is printed with control
+# characters removed.
+MAX_RESPONSE_BYTES = 64 * 1024 * 1024
+
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
+        raise urllib.error.HTTPError(req.full_url, code, "redirect refused", headers, fp)
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
+def read_capped(response, limit: int = MAX_RESPONSE_BYTES) -> bytes:
+    data = response.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError(f"response larger than {limit} bytes")
+    return data
+
+
+def printable(value: object, limit: int = 200) -> str:
+    return "".join(c if c.isprintable() else "?" for c in str(value))[:limit]
+
+
+def bundle_cid(sha256_hex: str) -> str:
+    """The IPFS address of a bundle stored as one raw block."""
+    body = CID_RAW_SHA256_PREFIX + bytes.fromhex(sha256_hex)
+    return "b" + base64.b32encode(body).decode("ascii").lower().rstrip("=")
+
+
+def pin_to_ipfs(path: Path, expected_cid: str) -> None:
+    """Pin one bundle as a single raw block (`ipfs add` would chunk it) and
+    check the node answers with the derived address."""
+    try:
+        result = subprocess.run(
+            ["ipfs", "block", "put", "--cid-codec=raw", "--mhtype=sha2-256", "--pin=true", str(path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise MirrorError(f"ipfs block put failed: {error}") from error
+    if result.returncode != 0:
+        raise MirrorError(f"ipfs block put failed: {result.stderr.strip() or result.stdout.strip()}")
+    answered = result.stdout.strip().split()[-1] if result.stdout.strip() else ""
+    if answered != expected_cid:
+        raise MirrorError(f"IPFS node answered {answered!r}, expected {expected_cid}")
 
 
 def fetch(api: str, path: str, timeout: int = 30) -> bytes:
     try:
-        with urllib.request.urlopen(api.rstrip("/") + path, timeout=timeout) as response:
-            return response.read()
+        with _OPENER.open(api.rstrip("/") + path, timeout=timeout) as response:
+            return read_capped(response)
     except urllib.error.HTTPError as error:
         raise MirrorError(f"{path}: HTTP {error.code}") from error
     except Exception as error:  # network, TLS, timeout
@@ -77,7 +138,15 @@ def main() -> int:
     parser.add_argument("--api", default=DEFAULT_API, help=f"registry API (default {DEFAULT_API})")
     parser.add_argument("--out", default="mirror", help="output directory (default ./mirror)")
     parser.add_argument("--limit", type=int, default=0, help="stop after N bundles (0 = all)")
+    parser.add_argument(
+        "--ipfs",
+        action="store_true",
+        help="pin every verified bundle to the local IPFS node (needs the `ipfs` CLI)",
+    )
     args = parser.parse_args()
+
+    if args.ipfs and shutil.which("ipfs") is None:
+        raise MirrorError("--ipfs needs the `ipfs` command (Kubo) on PATH, with a node initialised")
 
     out = Path(args.out)
     bundles_dir = out / "bundles"
@@ -100,9 +169,9 @@ def main() -> int:
     (out / "snapshot.json").write_bytes(json.dumps(snapshot, indent=2).encode())
     (out / "payload.json").write_bytes(payload_bytes)
 
-    print(f"  snapshot   {len(payload['assets'])} assets at tip {payload['tip_height']}")
+    print(f"  snapshot   {len(payload['assets'])} assets at tip {printable(payload['tip_height'])}")
     print(f"  digest     VERIFIED ({digest[:16]}...)")
-    print(f"  signature  {signature_state}  key {snapshot['public_key'][:16]}...")
+    print(f"  signature  {signature_state}  key {printable(snapshot['public_key'], 16)}...")
 
     # 2. Every bundle the snapshot commits to, verified against the hash the
     #    chain carries inside each asset id.
@@ -113,7 +182,10 @@ def main() -> int:
             continue  # no Cachet envelope: nothing content-addressed to fetch
         try:
             sha256 = json.loads(description)["sha256"]
-        except (ValueError, KeyError):
+        except (ValueError, KeyError, TypeError):
+            continue
+        # Untrusted, and it ends up in a file name: real SHA-256 hex only.
+        if not isinstance(sha256, str) or len(sha256) != 64 or any(c not in "0123456789abcdef" for c in sha256):
             continue
         wanted.setdefault(sha256, asset["asset_id"])
 
@@ -158,6 +230,17 @@ def main() -> int:
         for failure in failures:
             print(f"  {failure}")
         return 1
+
+    # 3. IPFS addresses of everything held, derived from the hashes alone.
+    held = sorted(sha for sha in wanted if (bundles_dir / f"{sha}.json").exists())
+    cids = {sha: bundle_cid(sha) for sha in held}
+    (out / "cids.json").write_bytes(json.dumps(cids, indent=2).encode())
+    print(f"  ipfs       {len(cids)} addresses written to cids.json")
+
+    if args.ipfs:
+        for sha, cid in cids.items():
+            pin_to_ipfs(bundles_dir / f"{sha}.json", cid)
+        print(f"  pinned     {len(cids)} bundles on the local IPFS node, addresses confirmed")
 
     print(f"\nmirror complete in {out.resolve()}")
     print("every byte re-hashed locally; nothing was taken on trust.")

@@ -57,7 +57,10 @@ services:
       CACHET_SEED_PHRASE: ${CACHET_SEED_PHRASE}
       CACHET_SCAN_START_HEIGHT: "1"
       CACHET_DATABASE_URL: postgres://cachet:${POSTGRES_PASSWORD}@postgres:5432/cachet
-      CACHET_CORS_ORIGIN: https://cachetzec.com
+      # Comma-separated origins allowed to call this API. Defaults to the
+      # public instance's console; a self-hoster, or an operator letting
+      # other consoles read this registry, sets it in .env.prod.
+      CACHET_CORS_ORIGIN: ${CACHET_CORS_ORIGIN:-https://cachetzec.com}
       CACHET_SNAPSHOT_KEY: ${CACHET_SNAPSHOT_KEY}
       CACHET_SYNC_INTERVAL_SECS: "30"
       PORT: "8080"

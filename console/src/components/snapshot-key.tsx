@@ -19,7 +19,9 @@ export function SnapshotKey() {
       if (error) throw new Error(error.detail);
       return data;
     },
-    refetchInterval: 10_000,
+    // The key does not change while a page is open: no polling. It sits in
+    // the footer of every page, and each poll was a call to the node.
+    staleTime: Infinity,
   });
 
   const key = data?.snapshot_public_key;

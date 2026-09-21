@@ -124,7 +124,7 @@ export function ManageAsset() {
       {result && (
         <p
           data-testid="manage-result"
-          className="font-data mt-4 break-all rounded-md border border-emerald-400/25 p-3.5 text-xs text-emerald-300"
+          className="font-data mt-4 break-all rounded-md border border-emerald-400/25 p-3.5 text-[13px] text-emerald-300"
         >
           {result.label} accepted. Txid {result.txid}
         </p>
