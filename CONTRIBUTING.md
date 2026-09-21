@@ -22,13 +22,13 @@ protocol can do.
 ## The dependency rule (important)
 
 `server/Cargo.lock` pins crates that have been **yanked** from crates.io
-(`core2 0.3.3`, `halo2_gadgets 0.4.0`) but are required by the QED-it
+(`core2 0.3.3`, `halo2_gadgets 0.4.0`) but are required by the QEDIT
 protocol forks. The build only works because the lockfile carries them.
 
 - Never run a blanket `cargo update`.
 - Update a single crate with `cargo update -p <crate>` and make sure the
   lockfile still contains the yanked entries afterwards.
-- The QED-it forks themselves are pinned by git rev in
+- The QEDIT forks themselves are pinned by git rev in
   `server/Cargo.toml [patch.crates-io]`; bumping a pin is its own PR with the
   regtest integration suite run against it
   (`cargo test -p cachet-chain --test regtest -- --ignored --test-threads=1`).
@@ -41,6 +41,10 @@ the Windows-specific notes: LF checkouts, `.cargo/config.toml` at the repo
 root, Sapling parameters).
 
 ## Before you push
+
+After rebuilding the wasm engines (`infra/build-mint-engine.sh`), refresh
+the manifest CI checks them against: `python scripts/verify-site.py
+--write-manifest`.
 
 ```bash
 cargo fmt --all

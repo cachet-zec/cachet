@@ -21,6 +21,22 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # A throwaway database: the listing test checks the SQL against the
+    # reference answer, and creates and drops its own scratch database.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: cachet
+          POSTGRES_PASSWORD: cachet-dev-only
+          POSTGRES_DB: cachet
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cachet"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -35,6 +51,10 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Tests
         run: cargo test --workspace
+      - name: Listing, database against reference
+        env:
+          CACHET_TEST_DATABASE_URL: postgres://cachet:cachet-dev-only@localhost:5432/postgres
+        run: cargo test -p cachet-index --test listing -- --ignored
 
   web:
     name: Web (typecheck, lint, build)
@@ -58,6 +78,9 @@ jobs:
         run: pnpm lint
       - name: Format check
         run: pnpm format:check
+      # Committed binaries: a change must show up in the manifest too.
+      - name: Engine manifest matches the committed engine
+        run: python3 scripts/verify-site.py --check-manifest
       - name: Build
         run: pnpm build
 
@@ -90,6 +113,10 @@ jobs:
         run: bash infra/mint-engine-build-inner.sh
       - name: Smoke-test the single-core module
         run: node infra/mint-engine-smoke.mjs
+      # Informational, never blocking: does a rebuild give the committed bytes?
+      - name: Compare the rebuilt engine with the committed manifest
+        continue-on-error: true
+        run: python3 scripts/verify-site.py --check-manifest
 
   e2e:
     name: E2E (console → server → regtest)
@@ -198,6 +225,10 @@ jobs:
 
       # --- Run ---
       - name: E2E tests
+        env:
+          # remint.spec.ts stands in for a chain reset with one statement
+          # against the index database (the service container above).
+          CACHET_E2E_PSQL: psql postgres://cachet:cachet-dev-only@localhost:5432/cachet
         run: pnpm --filter @cachet/console e2e
       - name: Upload Playwright traces
         # if: failure() means CI never runs this step on a green build, so
