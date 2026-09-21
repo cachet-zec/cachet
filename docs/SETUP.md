@@ -98,7 +98,10 @@ reach the network. To serve other machines or containers, set
 `CACHET_BIND=0.0.0.0` (read SECURITY.md's self-hosting section first) and
 point `CACHET_CORS_ORIGIN` at the console's origin. It doubles as the
 public link origin in Discord mint notifications, so set it even when
-CORS is not a concern.
+CORS is not a concern. Several origins may be listed, comma separated,
+your own console first: a console run by someone else that offers your
+instance as one of its registries (`NEXT_PUBLIC_CACHET_REGISTRIES` on
+their side) has to be named here to read it from a browser.
 
 Other knobs (all optional): `PORT` (default 8080),
 `CACHET_READ_ONLY=1` (public browse-and-verify deployment: wallet-signing
@@ -113,10 +116,11 @@ uploads a minute, 10 relays a minute and 8 relays in flight per client,
 before the instance pauses its own write paths, default 40, `0`
 disables) with `CACHET_RELAY_BREAKER_PAUSE_SECS` (how long, default
 1800; the operator can resume earlier), `CACHET_SYNC_INTERVAL_SECS`
-(background registry sync cadence, default 30), `CACHET_SNAPSHOT_KEY` (Ed25519 seed enabling signed registry snapshots;
-generate with `--generate-snapshot-key`), `CACHET_ADMIN_TOKEN` (enables
+(background registry sync cadence, default 30), `CACHET_SNAPSHOT_KEY`
+(Ed25519 seed enabling signed registry snapshots; generate with
+`--generate-snapshot-key`), `CACHET_ADMIN_TOKEN` (enables
 the token-gated moderation API and the console's `/admin` page; must be
-at least 32 characters or it is refused — see SECURITY.md), and
+at least 32 characters or it is refused — see SECURITY.md),
 `CACHET_DISCORD_WEBHOOK` (posts relayed mints to a Discord webhook:
 asset ids and txid, never a client address), and `CACHET_FEATURED_ASSETS`
 (comma-separated asset ids the landing showcase leads with, in order;

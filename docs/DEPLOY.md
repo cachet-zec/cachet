@@ -43,7 +43,7 @@ Design decisions:
   rebuild. What it cannot rebuild: `metadata_bundles` (community
   descriptions and images), `asset_descriptions` (the resolution
   journal) and `moderation_hidden` (operator judgment). That is exactly
-  what the daily cron above backs up.
+  what the daily timer above backs up.
 
 ## One-time setup
 
@@ -67,7 +67,7 @@ bash infra/prod/deploy.sh
 ```
 
 The target is never baked into the script — this is the same file every
-self-hoster runs, and it should point at nobody's box by default. The one
+self-hoster runs, and it should point at nobody's box by default. The
 two values that cannot come from `.env.prod` are the console's own origin
 and its API origin: Next inlines both into the JS bundle at build time, so
 they are build args with defaults. The site origin is what `robots.txt`,
@@ -75,7 +75,8 @@ they are build args with defaults. The site origin is what `robots.txt`,
 it alone would point crawlers at cachetzec.com. Self-hosters override both:
 
 ```bash
-CACHET_SITE_URL=https://example.org CACHET_API_URL=https://api.example.org   bash infra/prod/deploy.sh root@<ip>
+CACHET_SITE_URL=https://example.org CACHET_API_URL=https://api.example.org \
+  bash infra/prod/deploy.sh root@<ip>
 ```
 
 Builds both images, ships them, uploads the compose file + Caddyfile +
@@ -110,3 +111,36 @@ recomputed from the chain at boot.
 
 The server's background sync keeps the index at the chain tip every 30s;
 after a fresh boot the first full index build takes about a minute.
+
+Going back a version: the server applies its database migrations when it
+starts, and refuses to start on a database carrying a migration it does
+not know. Before redeploying an older version, pull a backup, then remove
+what the newer one added. For 0.5.0 that is migrations 9, 10 and 11:
+derived columns and indexes only. The search columns and the ranks are
+recomputed at start, the image flag when a bundle is stored, the issuer
+column is refilled from the chain for every asset still on it. The
+`pg_trgm` extension can stay: nothing older uses it.
+
+```sql
+DROP INDEX IF EXISTS assets_by_ord, assets_by_issuer, assets_by_name_rank,
+                     asset_descriptions_search;
+ALTER TABLE asset_descriptions
+  DROP COLUMN IF EXISTS search_text,
+  DROP COLUMN IF EXISTS name_rank,
+  DROP COLUMN IF EXISTS issuer_ik;
+ALTER TABLE assets DROP COLUMN IF EXISTS name_rank;
+ALTER TABLE metadata_bundles DROP COLUMN IF EXISTS has_image;
+DELETE FROM _sqlx_migrations WHERE version IN (9, 10, 11);
+```
+
+## After a deploy
+
+- `python scripts/verify-site.py --site https://your.site` checks that the
+  site serves the mint worker and wasm engines this checkout commits.
+- Optional knobs, all read from `.env.prod` by `deploy.sh` and baked into the
+  console at build time: `CACHET_REGISTRIES` (other registries the console
+  can read; listing one means trusting its operator), `CACHET_EXPLORER_BLOCK_URL`
+  and `CACHET_EXPLORER_TX_URL` (block explorer URL templates). Server side,
+  `CACHET_CORS_ORIGIN` takes a comma-separated list of origins.
+- `python scripts/mirror.py` then `python scripts/restore.py --to <api>` moves
+  the sealed content of one instance to another through the public routes.
