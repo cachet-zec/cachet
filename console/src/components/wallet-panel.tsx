@@ -32,9 +32,11 @@ export function WalletPanel() {
     refetchInterval: 20_000,
   });
 
-  // Reuse the registry to resolve display names.
+  // The registry resolves display names. Only where the panel shows: a
+  // read-only deployment hides it, and must not download the listing for it.
   const assets = useQuery({
-    queryKey: ["assets"],
+    queryKey: ["assets", "all"],
+    enabled: chain.isSuccess && !readOnly,
     queryFn: async () => {
       const { data, error } = await api.GET("/api/v1/assets");
       if (error) throw new Error(error.detail);
@@ -49,7 +51,9 @@ export function WalletPanel() {
   return (
     <section className={card}>
       <h2 className={`${cardTitle} mb-3`}>Wallet</h2>
-      {wallet.isPending && <div className="h-16 animate-pulse rounded-md bg-white/[0.04]" />}
+      {wallet.isPending && (
+        <div className="h-16 motion-safe:animate-pulse rounded-md bg-white/[0.04]" />
+      )}
       {wallet.isError && <p className="text-sm text-red-400">{wallet.error.message}</p>}
       {wallet.data && wallet.data.length === 0 && (
         <p className="text-sm text-neutral-500">No holdings yet. Mint something.</p>
@@ -58,7 +62,7 @@ export function WalletPanel() {
         <div className="flex flex-col gap-3">
           {wallet.data.map((account) => (
             <div key={account.account}>
-              <p className="font-data text-[11px] uppercase tracking-[0.18em] text-neutral-500">
+              <p className="font-data text-[13px] uppercase tracking-[0.18em] text-neutral-500">
                 account:{account.account}
               </p>
               <div className="mt-1 border-t border-white/[0.07]">
@@ -70,12 +74,12 @@ export function WalletPanel() {
                   >
                     <span className="truncate text-neutral-300">
                       {nameOf(holding.asset_id) ?? (
-                        <span className="font-data text-xs text-neutral-600">
+                        <span className="font-data text-[13px] text-neutral-600">
                           {holding.asset_id.slice(0, 20)}…
                         </span>
                       )}
                     </span>
-                    <span className="font-data shrink-0 text-[#e8b23a]">
+                    <span className="font-data shrink-0 text-accent">
                       {holding.amount.toLocaleString("en-US")}
                     </span>
                   </Link>

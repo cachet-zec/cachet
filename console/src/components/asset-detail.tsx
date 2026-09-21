@@ -7,10 +7,19 @@ import { createPortal } from "react-dom";
 
 import { AssetEvents } from "@/components/asset-events";
 import { CopyButton } from "@/components/copy-button";
+import { IdPlate } from "@/components/id-plate";
+import { KeptAsset } from "@/components/kept-asset";
+import { SealedText } from "@/components/sealed-text";
 import { api, apiBaseUrl, problemMessage } from "@/lib/api";
-import { safeExternalHref } from "@/lib/safe-href";
+import { safeImageDataUri, sealedName } from "@/lib/sealed-name";
 import { deriveAssetId } from "@/lib/verify-engine";
-import { card, cardTitle, ghostButton, input, stamp, stampNotable } from "@/lib/ui";
+import { card, fieldLabel, ghostButton, input, stamp } from "@/lib/ui";
+
+/** A page section's heading: the engraved face, under a hairline. */
+const sectionTitle = "font-display text-2xl font-medium text-neutral-100";
+
+/** The double rule of an engraved plate: a hairline inside a hairline. */
+const plateFrame = "border border-line p-1.5";
 
 /** The v1 on-chain metadata envelope (see packages/registry-spec). */
 interface Envelope {
@@ -156,13 +165,7 @@ function verificationBadge(
   return null;
 }
 
-/**
- * The sealed image, thumbnail first, full size on demand.
- *
- * The bytes on screen are the bytes the chain committed to (transitively,
- * through the bundle hash), so showing them at 96 px only would undersell
- * the guarantee. Click or Escape closes.
- */
+/** The sealed image as the page's plate; click for full size, Escape closes. */
 function SealedImage({ src }: { src: string }) {
   const [open, setOpen] = useState(false);
 
@@ -181,14 +184,15 @@ function SealedImage({ src }: { src: string }) {
         type="button"
         data-testid="asset-image-open"
         title="View the sealed image full size"
-        className="group shrink-0 cursor-zoom-in"
+        className={`${plateFrame} group block w-full cursor-zoom-in transition hover:border-accent/60`}
         onClick={() => setOpen(true)}
       >
+        {/* Contained, never cropped: the whole sealed image is the point. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={src}
           alt=""
-          className="h-24 w-24 rounded-sm border border-white/10 object-cover transition group-hover:border-[#e8b23a]/60"
+          className="aspect-square w-full border border-line-strong bg-ground object-contain"
         />
       </button>
       {/* Portal to <body>: the page wrapper animates with a retained
@@ -213,8 +217,8 @@ function SealedImage({ src }: { src: string }) {
               alt=""
               className="max-h-[calc(100vh-9rem)] max-w-[min(88vw,52rem)] rounded-md border border-white/15 object-contain shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
             />
-            <p className="font-data text-[11px] uppercase tracking-[0.16em] text-neutral-500">
-              sealed with the asset · click anywhere to close
+            <p className="font-data text-sm text-neutral-400">
+              Sealed with the asset. Click anywhere to close.
             </p>
           </div>,
           document.body,
@@ -240,94 +244,82 @@ export function AssetDetail({ assetId }: { assetId: string }) {
   const identity = useDerivedIdentity(assetId, state.data?.issuer, state.data?.description);
   const badge = verificationBadge(identity.data, verification.data, envelope !== null);
 
-  // Plain free-text descriptions (pre-metadata assets) can be long: keep
-  // the title short and leave the full text to the on-chain field below.
-  const rawName = state.data?.display_name ?? null;
+  // The name comes out of the description this page checks against the
+  // asset id, and the image out of the bundle it hashes: never from the
+  // registry's `display_name` or `image_path`, which nothing verifies. Long
+  // free text is cut short; the full description is in the register below.
+  const sealed = sealedName(state.data?.description);
   const displayName =
-    rawName && rawName.length > 60 ? `${rawName.slice(0, 57).trimEnd()}…` : rawName;
-  const nameSource = state.data?.name_source ?? null;
+    sealed.name && sealed.name.length > 60 ? `${sealed.name.slice(0, 57).trimEnd()}…` : sealed.name;
+  const nameSource = sealed.source;
+  const sealedImage = verification.data?.verified
+    ? safeImageDataUri(verification.data.bundle.image_data_uri)
+    : null;
+  const imagePending = envelope !== null && verification.isPending;
+
+  const finalizedMeaning =
+    "Finalized: consensus refuses further units, from anyone including the issuer. " +
+    "Holders can still burn what they hold, so the supply can fall but never rise.";
 
   return (
-    <div className="mx-auto max-w-3xl">
+    <div className="mx-auto max-w-5xl">
       <Link
         href="/console"
-        className="font-data text-[13px] text-neutral-400 transition hover:text-[#e8b23a]"
+        className="font-data text-sm text-neutral-400 transition hover:text-accent"
       >
         ← Back to console
       </Link>
 
       {state.isError && (
-        <div className={`${card} mt-4`}>
-          <p className="text-sm text-red-400">
-            Asset not found on this chain: {state.error.message}
-          </p>
-        </div>
+        <KeptAsset
+          assetId={assetId}
+          fallback={
+            <div className={`${card} mt-4`}>
+              <p className="text-sm text-red-400">
+                Asset not found on this chain: {state.error.message}
+              </p>
+            </div>
+          }
+        />
       )}
 
       {state.data && (
-        <div className={`${card} relative mt-4`}>
-          {/* A finalized supply is stamped like a document, not tagged
-              like a form field - the same press as the landing's testnet
-              stamp. The tooltip keeps the precise meaning. */}
-          {state.data.finalized && (
-            <span
-              data-testid="sealed-stamp"
-              title="Finalized: consensus refuses further units, from anyone including the issuer. Holders can still burn what they hold, so the supply can fall but never rise."
-              className="stamp-press font-data absolute right-6 top-6 hidden -rotate-6 select-none rounded-sm border-2 border-[#e8b23a]/70 px-3 py-1.5 text-[12px] uppercase tracking-[0.2em] text-[#e8b23a]/90 outline outline-1 outline-offset-4 outline-[#e8b23a]/30 sm:block"
-            >
-              sealed forever
-            </span>
-          )}
-          <div
-            className={`flex flex-wrap items-start gap-5 ${state.data.finalized ? "sm:pr-52" : ""}`}
-          >
-            {state.data.image_path ? (
-              <SealedImage src={apiBaseUrl + state.data.image_path} />
-            ) : (
-              <div className="font-data flex h-24 w-24 items-center justify-center rounded-sm border border-white/10 text-lg text-neutral-600">
-                {assetId.slice(0, 2)}
-              </div>
-            )}
-            <div className="min-w-0 flex-1">
+        <article className="mt-6">
+          {/* The plate, then what a holder weighs first. */}
+          <header className="grid gap-8 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:gap-12">
+            <div>
+              {sealedImage ? (
+                <SealedImage src={sealedImage} />
+              ) : imagePending ? (
+                <div className={plateFrame}>
+                  <div className="aspect-square w-full motion-safe:animate-pulse border border-line-strong bg-surface" />
+                </div>
+              ) : (
+                <div className={plateFrame}>
+                  <IdPlate assetId={assetId} className="block w-full border border-line-strong" />
+                </div>
+              )}
+              {!sealedImage && !imagePending && (
+                <p className="font-data mt-2.5 text-[13px] text-neutral-500">
+                  {envelope && !verification.data?.verified
+                    ? "Image not shown: the metadata could not be verified."
+                    : "No image sealed. Pattern drawn from the asset id."}
+                </p>
+              )}
+            </div>
+
+            <div className="min-w-0">
               <h1
                 className={
                   nameSource === "free_text"
-                    ? "font-display text-2xl font-semibold italic tracking-tight text-neutral-300 [overflow-wrap:anywhere]"
-                    : "font-display text-2xl font-semibold tracking-tight text-neutral-50 [overflow-wrap:anywhere]"
+                    ? "font-display text-4xl font-medium italic leading-[1.08] text-neutral-200 [overflow-wrap:anywhere] sm:text-5xl"
+                    : "font-display text-4xl font-medium leading-[1.08] text-neutral-50 [overflow-wrap:anywhere] sm:text-5xl"
                 }
               >
                 {displayName ?? <span className="italic text-neutral-500">Unresolved asset</span>}
               </h1>
-              <p className="font-data mt-1.5 text-sm text-neutral-400">
-                supply{" "}
-                <span className="text-[#e8b23a]">
-                  {state.data.total_supply.toLocaleString("en-US")}
-                </span>
-              </p>
-              <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-3">
-                {/* Narrow screens: the corner would sit on the title, so the
-                    stamp takes its place in the badge row, upright and
-                    unanimated: a rotated box in a flowing row always bites
-                    its neighbour. */}
-                {state.data.finalized && (
-                  <span
-                    title="Finalized: consensus refuses further units, from anyone including the issuer. Holders can still burn what they hold, so the supply can fall but never rise."
-                    className="font-data select-none rounded-sm border-2 border-[#e8b23a]/70 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#e8b23a]/90 outline outline-1 outline-offset-2 outline-[#e8b23a]/30 sm:hidden"
-                  >
-                    sealed forever
-                  </span>
-                )}
-                {!state.data.finalized && (
-                  // Stated, not left to the absence of a stamp: whoever
-                  // holds this asset can be diluted, and that is a fact
-                  // about the chain, not an opinion about the issuer.
-                  <span
-                    className={stampNotable}
-                    title="Not finalized: the issuance key that minted this asset can still issue more units of it. The metadata cannot change - only the supply."
-                  >
-                    issuer can mint more
-                  </span>
-                )}
+
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 {nameSource === "free_text" && (
                   <span className={stamp} title="Issuer-chosen free text; not a verified name">
                     unverified label
@@ -339,8 +331,8 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                     title={badge.title}
                     className={
                       badge.ok
-                        ? "rounded-sm border border-emerald-400/40 px-1.5 py-0.5 font-data text-[10px] uppercase tracking-[0.14em] text-emerald-300"
-                        : "rounded-sm border border-red-400/50 px-1.5 py-0.5 font-data text-[10px] uppercase tracking-[0.14em] text-red-300"
+                        ? "rounded-full border border-emerald-400/40 px-3 py-0.5 font-data text-[13px] tracking-[0.04em] text-emerald-300"
+                        : "rounded-full border border-red-400/50 px-3 py-0.5 font-data text-[13px] tracking-[0.04em] text-red-300"
                     }
                   >
                     {badge.label}
@@ -350,82 +342,226 @@ export function AssetDetail({ assetId }: { assetId: string }) {
                   <span className={stamp}>{verification.error.message}</span>
                 )}
               </div>
-            </div>
-          </div>
 
-          {/* Bundle content renders ONLY once the hash check passed: a
-              registry that fails its own commitment gets a red badge, not
-              a voice. The link is additionally scheme-allowlisted. */}
-          {verification.data?.verified && verification.data.bundle.description && (
-            <p className="mt-5 whitespace-pre-wrap text-sm leading-relaxed text-neutral-300">
-              {verification.data.bundle.description}
-            </p>
-          )}
-          {verification.data?.verified &&
-            verification.data.bundle.external_url &&
-            safeExternalHref(verification.data.bundle.external_url) && (
-              <a
-                href={safeExternalHref(verification.data.bundle.external_url)!}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-block text-sm text-[#e8b23a]/90 underline decoration-[#e8b23a]/30 transition hover:text-[#e8b23a]"
-              >
-                {verification.data.bundle.external_url}
-              </a>
-            )}
+              {/* Supply, and whether it can still grow: stated either way. */}
+              <div className="mt-9 flex flex-wrap items-center justify-between gap-x-10 gap-y-5">
+                <div>
+                  <p className={fieldLabel}>Supply on chain</p>
+                  <p className="font-display mt-1.5 text-5xl font-medium leading-none tabular-nums text-neutral-50 [overflow-wrap:anywhere] sm:text-6xl">
+                    {state.data.total_supply.toLocaleString("en-US")}
+                  </p>
+                </div>
+                {state.data.finalized ? (
+                  // Engraved, not stamped. The tooltip keeps the precise meaning.
+                  <p
+                    data-testid="sealed-stamp"
+                    title={finalizedMeaning}
+                    className="pen-write font-display text-3xl font-medium italic leading-tight text-accent"
+                  >
+                    Sealed forever
+                  </p>
+                ) : (
+                  <p
+                    data-testid="open-supply"
+                    title="Not finalized: the issuance key can still add units. The name and metadata cannot change, only the supply."
+                    className="pen-write font-display text-2xl font-medium italic leading-tight text-accent sm:text-3xl"
+                  >
+                    Issuer can mint more
+                  </p>
+                )}
+              </div>
 
-          <dl className="mt-6 flex flex-col gap-3 border-t border-white/[0.07] pt-5">
-            <div>
-              <dt className={cardTitle}>Asset id</dt>
-              <dd className="mt-1 flex items-center gap-2">
-                <span className="font-data break-all text-xs text-neutral-300">{assetId}</span>
-                <CopyButton value={assetId} />
-              </dd>
+              {/* Bundle content renders ONLY once the hash check passed: a
+                  registry that fails its own commitment gets a red badge,
+                  not a voice. A bundle's `external_url` is never shown: anyone
+                  can mint, and this page should not carry an address it has
+                  not checked. The mint page does not offer the field. */}
+              {verification.data?.verified && verification.data.bundle.description && (
+                <SealedText className="mt-6" text={verification.data.bundle.description} />
+              )}
             </div>
-            {state.data.issuer && (
-              <div>
-                <dt className={cardTitle}>Issuer (issuance validating key)</dt>
-                <dd className="mt-1 flex flex-wrap items-center gap-2">
-                  <span className="font-data break-all text-xs text-neutral-300">
-                    {state.data.issuer}
-                  </span>
-                  <CopyButton value={state.data.issuer} />
+          </header>
+
+          <section className="mt-14">
+            <h2 className={sectionTitle}>Checked in your browser</h2>
+            <ul className="mt-4 flex flex-col gap-3">
+              <CheckRow
+                title="Asset id"
+                state={
+                  !state.data.description
+                    ? "none"
+                    : identity.data
+                      ? identity.data.matches
+                        ? "ok"
+                        : "failed"
+                      : identity.isError
+                        ? "unknown"
+                        : "pending"
+                }
+                text={{
+                  ok: "Derived from the issuer key and the description (ZIP 227).",
+                  failed:
+                    "The description served does not derive this asset id. Do not trust the name shown.",
+                  pending: "Recomputing the asset id from the issuer key and the description…",
+                  unknown: "The asset id could not be recomputed in this browser.",
+                  none: "No description is known for this asset yet, so there is nothing to derive.",
+                }}
+              />
+              <CheckRow
+                order={1}
+                title="Metadata"
+                state={
+                  !envelope
+                    ? "none"
+                    : verification.data
+                      ? verification.data.verified
+                        ? "ok"
+                        : "failed"
+                      : verification.isError
+                        ? "unknown"
+                        : "pending"
+                }
+                text={{
+                  ok: "Name, text and image match the hash sealed on chain.",
+                  failed:
+                    "The bundle served does not hash to the commitment in the description. Its content is not shown.",
+                  pending: "Fetching the metadata bundle and hashing it…",
+                  unknown: `Not checked: ${verification.error?.message ?? "metadata bundle unavailable"}.`,
+                  none: state.data.description
+                    ? "Free-text label, no metadata bundle: the name is what the issuer typed."
+                    : "Nothing to check until the description is known.",
+                }}
+              />
+            </ul>
+          </section>
+
+          <section className="mt-14">
+            <h2 className={sectionTitle}>Register entry</h2>
+            <dl className="mt-3">
+              <EntryRow label="Asset id" value={assetId} />
+              {state.data.issuer && (
+                <EntryRow label="Issuer" value={state.data.issuer}>
                   <Link
                     href={`/issuers/${state.data.issuer}`}
-                    className="font-data text-[11px] text-neutral-400 underline decoration-white/20 transition hover:text-[#e8b23a]"
+                    className="mt-2 inline-block text-sm text-neutral-300 underline decoration-white/20 transition hover:text-accent"
                   >
-                    all assets from this issuer →
+                    All assets from this issuer →
                   </Link>
-                </dd>
-              </div>
-            )}
-            {envelope && (
-              <div>
-                <dt className={cardTitle}>Metadata commitment (SHA-256)</dt>
-                <dd className="mt-1 flex items-center gap-2">
-                  <span className="font-data break-all text-xs text-neutral-300">
-                    {envelope.sha256}
-                  </span>
-                  <CopyButton value={envelope.sha256} />
-                </dd>
-              </div>
-            )}
-            {state.data.description && (
-              <div>
-                <dt className={cardTitle}>On-chain description</dt>
-                <dd className="font-data mt-1 break-all text-xs text-neutral-500">
-                  {state.data.description}
-                </dd>
-              </div>
-            )}
-            {!state.data.description && <ResolveDescription assetId={assetId} />}
-          </dl>
+                </EntryRow>
+              )}
+              {envelope && (
+                <EntryRow label="Metadata commitment" hint="SHA-256" value={envelope.sha256} />
+              )}
+              {state.data.description && (
+                <EntryRow label="On-chain description" value={state.data.description} />
+              )}
+              {!state.data.description && <ResolveDescription assetId={assetId} />}
+            </dl>
+          </section>
 
           <AssetEvents assetId={assetId} />
-        </div>
+        </article>
       )}
 
-      {state.isPending && <div className={`${card} mt-4 h-48 animate-pulse`} />}
+      {state.isPending && (
+        <div className="mt-6 grid gap-8 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:gap-12">
+          <div className="aspect-square motion-safe:animate-pulse border border-line bg-surface" />
+          <div className="flex flex-col gap-5">
+            <div className="h-12 w-2/3 motion-safe:animate-pulse bg-surface" />
+            <div className="h-28 motion-safe:animate-pulse bg-surface/60" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type CheckState = "ok" | "failed" | "pending" | "unknown" | "none";
+
+/** One client-side check, with its verdict in words rather than a colour. */
+function CheckRow({
+  title,
+  state,
+  text,
+  order = 0,
+}: {
+  title: string;
+  state: CheckState;
+  text: Record<CheckState, string>;
+  /** Position in the list: a passed check draws its tick slightly after the one above. */
+  order?: number;
+}) {
+  const mark = { ok: "✓", failed: "✗", pending: "…", unknown: "?", none: "–" }[state];
+  const tone = {
+    ok: "text-emerald-300",
+    failed: "text-red-300",
+    pending: "text-neutral-500",
+    unknown: "text-accent",
+    none: "text-neutral-500",
+  }[state];
+  return (
+    <li className="grid gap-x-8 gap-y-1 sm:grid-cols-[13rem_minmax(0,1fr)]">
+      <span className="flex items-baseline gap-2.5 text-base font-medium text-neutral-100">
+        <span aria-hidden className={`font-data flex w-4 shrink-0 justify-center ${tone}`}>
+          {state === "ok" ? (
+            // Drawn when the check passes, not before: the state is the
+            // real one, the key restarts the stroke if it changes.
+            <svg key="ok" viewBox="0 0 16 16" className="h-4 w-4 translate-y-0.5" fill="none">
+              <path
+                d="M2.5 8.5 6.2 12.2 13.5 4"
+                pathLength={1}
+                className="tick-draw"
+                style={{ "--tick-delay": `${order * 260}ms` } as React.CSSProperties}
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          ) : state === "pending" ? (
+            <span className="pulse-dot mt-2 h-1.5 w-1.5 rounded-full bg-neutral-500" />
+          ) : (
+            mark
+          )}
+        </span>
+        {title}
+      </span>
+      <span
+        className={`text-base leading-relaxed ${state === "failed" ? "text-red-200" : "text-neutral-300"}`}
+      >
+        {text[state]}
+      </span>
+    </li>
+  );
+}
+
+/** One line of the register: what the datum is, the datum, a way to copy it. */
+function EntryRow({
+  label,
+  hint,
+  value,
+  children,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-x-8 gap-y-1.5 border-b border-line py-4 last:border-b-0 sm:grid-cols-[13rem_minmax(0,1fr)]">
+      <dt>
+        <span className="block text-base font-medium text-neutral-100">{label}</span>
+        {hint && <span className="font-data block text-[13px] text-neutral-500">{hint}</span>}
+      </dt>
+      <dd className="min-w-0">
+        <div className="flex items-start justify-between gap-3">
+          <span className="font-data break-all text-sm leading-relaxed text-neutral-300">
+            {value}
+          </span>
+          <CopyButton value={value} />
+        </div>
+        {children}
+      </dd>
     </div>
   );
 }
@@ -456,16 +592,19 @@ function ResolveDescription({ assetId }: { assetId: string }) {
   });
 
   return (
-    <div>
-      <dt className={cardTitle}>On-chain description (unresolved)</dt>
-      <dd className="mt-1">
-        <p className="text-xs leading-relaxed text-neutral-500">
+    <div className="grid gap-x-8 gap-y-1.5 border-b border-line py-4 last:border-b-0 sm:grid-cols-[13rem_minmax(0,1fr)]">
+      <dt>
+        <span className="block text-base font-medium text-neutral-100">On-chain description</span>
+        <span className="font-data block text-[13px] text-neutral-500">unresolved</span>
+      </dt>
+      <dd className="min-w-0">
+        <p className="max-w-prose text-base leading-relaxed text-neutral-300">
           The chain only stores the description hash. Know the plaintext? Submit it: nothing is
           accepted unless it hashes to the on-chain commitment (ZIP 227), so the registry cannot be
           lied to.
         </p>
         <form
-          className="mt-2.5 flex gap-2.5"
+          className="mt-3 flex flex-wrap gap-2.5 sm:flex-nowrap"
           onSubmit={(event) => {
             event.preventDefault();
             resolve.mutate();
@@ -489,7 +628,9 @@ function ResolveDescription({ assetId }: { assetId: string }) {
             {resolve.isPending ? "Verifying…" : "Verify & register"}
           </button>
         </form>
-        {resolve.isError && <p className="mt-2 text-xs text-red-400">{resolve.error.message}</p>}
+        {resolve.isError && (
+          <p className="mt-2 text-[13px] text-red-400">{resolve.error.message}</p>
+        )}
       </dd>
     </div>
   );

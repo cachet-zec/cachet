@@ -218,7 +218,7 @@ export function HoldingsPanel({
   return (
     <section className={`${card} rise`}>
       <h2 className={`${cardTitle} mb-3`}>Your holdings · transfer &amp; burn</h2>
-      <p className="text-xs leading-relaxed text-neutral-500">
+      <p className="text-[13px] leading-relaxed text-neutral-500">
         The chain is scanned locally: raw blocks are public data, identical for every visitor, and
         the trial decryption happens in this page. The server never learns which notes are yours.
       </p>
@@ -234,20 +234,20 @@ export function HoldingsPanel({
           {wallet && wallet.scanned_height > 0 ? "Rescan the chain" : "Scan my holdings"}
         </button>
         {scanning && progress && (
-          <span className="flex items-center gap-2 text-xs text-[#e8b23a]/90">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e8b23a]" />
+          <span className="flex items-center gap-2 text-[13px] text-accent/90">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
             scanning block {progress.height} / {progress.tip}
           </span>
         )}
         {!scanning && wallet && progress && (
-          <span className="font-data text-xs text-neutral-500">
+          <span className="font-data text-[13px] text-neutral-500">
             synced to block {wallet.scanned_height}
           </span>
         )}
       </div>
 
       {wallet && (
-        <p className="font-data mt-3 flex items-center gap-2 break-all text-xs text-neutral-500">
+        <p className="font-data mt-3 flex items-center gap-2 break-all text-[13px] text-neutral-500">
           <span className="shrink-0 whitespace-nowrap">your address</span>{" "}
           <span data-testid="wallet-address" className="text-neutral-300">
             {wallet.address}
@@ -257,7 +257,7 @@ export function HoldingsPanel({
       )}
 
       {wallet && wallet.scanned_height > 0 && wallet.holdings.length === 0 && (
-        <p className="mt-3 text-xs text-neutral-500">
+        <p className="mt-3 text-[13px] text-neutral-500">
           Nothing spendable under this seed yet. Mint an asset above, or receive one at the address
           shown.
         </p>
@@ -273,7 +273,7 @@ export function HoldingsPanel({
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <Link
-                  className="min-w-0 text-xs text-[#e8b23a] underline decoration-[#e8b23a]/30"
+                  className="min-w-0 text-[13px] text-accent underline decoration-accent/30"
                   href={`/assets/${holding.asset_id}`}
                 >
                   {names[holding.asset_id] ? (
@@ -282,7 +282,7 @@ export function HoldingsPanel({
                     <span className="font-data break-all">{holding.asset_id.slice(0, 16)}…</span>
                   )}
                 </Link>
-                <span className="font-data text-xs text-neutral-300">× {holding.amount}</span>
+                <span className="font-data text-[13px] text-neutral-300">× {holding.amount}</span>
                 <span className="flex gap-2">
                   <button
                     type="button"
@@ -371,7 +371,7 @@ export function HoldingsPanel({
                     </button>
                   </div>
                   {form.mode === "burn" && (
-                    <p className="text-xs leading-snug text-neutral-500">
+                    <p className="text-[13px] leading-snug text-neutral-500">
                       Burning destroys the units permanently: the public supply decreases, on chain,
                       forever.
                     </p>
@@ -384,15 +384,15 @@ export function HoldingsPanel({
       )}
 
       {stage && (
-        <p className="mt-3 flex items-center gap-2 text-xs text-[#e8b23a]/90">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e8b23a]" />
+        <p className="mt-3 flex items-center gap-2 text-[13px] text-accent/90">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
           {stage}
         </p>
       )}
       {receipt && (
         <div
           data-testid="spend-receipt"
-          className="mt-4 rounded-md border border-emerald-400/25 p-3.5 text-xs"
+          className="mt-4 rounded-md border border-emerald-400/25 p-3.5 text-[13px]"
         >
           <p className="flex flex-wrap items-center gap-2">
             <span className={stamp}>

@@ -1,16 +1,47 @@
 @import "tailwindcss";
 
+/* Security print: bottle-green stock, cool paper-white ink, copper
+   engraving. The whole palette lives here: class names use these tokens
+   (text-accent, bg-surface, border-line), never a hex literal. The greys
+   lean green with no yellow in them, so they sit on the ground instead of
+   floating above it. */
+@theme {
+  --color-ground: #0b1d18;
+  --color-surface: #10281f;
+  --color-line: #234238;
+  --color-line-strong: #3a5d50;
+  --color-accent: #dc9a76;
+  --color-accent-hover: #e8b092;
+  --color-accent-active: #c48461;
+  --color-ink: #edf3ee;
+  --color-neutral-50: #f5f9f6;
+  --color-neutral-100: #e9f0ea;
+  --color-neutral-200: #d3ded6;
+  --color-neutral-300: #bacabf;
+  --color-neutral-400: #a4b8aa;
+  --color-neutral-500: #8da596;
+  --color-neutral-600: #769383;
+  --color-neutral-700: #3a5d50;
+  --color-neutral-800: #234238;
+  --color-neutral-900: #152f27;
+}
+
 :root {
-  --background: #0b0a08; /* warm near-black, like dark paper */
-  --surface: #12100d;
-  --foreground: #eae5db; /* warm ink */
-  --accent: #e8b23a; /* seal gold */
+  --background: var(--color-ground);
+  --surface: var(--color-surface);
+  --foreground: var(--color-ink);
+  --accent: var(--color-accent);
 }
 
 /* Decorative layers (seal watermark, hero glow) may bleed past the
    content column; clip them at the viewport, never at the container.
    Declared on html AND body: iOS Safari can still pan horizontally
    when only the root clips. */
+/* One step up for the whole scale: every rem-based size follows. */
+html {
+  font-size: 17px;
+}
+
 html,
 body {
   overflow-x: hidden; /* fallback for browsers without overflow: clip */
@@ -19,8 +50,8 @@ body {
 
 body {
   background-color: var(--background);
-  /* A warm cast at the top of the page, like lamplight on a desk. */
-  background-image: radial-gradient(1100px 520px at 18% -6%, #16130e, transparent 70%);
+  /* A lighter green lifted at the top of the page, like light across a desk. */
+  background-image: radial-gradient(1100px 520px at 18% -6%, #143328, transparent 70%);
   color: var(--foreground);
   font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
 }
@@ -33,7 +64,7 @@ body::after {
   inset: 0;
   z-index: 60;
   pointer-events: none;
-  opacity: 0.032;
+  opacity: 0.045;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
@@ -125,16 +156,59 @@ body::after {
   }
 }
 
-/* The engraved watermark's woven ellipses turn imperceptibly — a live
-   guilloché. One revolution every five minutes; the C never moves. */
+/* The engraved watermark is never finished: ring after ring, the burin
+   draws it, leaves it standing a while, then carries each line on past its
+   own end until it is gone, and starts again. Every shape runs the same
+   cycle, a little after the one before it, so the drawing sweeps outwards
+   and the erasing follows it. Meanwhile the two sets of woven ellipses turn
+   against each other, slowly, so the pattern between them keeps changing
+   like a guilloché under a moving light. */
 @keyframes seal-turn {
   to {
     transform: rotate(360deg);
   }
 }
+@keyframes seal-draw {
+  /* hidden: the dash sits one whole length before the line */
+  0% {
+    stroke-dashoffset: 1;
+  }
+  /* drawn */
+  30% {
+    stroke-dashoffset: 0;
+  }
+  /* standing */
+  72% {
+    stroke-dashoffset: 0;
+  }
+  /* carried on past its end: erased from where it began */
+  100% {
+    stroke-dashoffset: -1;
+  }
+}
+.seal-draw {
+  /* needs pathLength="1": one dash the length of the line, one gap as long */
+  stroke-dasharray: 1 1;
+  animation: seal-draw 18s cubic-bezier(0.45, 0, 0.3, 1) infinite backwards;
+  /* once the hero has faded in, then each shape after the one before */
+  animation-delay: calc(0.4s + var(--i, 0) * 130ms);
+}
+.seal-weave-a {
+  animation: seal-turn 140s linear infinite;
+  will-change: transform;
+}
+.seal-weave-b {
+  animation: seal-turn 190s linear infinite reverse;
+  will-change: transform;
+}
+/* Far back, but there: it is the page's one image. */
+/* The ellipses carry their own 0.22 on each stroke (where they cross, the
+   weave shows), hence the higher figure for the same presence. */
+.seal-rings {
+  opacity: 0.46;
+}
 .seal-guilloche {
-  transform-origin: 300px 300px;
-  animation: seal-turn 300s linear infinite;
+  opacity: 0.7;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -146,11 +220,44 @@ body::after {
   .stamp-press,
   .reveal.in-view,
   .seal-guilloche,
+  .seal-weave-a,
+  .seal-weave-b,
   .pulse-dot {
     animation: none !important;
   }
+  /* the watermark stands fully drawn */
+  .seal-draw {
+    animation: none !important;
+    stroke-dasharray: none;
+  }
   .stamp-press {
     transform: rotate(-6deg);
+  }
+}
+
+/* A loading placeholder: a block the shape of what is coming, with a slow
+   light passing over it. */
+@keyframes bone-light {
+  to {
+    background-position: -200vw 0;
+  }
+}
+.bone {
+  border-radius: 2px;
+  background-color: rgba(255, 255, 255, 0.045);
+  background-image: linear-gradient(
+    100deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.06) 50%,
+    transparent 60%
+  );
+  background-size: 200vw 100%;
+  animation: bone-light 2.4s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .bone {
+    animation: none;
+    background-image: none;
   }
 }
 
@@ -170,17 +277,17 @@ body::after {
 
 /* Keyboard focus in the accent, everywhere. */
 :focus-visible {
-  outline: 1px solid rgba(232, 178, 58, 0.7);
+  outline: 1px solid color-mix(in srgb, var(--color-accent) 70%, transparent);
   outline-offset: 2px;
 }
 
-/* Single structural accent: a thin gold thread under the header area. */
+/* Single structural accent: a thin copper thread under the header area. */
 .thread {
   height: 1px;
   background: linear-gradient(
     90deg,
     var(--accent) 0%,
-    rgba(232, 178, 58, 0.25) 30%,
+    color-mix(in srgb, var(--color-accent) 25%, transparent) 30%,
     rgba(255, 255, 255, 0.06) 60%,
     transparent 100%
   );
@@ -188,6 +295,12 @@ body::after {
 
 .font-display {
   font-family: var(--font-display), Georgia, serif;
+  /* Bodoni's display cuts have hairlines that vanish in light ink on a
+     dark ground (the crossbar of a t, the joins of an n). Pin the optical
+     size to the text cut: same engraved character, strokes that hold. */
+  font-optical-sizing: none;
+  font-variation-settings: "opsz" 11;
+  letter-spacing: -0.005em;
 }
 
 .font-data {
@@ -195,10 +308,10 @@ body::after {
 }
 
 ::selection {
-  background: rgba(232, 178, 58, 0.3);
+  background: color-mix(in srgb, var(--color-accent) 30%, transparent);
 }
 
-/* Thin, quiet scrollbars everywhere; a whisper of gold on hover. */
+/* Thin, quiet scrollbars everywhere; a whisper of the accent on hover. */
 * {
   scrollbar-width: thin; /* Firefox */
   scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
@@ -213,11 +326,154 @@ body::after {
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(232, 178, 58, 0.45);
+  background: color-mix(in srgb, var(--color-accent) 45%, transparent);
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-corner {
   background: transparent;
+}
+
+/* ------------------------------------------------------------------
+   Motion. Each piece says something the page means; none of it holds
+   content back, and all of it stands still under prefers-reduced-motion
+   (last block). No library: CSS, plus a few lines where a value counts.
+   ------------------------------------------------------------------ */
+
+/* A line that draws itself once (a check's tick). Needs pathLength="1". */
+@keyframes engrave {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+/* Where the browser can tie an animation to the scroll position, the woven
+   ellipses turn with the page instead of on a clock. */
+@keyframes seal-scroll {
+  to {
+    transform: rotate(45deg);
+  }
+}
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .seal-guilloche {
+      animation: seal-scroll linear both;
+      animation-timeline: scroll(root);
+      animation-range: 0px 1400px;
+    }
+  }
+}
+
+/* The four steps hang on one copper thread that is drawn as the reader
+   goes down, each number lighting as the thread reaches it. Without scroll
+   timelines the thread is simply there, fully drawn. */
+.steps-thread {
+  position: absolute;
+  left: 0;
+  top: 1.9rem;
+  bottom: 1.9rem;
+  width: 1px;
+  background: var(--color-line);
+}
+.steps-thread-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--color-accent);
+  transform-origin: top;
+}
+@keyframes thread-draw {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@keyframes step-lit {
+  from {
+    color: var(--color-neutral-600);
+  }
+  to {
+    color: var(--color-accent);
+  }
+}
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .steps-thread-fill {
+      animation: thread-draw linear both;
+      animation-timeline: view();
+      animation-range: cover 15% cover 65%;
+    }
+    .step-num {
+      animation: step-lit linear both;
+      animation-timeline: view();
+      animation-range: entry 60% cover 40%;
+    }
+  }
+}
+
+/* The seal's scalloped edge clicks round by one lobe under the pointer,
+   like a knurled wheel. 18 lobes: 20 degrees lands it back on itself, so
+   only the movement shows. The C never turns. */
+.seal-edge {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+a:hover .seal-edge,
+a:focus-visible .seal-edge {
+  transform: rotate(20deg);
+}
+
+/* A check that passed draws its own tick, at the moment it passed. */
+.tick-draw {
+  stroke-dasharray: 1;
+  animation: engrave 0.45s cubic-bezier(0.65, 0, 0.35, 1) both;
+  animation-delay: var(--tick-delay, 0ms);
+}
+
+/* "Sealed forever" is written, left to right, once. The insets leave room
+   for the italic's overhang and descenders. */
+@keyframes pen-write {
+  from {
+    clip-path: inset(-0.1em 100% -0.25em -0.1em);
+  }
+  to {
+    clip-path: inset(-0.1em -0.3em -0.25em -0.1em);
+  }
+}
+.pen-write {
+  animation: pen-write 0.9s cubic-bezier(0.4, 0, 0.2, 1) 0.35s both;
+}
+
+/* The mint gauge: the segment being worked on carries a moving engraved
+   wave. A transform on a wide strip, so it stays on the compositor and
+   costs the prover nothing. */
+@keyframes gauge-slide {
+  to {
+    transform: translateX(-24px);
+  }
+}
+.gauge-weave {
+  position: absolute;
+  inset: 0 -24px 0 0;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='10'%3E%3Cpath d='M0 5 Q6 -1 12 5 T24 5' fill='none' stroke='%23dc9a76' stroke-width='1.2'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: 0 center;
+  animation: gauge-slide 1.1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick-draw,
+  .pen-write,
+  .gauge-weave {
+    animation: none !important;
+    stroke-dasharray: none;
+  }
+  .seal-edge {
+    transition: none;
+  }
 }

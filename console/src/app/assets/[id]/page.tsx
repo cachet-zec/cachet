@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { AssetDetail } from "@/components/asset-detail";
 import { apiBaseUrl } from "@/lib/api";
+import { pageMetadata } from "@/lib/seo";
 
 /**
  * Server-side title: the asset's safe display name when the API is
@@ -14,7 +15,16 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const fallback = { title: `Asset ${id.slice(0, 8)}… · Cachet` };
+  // Only a well-formed id gets a canonical URL: anything else is a 404 page.
+  const path = /^[0-9a-f]{64}$/i.test(id) ? `/assets/${id.toLowerCase()}` : "/console";
+  const wellFormed = path.startsWith("/assets/");
+  const fallback = pageMetadata({
+    title: `Asset ${id.slice(0, 8)}… · Cachet`,
+    path,
+    card: wellFormed
+      ? { url: `${path}/opengraph-image`, alt: "A Zcash Shielded Asset on the ZSA testnet" }
+      : undefined,
+  });
   try {
     const response = await fetch(`${apiBaseUrl}/api/v1/assets/${encodeURIComponent(id)}`, {
       signal: AbortSignal.timeout(2_000),
@@ -28,10 +38,15 @@ export async function generateMetadata({
     };
     if (!asset.display_name) return fallback;
     const state = asset.finalized ? "sealed forever" : "open supply";
-    return {
+    return pageMetadata({
+      card: {
+        url: `${path}/opengraph-image`,
+        alt: `${asset.display_name}, a Zcash Shielded Asset`,
+      },
       title: `${asset.display_name} · Cachet`,
       description: `A Zcash Shielded Asset on the public ZSA testnet. Supply ${String(asset.total_supply ?? "?")}, ${state}. Metadata sealed on chain and verified in your browser.`,
-    };
+      path,
+    });
   } catch {
     return fallback;
   }

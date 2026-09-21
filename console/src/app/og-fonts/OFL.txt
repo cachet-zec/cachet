@@ -1,14 +1,14 @@
 The font files in this directory are redistributed under the SIL Open
 Font License, Version 1.1, reproduced below. They are static instances
-used only to render the site's OpenGraph image server-side.
+used only to render the site's OpenGraph images server-side.
 
-Fraunces-SemiBold.ttf, Fraunces-SemiBoldItalic.ttf:
-  Copyright 2018 The Fraunces Project Authors
-  (https://github.com/undercasetype/Fraunces)
+BodoniModa-Medium.ttf (static instance, Latin subset):
+  Copyright 2020 The Bodoni Moda Project Authors
+  (https://github.com/indestructible-type/Bodoni)
 
-IBMPlexMono-Regular.ttf, IBMPlexMono-Medium.ttf:
-  Copyright 2017 IBM Corp. All rights reserved.
-  (https://github.com/IBM/plex)
+DMMono-Regular.ttf, DMMono-Medium.ttf (Latin subset):
+  Copyright 2020 The DM Mono Project Authors
+  (https://github.com/googlefonts/dm-mono)
 
 ----------------------------------------------------------------------
 

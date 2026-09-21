@@ -2,12 +2,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 import { card, cardTitle, ghostButton } from "@/lib/ui";
+import { pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Terms · Cachet",
   description:
     "What this instance is, what may not be uploaded to it, what its operator does about abuse, and how to reach them. Short, because there is little to agree to.",
-};
+  path: "/terms",
+});
 
 const CONTACT = "cachet_zec@proton.me";
 const PRIVACY_URL = "https://github.com/cachet-zec/cachet/blob/main/docs/PRIVACY.md";
@@ -22,8 +24,7 @@ const SECURITY_URL = "https://github.com/cachet-zec/cachet/blob/main/SECURITY.md
 export default function TermsPage() {
   return (
     <div className="mx-auto max-w-3xl py-10">
-      <p className="font-data text-[11px] uppercase tracking-[0.24em] text-[#e8b23a]">Terms</p>
-      <h1 className="font-display mt-3 text-4xl font-semibold tracking-tight text-neutral-50">
+      <h1 className="font-display text-5xl font-medium text-neutral-50">
         Terms and content policy
       </h1>
       <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-neutral-400">
@@ -38,11 +39,11 @@ export default function TermsPage() {
           A free, non-custodial tool on a public Zcash test network. Assets minted here have no
           monetary value, can disappear when the test network is reset, and are not an investment, a
           security, or a promise of anything on mainnet. Nothing here is financial advice. The
-          software is published under the MIT licence and provided as is, without warranty of any
+          software is published under the MIT license and provided as is, without warranty of any
           kind; the operator may change or stop this instance at any time, and the{" "}
           <Link
             href="/continuity"
-            className="text-[#e8b23a]/90 underline decoration-[#e8b23a]/30 underline-offset-4 transition hover:text-[#e8b23a]"
+            className="text-accent/90 underline decoration-accent/30 underline-offset-4 transition hover:text-accent"
           >
             continuity page
           </Link>{" "}
@@ -77,13 +78,14 @@ export default function TermsPage() {
       <section className={`${card} mt-4`}>
         <h2 className={cardTitle}>04 · Privacy</h2>
         <p className="mt-3 text-sm leading-relaxed text-neutral-300">
-          No accounts, no cookies, no analytics, no third-party requests from your browser. The
-          server does not log client addresses. What you upload is public by construction, and
-          relayed mints are announced (asset id and transaction id only) to the operator. The full,
-          verifiable policy is{" "}
+          No accounts, no cookies, no analytics. Your browser talks to the registry it reads from
+          and to nothing else: this one by default, another operator&apos;s only if you pick it in
+          the footer. The server does not log client addresses. What you upload is public by
+          construction, and relayed mints are announced (asset id and transaction id only) to the
+          operator. The full, verifiable policy is{" "}
           <a
             href={PRIVACY_URL}
-            className="text-[#e8b23a]/90 underline decoration-[#e8b23a]/30 underline-offset-4 transition hover:text-[#e8b23a]"
+            className="text-accent/90 underline decoration-accent/30 underline-offset-4 transition hover:text-accent"
           >
             PRIVACY.md in the repository
           </a>
@@ -98,7 +100,7 @@ export default function TermsPage() {
           served here, write to{" "}
           <a
             href={`mailto:${CONTACT}`}
-            className="font-data text-[#e8b23a]/90 underline decoration-[#e8b23a]/30 underline-offset-4 transition hover:text-[#e8b23a]"
+            className="font-data text-accent/90 underline decoration-accent/30 underline-offset-4 transition hover:text-accent"
           >
             {CONTACT}
           </a>{" "}
@@ -106,7 +108,7 @@ export default function TermsPage() {
           days; where the law requires it, sooner. Security issues follow the process in{" "}
           <a
             href={SECURITY_URL}
-            className="text-[#e8b23a]/90 underline decoration-[#e8b23a]/30 underline-offset-4 transition hover:text-[#e8b23a]"
+            className="text-accent/90 underline decoration-accent/30 underline-offset-4 transition hover:text-accent"
           >
             SECURITY.md
           </a>

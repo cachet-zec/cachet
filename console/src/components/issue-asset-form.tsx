@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import { api, problemMessage } from "@/lib/api";
+import { SEAL_C_PATH } from "@/components/seal-mark";
 import { ImagePicker } from "@/components/image-picker";
 import { card, cardTitle, input, label, primaryButton } from "@/lib/ui";
 
@@ -126,7 +127,7 @@ export function IssueAssetForm() {
           }}
           className={
             finalize
-              ? "flex w-full items-center gap-3 rounded-md border border-[#e8b23a]/60 bg-[#e8b23a]/[0.07] px-3.5 py-2.5 text-left transition"
+              ? "flex w-full items-center gap-3 rounded-md border border-accent/60 bg-accent/[0.07] px-3.5 py-2.5 text-left transition"
               : "flex w-full items-center gap-3 rounded-md border border-dashed border-white/15 px-3.5 py-2.5 text-left transition hover:border-white/30"
           }
         >
@@ -136,35 +137,26 @@ export function IssueAssetForm() {
               cy="16"
               r="13"
               fill="none"
-              stroke={finalize ? "#e8b23a" : "rgba(255,255,255,0.25)"}
+              stroke={finalize ? "var(--color-accent)" : "rgba(255,255,255,0.25)"}
               strokeWidth="1.4"
               strokeDasharray={finalize ? "none" : "2.4 2.4"}
             />
+            {/* the mark's own C, not a typeface (mirrors SealMark) */}
             {finalize && (
-              <text
-                x="16"
-                y="21"
-                textAnchor="middle"
-                fontFamily="Georgia, serif"
-                fontSize="13"
-                fontWeight="700"
-                fill="#e8b23a"
-              >
-                C
-              </text>
+              <path d={SEAL_C_PATH} fill="none" stroke="var(--color-accent)" strokeWidth="2.7" />
             )}
           </svg>
           <span className="min-w-0">
             <span
               className={
                 finalize
-                  ? "font-data block text-[13px] text-[#e8b23a]"
-                  : "font-data block text-[13px] text-neutral-300"
+                  ? "font-data block text-sm text-accent"
+                  : "font-data block text-sm text-neutral-300"
               }
             >
               {finalize ? "Seal at mint" : "Reissuable"}
             </span>
-            <span className="block text-xs leading-snug text-neutral-500">
+            <span className="block text-[13px] leading-snug text-neutral-500">
               {finalize
                 ? "last issuance ever: the chain will refuse further units, even from you"
                 : "you can mint more of this asset later; click to seal the supply instead"}
@@ -185,19 +177,19 @@ export function IssueAssetForm() {
                 : "Mint asset"}
           </button>
           {stage && (
-            <span className="flex items-center gap-2 text-xs text-[#e8b23a]/90">
-              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#e8b23a]" />
+            <span className="flex items-center gap-2 text-[13px] text-accent/90">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
               {stage}
             </span>
           )}
         </div>
       </form>
       {issue.isSuccess && (
-        <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-md border border-emerald-400/25 p-3.5 text-xs">
+        <dl className="mt-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 rounded-md border border-emerald-400/25 p-3.5 text-[13px]">
           <dt className="text-neutral-400">Accepted, txid</dt>
           <dd className="font-data break-all text-emerald-300">{issue.data.txid}</dd>
           <dt className="text-neutral-400">Asset id</dt>
-          <dd data-testid="issue-receipt-asset-id" className="font-data break-all text-[#e8b23a]">
+          <dd data-testid="issue-receipt-asset-id" className="font-data break-all text-accent">
             {issue.data.asset_id}
           </dd>
         </dl>

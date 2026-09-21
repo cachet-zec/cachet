@@ -7,6 +7,7 @@ import { AssetLookup } from "@/components/asset-lookup";
 import { BatchMintForm } from "@/components/batch-mint-form";
 import { IssueAssetForm } from "@/components/issue-asset-form";
 import { ManageAsset } from "@/components/manage-asset";
+import { Bone } from "@/components/skeleton";
 import { api } from "@/lib/api";
 import { card } from "@/lib/ui";
 
@@ -35,6 +36,27 @@ export function ConsoleTabs() {
     },
   });
 
+  // Until the instance says whether it signs, show neither workspace: a
+  // read-only deployment would otherwise flash the mint form on every load.
+  if (chain.isPending) {
+    return (
+      <>
+        <section className={card} role="status" aria-label="Loading">
+          <Bone className="h-4 w-11/12" />
+          <Bone className="mt-2.5 h-4 w-full" />
+          <Bone className="mt-2.5 h-4 w-3/5" />
+        </section>
+        <section className={card} aria-hidden>
+          <Bone className="h-6 w-44" />
+          <div className="mt-4 flex gap-2.5">
+            <Bone className="h-[42px] flex-1 rounded-md" />
+            <Bone className="h-[42px] w-16 rounded-md" />
+          </div>
+        </section>
+      </>
+    );
+  }
+
   if (chain.data?.read_only) {
     return (
       <>
@@ -42,7 +64,7 @@ export function ConsoleTabs() {
           <p className="text-sm leading-relaxed text-neutral-400">
             This is a <span className="text-neutral-200">read-only</span> deployment: this instance
             holds no keys and signs nothing. You can still mint,{" "}
-            <a href="/mint" className="text-[#e8b23a] underline decoration-[#e8b23a]/30">
+            <a href="/mint" className="text-accent underline decoration-accent/30">
               in your own browser
             </a>
             , under your own identity; the server only relays what you sign.
@@ -68,8 +90,8 @@ export function ConsoleTabs() {
             aria-selected={tab === id}
             className={
               tab === id
-                ? "font-data -mb-px border-b-2 border-[#e8b23a] pb-2 text-[13px] text-[#e8b23a]"
-                : "font-data -mb-px border-b-2 border-transparent pb-2 text-[13px] text-neutral-400 transition hover:text-neutral-200"
+                ? "font-data -mb-px border-b-2 border-accent pb-2 text-sm text-accent"
+                : "font-data -mb-px border-b-2 border-transparent pb-2 text-sm text-neutral-400 transition hover:text-neutral-200"
             }
             onClick={() => setTab(id)}
           >

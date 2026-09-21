@@ -21,22 +21,23 @@ export function AssetName({
         className="flex min-w-0 items-baseline gap-2 overflow-hidden"
         title="Unresolved: no description is known for this asset"
       >
-        <span className="font-data min-w-0 truncate text-xs text-neutral-500">
+        <span className="font-data min-w-0 truncate text-sm text-neutral-500">
           {assetId.slice(0, 12)}…
         </span>
-        <span className="shrink-0 text-xs italic text-neutral-600">unresolved</span>
+        <span className="shrink-0 text-[13px] italic text-neutral-600">unresolved</span>
       </span>
     );
   }
   if (source === "free_text") {
+    // `truncate` clips an italic's last glyph: pad the box, pull the margin back.
     return (
       <span
-        className="truncate text-sm italic text-neutral-400"
+        className="-mr-[0.1em] truncate pr-[0.25em] text-[17px] italic text-neutral-300"
         title="Free-text on-chain description, not a verified name"
       >
         {name}
       </span>
     );
   }
-  return <span className="truncate text-sm text-neutral-200">{name}</span>;
+  return <span className="truncate text-[17px] text-neutral-100">{name}</span>;
 }
