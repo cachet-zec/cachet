@@ -2,11 +2,11 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Cachet API",
-    "description": "Issuance console and verifiable registry for Zcash Shielded Assets (ZSA), running against the public ZSA testnet.\n\nEverything the registry serves is **derived from the chain** and independently checkable: metadata hashes participate in the asset id itself (ZIP 227), so a response can be re-verified client-side. The public instance at `api.cachetzec.com` is **read-only** — every mutating `issuance` endpoint answers 403 there; browser mints go through `POST /api/v1/relay`, which only forwards signed bytes.\n\nRate limit: 30 requests/s per client, bursts of 60 - sized for a real session, a browser wallet paging through the chain included. Need better limits, or none at all? Run your own instance: the code is MIT, the limit is one environment variable (`CACHET_RATE_LIMIT_PER_SEC`, `0` disables it), and the public ZSA node accepts transactions directly. This deployment is a convenience, never a chokepoint.\n\nNo cookies, no telemetry, and no authentication anywhere except the optional operator surface.",
+    "description": "Issuance console and verifiable registry for Zcash Shielded Assets (ZSA), running against the public ZSA testnet.\n\nEverything the registry serves is **derived from the chain** and independently checkable: metadata hashes participate in the asset id itself (ZIP 227), so a response can be re-verified client-side. The public instance at `api.cachetzec.com` is **read-only** — every mutating `issuance` endpoint answers 403 there; browser mints go through `POST /api/v1/relay`, which only forwards signed bytes.\n\nRate limit: 30 requests/s per client, bursts of 60 - sized for a real session, a browser wallet paging through the chain included. Need better limits, or none at all? Run your own instance: the code is MIT, the limit is one environment variable (`CACHET_RATE_LIMIT_PER_SEC`, `0` disables it). A signed transaction is tied to no instance: any instance's relay can place it in a block. This deployment is a convenience, never a chokepoint.\n\nNo cookies, no telemetry, and no authentication anywhere except the optional operator surface.",
     "license": {
       "name": "MIT"
     },
-    "version": "0.4.0"
+    "version": "0.5.0"
   },
   "paths": {
     "/api/v1/admin/moderation": {
@@ -136,7 +136,7 @@
       "get": {
         "tags": ["registry"],
         "summary": "List every asset observed on the chain, newest first.",
-        "description": "`resolved=true` narrows the listing to assets whose description is\nknown, which is what a client wants when it intends to show names\nrather than ids. Everything stays reachable without it.",
+        "description": "Without parameters: the whole registry, as before. `limit` and `offset`\ncut a page out of it; `q`, `issuer`, `supply` and `resolved` narrow it\nfirst, and `order=named_first` brings attested names to the front. All\nof them are the caller's view, never moderation: everything stays\nreachable without them.\n\nThree headers carry what a pager needs: `X-Registry-Count` (assets\nlisted at all), `X-Total-Count` (assets matching the filters, before the\npage is cut) and `X-Unresolved-Count` (those among them without a\nresolved description). The response carries an `ETag`; send it back in\n`If-None-Match` and an unchanged listing answers `304` with no body.",
         "operationId": "list_assets",
         "parameters": [
           {
@@ -145,7 +145,17 @@
             "description": "Keep only the newest N assets. Omitted: the whole registry (what a\nclient doing its own search or mirroring wants).",
             "required": false,
             "schema": {
-              "type": ["integer", "null"],
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Skip this many assets before the first one returned. With `limit`,\na page. The totals a pager needs come back as headers.",
+            "required": false,
+            "schema": {
+              "type": "integer",
               "minimum": 0
             }
           },
@@ -155,13 +165,85 @@
             "description": "`true`: keep only assets whose description is known, so their name\nis attested rather than an id. Omitted: everything, which stays the\ndefault - this is a caller's view preference, never moderation.",
             "required": false,
             "schema": {
-              "type": ["boolean", "null"]
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Keep assets whose name or description contains this text (case\nignored), or whose asset id or issuer key starts with it.",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "issuer",
+            "in": "query",
+            "description": "Keep only assets minted under this issuance key (hex).",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "supply",
+            "in": "query",
+            "description": "`sealed`: finalized assets only. `open`: the others.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "Which supply states a listing keeps.",
+              "enum": ["sealed", "open"]
+            }
+          },
+          {
+            "name": "order",
+            "in": "query",
+            "description": "`named_first`: sealed names, then free-text labels, then unnamed,\nchain order kept inside each group. Omitted: newest first.",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "description": "How a listing is ordered.",
+              "enum": ["named_first"]
             }
           }
         ],
         "responses": {
           "200": {
             "description": "",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator for `If-None-Match`"
+              },
+              "X-Registry-Count": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Assets listed, before any filter"
+              },
+              "X-Total-Count": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Assets matching the filters, before `offset` and `limit`"
+              },
+              "X-Unresolved-Count": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Matching assets without a resolved description"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -169,6 +251,19 @@
                   "items": {
                     "$ref": "#/components/schemas/AssetSummaryResponse"
                   }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The listing the caller holds is still current"
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -767,6 +862,14 @@
         "responses": {
           "200": {
             "description": "",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator for `If-None-Match`"
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -774,6 +877,144 @@
                   "items": {
                     "$ref": "#/components/schemas/CollectionResponse"
                   }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The listing the caller holds is still current"
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/kept": {
+      "get": {
+        "tags": ["registry"],
+        "summary": "Sealed content kept for assets the chain no longer carries.",
+        "description": "A test network can be reset, and a reset takes every asset with it. The\nregistry's journal of descriptions and its bundles are keyed by asset id\nand survive: this lists the ones whose asset is no longer on the chain\nthe registry follows, sealed names first. `X-Total-Count` carries the\ntotal. Descriptions the operator withholds are left out.",
+        "operationId": "list_kept",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Rows per page (1-100, default 25).",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Rows to skip.",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "Validator for `If-None-Match`"
+              },
+              "X-Total-Count": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                },
+                "description": "Kept assets, before `offset` and `limit`"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KeptAssetResponse"
+                  }
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The listing the caller holds is still current"
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/kept/{asset_id}": {
+      "get": {
+        "tags": ["registry"],
+        "summary": "The sealed content kept for one asset the chain no longer carries.",
+        "description": "`404` when the asset is on chain (ask `/api/v1/assets/{asset_id}`), was\nnever known here, or its description is withheld by the operator.",
+        "operationId": "get_kept",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "description": "Asset id, hex-encoded 32 bytes",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KeptAssetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
                 }
               }
             }
@@ -949,7 +1190,7 @@
     "/api/v1/relay": {
       "post": {
         "tags": ["chain"],
-        "summary": "Relay a fully signed, browser-built issuance transaction to the chain.",
+        "summary": "Relay a fully signed, browser-built ZSA transaction (issuance, transfer or burn).",
         "description": "Deliberately open on read-only deployments: read-only means \"this\ninstance signs nothing\", and a relayed transaction was signed by the\nsender's own browser-held key. The relay can refuse; it cannot alter.",
         "operationId": "relay_transaction",
         "requestBody": {
@@ -1343,6 +1584,33 @@
           "txid": {
             "type": "string",
             "description": "Transaction id (hex, display order). Acceptance, not finality."
+          }
+        }
+      },
+      "KeptAssetResponse": {
+        "type": "object",
+        "description": "Sealed content this registry still holds for an asset the chain it\nfollows no longer carries (a reset test network takes its assets with\nit). No supply, no issuer: those were chain facts and went with the\nchain. What is left is what the asset id commits to, so minting it again\nunder the same key gives the same asset id.",
+        "required": ["asset_id", "description", "display_name", "name_source"],
+        "properties": {
+          "asset_id": {
+            "type": "string",
+            "description": "Asset id (hex-encoded 32 bytes) the description was journaled under."
+          },
+          "description": {
+            "type": "string",
+            "description": "The on-chain description as it was: for a Cachet asset, the v1\nenvelope naming the sealed bundle."
+          },
+          "display_name": {
+            "type": "string"
+          },
+          "image_path": {
+            "type": ["string", "null"],
+            "description": "Server-relative path to the sealed image, when the bundle is still\nheld and embeds one."
+          },
+          "name_source": {
+            "type": "string",
+            "description": "`envelope` or `free_text`, as on a listed asset.",
+            "example": "envelope"
           }
         }
       },

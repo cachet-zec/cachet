@@ -6,22 +6,178 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-22
+
 ### Changed
 
+- A new visual identity: a deep green ground with a copper accent, Bodoni
+  Moda for display with Hanken Grotesk and DM Mono, and a new mark, the
+  scalloped edge of a pressed seal around an open ring that reads as a C.
+  The favicon, the home-screen icon, both social cards, the README banner
+  and the working paper all carry it; the seal's outline is defined once
+  and drawn from there. The bundled OpenGraph fonts changed accordingly.
+- Working paper v1.5 (22 September; v1.4 of 4 September described the
+  write-path adjustments): same text made true again after the
+  testnet reset. The registry figures are re-measured, the pipeline proof
+  it cites is an asset on today's chain (the first one is named for what it
+  now is, a test vector from a chain that was reset), activation is "not
+  scheduled", and the page-authenticity note no longer says a node takes
+  these transactions directly. The cover says which release it describes.
+- The continuity page and the mint page no longer say a re-mint gets a new
+  asset id: an id is derived from the issuance key and the sealed
+  description, so the same seed and the same content give the same id.
+  The continuity page's quick start now starts the API as well.
+- The production compose file reads `CACHET_CORS_ORIGIN` from `.env.prod`
+  instead of hard-coding the public instance's origin.
+- A mint no longer pays the wallet's default address. An issuance writes
+  its first recipient in clear on chain, so issued units now go to a
+  dedicated diversified address of the minter's own wallet, which cannot
+  be linked to the address a person shares to be paid. The wallet finds
+  issued notes by key, at any of its addresses, so assets minted before
+  still show up. Browser engine and server both; the wasm engines were
+  rebuilt. PRIVACY.md (P8) and the working paper say what an issuance
+  makes public, and the landing reads "balances, transfers: shielded"
+  instead of "holders visible: 0".
+- Motion, each piece tied to something the page means and all of it still
+  under reduced-motion settings: the watermark draws itself and turns with
+  the scroll, the four steps hang on a thread that is drawn as
+  the reader goes down, the asset count counts up, list rows settle one by
+  one, the seal's edge clicks round under the pointer, a check draws its
+  tick when it really passes, "Sealed forever" is written once, and a mint
+  shows its real steps as a gauge instead of a line of text. No library.
+  The landing's watermark is never finished: ring after ring it draws
+  itself, stands a while, is carried off past its own end and starts
+  again, while its two sets of woven ellipses turn against each other. The
+  mark's C sits in its inner ring, cut as a band of fine lines and drawn
+  last. It is also easier to see.
+- An open supply reads "Issuer can mint more" in the same engraved words as
+  a sealed one, on the asset page and on its social card: no badge.
+- The registry list, an issuer's page and the landing's count ask for what
+  they show, a page or a figure, instead of the whole listing: the cost of
+  a visit no longer grows with the registry. `GET /api/v1/assets` takes
+  `offset`, `q`, `issuer`, `supply` and `order`, and says how many assets
+  there are in three headers; without parameters it still returns
+  everything. Listings carry an `ETag` and answer `304` when nothing
+  changed. What is typed in the registry filter now reaches the registry
+  (PRIVACY.md, P8); holdings are still named from the whole listing.
+  With an index, the database answers the page: filters, order, page and
+  counts are one question to Postgres, whose answer is tested against the
+  same question asked of the whole listing in memory. Each part of that
+  question is one an index answers: "named first" walks a rank kept on the
+  asset, text search uses trigrams (`pg_trgm`), an id or issuer prefix is
+  a key range, and whether a bundle holds an image is noted when it is
+  stored instead of read out of it per request. Migrations 9 to 11 add
+  derived columns and indexes only; DEPLOY.md says how to go back.
+- A read no longer asks the node where the chain is every time: a sync
+  stands for the reads of the next three seconds, and a block this
+  instance submits ends it at once. Reads used to queue one behind the
+  other for it. A read never waits behind a catch-up either: a few blocks
+  behind, it catches up itself; far behind (a restart, a chain reset), the
+  background loop does, and the read is answered from the index as it
+  stands. A reset no longer empties the index before refilling it: the new
+  fold replaces the old picture in one transaction, so nobody sees a
+  registry half rebuilt. Calls to the node time out.
+- An asset's social card is drawn once and kept in memory for five
+  minutes, the same card asked for at once is drawn once, and no more than
+  two are drawn at a time: a caller past the short queue gets the site's
+  card instead. Ids that are not asset ids share one generic card and never
+  reach the registry. A change of supply or of moderation shows on the card
+  within five minutes.
+- An asset page no longer shows a link set by the issuer: anyone can mint,
+  and the page should not carry an address it has not checked. A long
+  description without spaces now wraps instead of running off the page, and
+  one longer than a few lines is folded behind "Read all", so the checks
+  stay in view whatever was sealed. The public history reads newest first.
+- "Look up an asset" answers with the asset's row, as the registry list
+  shows it, leading to its page; it takes an id or a pasted link, and finds
+  an asset the chain no longer carries when its content is kept.
+- Loading placeholders take the shape of what is coming (the registry's
+  rows, its search and pager, an issuer's figures, the landing's entries),
+  so pages no longer jump when the data arrives; rows of a page being
+  replaced stay, dimmed, until the next one is there. A read-only
+  deployment no longer flashes the mint form before it knows it is one.
+- The first-visit banner on the console page is gone. The footer reads
+  "Testnet only" and links to the support page without the address.
+- Every page has a canonical URL and its own title and description on a
+  shared link; an asset's link shows the asset's name and card. The testnet
+  tag shows on phones too, and on an asset's social card.
+- An asset page shows the name and image it verified itself, read from the
+  sealed description and the hashed bundle, never the registry's own fields.
+  Before signing, the mint page checks that the description it was handed
+  seals exactly what was typed. The operator page only ever talks to its
+  own instance.
+- The mint page and the landing notice say, where it matters, that the
+  chain is a test network run by a third party and that a reset takes
+  every asset with it. The landing no longer says ZSAs "ship with a future
+  network upgrade": they are not scheduled.
 - An unverified description that is a JSON document in another tool's
   format displays its `name` instead of the whole document. It stays an
   unverified label, and the raw description is still what the page checks
   the asset id against.
 - The continuity page and the README say what a chain reset means: the
-  public ZSA testnet restarted from a new genesis on 10 September 2026, the
+  public ZSA testnet restarted from block zero on 10 September 2026, the
   registry followed the node and re-indexed on its own, and the sealed
   bundles stayed served for a re-mint under the same key.
 - The public instance's write paths were adjusted to keep it running
   smoothly for everyone; a person minting from the browser notices
-  nothing. Working paper v1.4 (4 September).
+  nothing.
 
 ### Added
 
+- Minting a kept asset again. A reset test network takes its assets with
+  it, but the registry's journal and bundles are keyed by asset id and
+  stay. `GET /api/v1/kept` lists the sealed content held for assets the
+  chain no longer carries, `GET /api/v1/kept/{asset_id}` answers for one.
+  The page of such an asset shows what was kept, checked against its hash
+  in the browser, instead of "not found", and offers to mint it again; the
+  continuity page lists them. The mint page then loads the sealed name,
+  text and image as they are, locks them, and says whether the seed gives
+  the same asset id before anything is signed: a seed that does not is
+  refused, and so is sealed content with a field the page cannot show. The
+  sealed image is never re-encoded on the way. The journal now keeps the
+  issuance key beside a description, so an issuer the operator withholds
+  stays withheld once its assets are gone; content journaled before this
+  release for assets already lost has no key, and is withheld by
+  description.
+- An API reference in the site's own hand (`/reference`), drawn at build
+  time from the contract the server exports: every route, its parameters,
+  answers and shapes, with a `curl` line each. No documentation library
+  reaches the browser. Swagger stays on the API host for trying requests.
+- A support page (`/support`): the donation address, what a donation does
+  not buy, and a plain warning that it is mainnet ZEC on a testnet site.
+  The repository gets a Sponsor button pointing to it.
+- The mint page can hand over the signed transaction instead of relaying
+  it, and does so on its own when the relay refuses or cannot be reached:
+  download or copy the bytes, and land them through any instance's relay.
+  The page says what that takes on a testnet with no miner and no fees.
+- A console can offer several registries to read from
+  (`NEXT_PUBLIC_CACHET_REGISTRIES`, comma separated origins; set as
+  `CACHET_REGISTRIES` in `.env.prod` for `deploy.sh`), picked in the footer;
+  the list is fixed at build time so the Content-Security-Policy stays a
+  short list of known origins. `CACHET_CORS_ORIGIN` accepts several exact
+  origins, so an instance can be read from someone else's console.
+- `scripts/restore.py` gives a mirror back to any running instance through
+  the public, chain-checked routes: no database access, no operator
+  permission. A lost instance comes back with the same names, texts and
+  images under the same hashes.
+- `scripts/verify-site.py` checks that a live site serves the mint worker
+  and wasm engines committed to the repository, byte for byte;
+  `console/public/engine-manifest.json` lists their hashes and CI keeps it
+  in step with the files.
+- Every sealed bundle has an IPFS address, derived from the hash the asset
+  id already commits to (a raw-block CIDv1 is a prefix plus that SHA-256).
+  `scripts/mirror.py` writes `cids.json` and gains `--ipfs` to pin verified
+  bundles to the caller's own node, and the registry spec documents the
+  derivation. No format change, no gateway, no pinning service: it widens
+  who can hold the bytes, nothing more.
+- The asset page is laid out as a register entry: the sealed image as a
+  plate (an engraved pattern drawn from the asset id when there is none),
+  the supply and whether it can still grow, the two browser-side checks in
+  words, then the identifiers and the public history.
+- Heights and transaction ids in an asset's history link to a block
+  explorer when the deployment names one
+  (`NEXT_PUBLIC_CACHET_EXPLORER_BLOCK_URL` and `..._TX_URL`; the
+  `CACHET_EXPLORER_*` names in `.env.prod`); unset, they stay plain text.
 - An uploaded image must start with the file signature of the format it
   declares (PNG, JPEG, WebP, GIF); the head of the payload is checked
   without decoding anything. A file that merely claims to be an image is
@@ -38,7 +194,6 @@ All notable changes to Cachet are documented here. The format follows
   Paused, the relay and uploads answer 503 and the mint studio says so;
   the chain is never involved, and the decision survives a restart.
   `GET /api/v1/chain` reports `mints_paused` so any client can honour it.
-
 - `infra/prod/pull-backup.sh` copies the newest bundle-store dump off the
   host, checks the gzip is whole, and skips what it already has. The
   daily timer keeps its seven dumps next to the database they come from;
