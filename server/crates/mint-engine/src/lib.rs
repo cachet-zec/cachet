@@ -82,6 +82,13 @@ impl Keys {
         FullViewingKey::from(&self.spending_key()).address_at(0u32, Scope::External)
     }
 
+    /// Where issued units land: public on chain, so never the address the
+    /// wallet hands out (see `cachet_notes::ISSUANCE_DIVERSIFIER`).
+    fn issuance_address(&self) -> Address {
+        FullViewingKey::from(&self.spending_key())
+            .address_at(cachet_notes::ISSUANCE_DIVERSIFIER, Scope::External)
+    }
+
     fn orchard_ovk(&self) -> OutgoingViewingKey {
         FullViewingKey::from(&self.spending_key()).to_ovk(Scope::External)
     }
@@ -240,7 +247,7 @@ pub fn build_issuance_tx(
             keys.issuance_key(),
             asset_desc_hash,
             Some(IssueInfo {
-                recipient: keys.default_address(),
+                recipient: keys.issuance_address(),
                 value: NoteValue::from_raw(amount),
             }),
             first_issuance,

@@ -54,6 +54,15 @@ pub struct SelectedInputs {
     pub total: u64,
 }
 
+/// Diversifier index of the address an issuer mints to.
+///
+/// An issuance bundle writes each issued note's recipient in clear. Minting
+/// to the default address (index 0) would publish, next to the issuer key,
+/// the very address people hand out to be paid. Diversified addresses of one
+/// key cannot be linked without its viewing key, so a dedicated index keeps
+/// the two apart. The wallet finds the notes either way.
+pub const ISSUANCE_DIVERSIFIER: u32 = 1;
+
 pub struct HotWallet {
     accounts: Vec<Account>,
     tree: BridgeTree<MerkleHashOrchard, u32, TREE_DEPTH>,
@@ -131,8 +140,9 @@ impl HotWallet {
         }
 
         // 2. Notes issued to us: issuance notes are plaintext, matched by
-        //    recipient address. Reference notes go to the protocol's
-        //    reference recipient and are skipped naturally.
+        //    key, so any diversified address of an account counts (issuers
+        //    mint to a dedicated one, see `ISSUANCE_DIVERSIFIER`). Reference
+        //    notes go to the protocol's reference recipient and match no key.
         if let Some(issue_bundle) = tx.issue_bundle() {
             for (issue_idx, note) in issue_bundle
                 .actions()
@@ -140,11 +150,12 @@ impl HotWallet {
                 .flat_map(|action| action.notes())
                 .enumerate()
             {
-                if let Some(slot) = self
-                    .accounts
-                    .iter()
-                    .position(|account| account.address == note.recipient())
-                {
+                if let Some(slot) = self.accounts.iter().position(|account| {
+                    account
+                        .full_viewing_key
+                        .scope_for_address(&note.recipient())
+                        .is_some()
+                }) {
                     received.push((orchard_action_count + issue_idx, *note, slot));
                 }
             }

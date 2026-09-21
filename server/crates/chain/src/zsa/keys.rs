@@ -66,9 +66,16 @@ impl IssuerKeys {
         FullViewingKey::from(&self.account_spending_key(account)).address_at(0u32, Scope::External)
     }
 
-    /// Default recipient for issued notes: account 0.
+    /// The wallet's receiving address: account 0, diversifier 0.
     pub fn default_address(&self) -> Address {
         self.account_address(0)
+    }
+
+    /// Where issued units land: public on chain, so never the address the
+    /// wallet hands out (see `cachet_notes::ISSUANCE_DIVERSIFIER`).
+    pub fn issuance_address(&self) -> Address {
+        FullViewingKey::from(&self.account_spending_key(0))
+            .address_at(cachet_notes::ISSUANCE_DIVERSIFIER, Scope::External)
     }
 
     pub fn orchard_ovk(&self) -> OutgoingViewingKey {
@@ -80,5 +87,30 @@ impl std::fmt::Debug for IssuerKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         // Never expose seed material, even in debug output.
         f.debug_struct("IssuerKeys").finish_non_exhaustive()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Issued notes are public, so they must not land on the address the
+    /// wallet hands out, yet must still belong to the same account.
+    #[test]
+    fn issuance_address_is_ours_but_not_the_receiving_address() {
+        let keys = IssuerKeys::from_seed_phrase(&generate_seed_phrase()).expect("valid phrase");
+        let viewing_key = FullViewingKey::from(&keys.account_spending_key(0));
+
+        assert_ne!(keys.issuance_address(), keys.default_address());
+        assert_eq!(
+            viewing_key.scope_for_address(&keys.issuance_address()),
+            Some(Scope::External)
+        );
+
+        let stranger = IssuerKeys::from_seed_phrase(&generate_seed_phrase()).expect("valid phrase");
+        assert_eq!(
+            viewing_key.scope_for_address(&stranger.issuance_address()),
+            None
+        );
     }
 }
