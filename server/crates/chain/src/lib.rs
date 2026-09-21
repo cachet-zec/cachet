@@ -112,6 +112,32 @@ pub trait ChainBackend: Send + Sync {
     /// List every asset observed on the chain, most recently created first.
     async fn list_assets(&self) -> Result<Vec<AssetSummary>, ChainError>;
 
+    /// One page of that listing, filtered and ordered as the caller asked,
+    /// with the counts a pager needs. The default reads the whole listing
+    /// and cuts it here; a backend with an index answers from it instead,
+    /// and must return the same thing.
+    async fn list_assets_page(
+        &self,
+        query: &cachet_domain::AssetListQuery,
+    ) -> Result<cachet_domain::AssetListPage, ChainError> {
+        Ok(query.apply(self.list_assets().await?))
+    }
+
+    /// Descriptions this instance keeps for assets the chain no longer
+    /// carries, with the total. A backend without a journal keeps nothing.
+    async fn kept_off_chain(
+        &self,
+        _limit: usize,
+        _offset: usize,
+    ) -> Result<(Vec<(AssetId, String)>, usize), ChainError> {
+        Ok((Vec::new(), 0))
+    }
+
+    /// The kept description of one asset the chain no longer carries.
+    async fn kept_description(&self, _asset_id: AssetId) -> Result<Option<String>, ChainError> {
+        Ok(None)
+    }
+
     /// Chain-level collections: assets grouped by issuance key (the only
     /// provenance statement the chain itself makes), largest first.
     async fn collections(&self) -> Result<Vec<CollectionSummary>, ChainError>;

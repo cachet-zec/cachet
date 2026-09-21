@@ -186,9 +186,9 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
                        real session, a browser wallet paging through the chain included. \
                        Need better limits, or none at all? Run your own instance: the \
                        code is MIT, the limit is one environment variable \
-                       (`CACHET_RATE_LIMIT_PER_SEC`, `0` disables it), and the public ZSA \
-                       node accepts transactions directly. This deployment is a \
-                       convenience, never a chokepoint.\n\n\
+                       (`CACHET_RATE_LIMIT_PER_SEC`, `0` disables it). A signed transaction \
+                       is tied to no instance: any instance's relay can place it in a \
+                       block. This deployment is a convenience, never a chokepoint.\n\n\
                        No cookies, no telemetry, and no authentication \
                        anywhere except the optional operator surface.",
         license(name = "MIT")
@@ -231,6 +231,8 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         routes::get_metadata_image,
         routes::wallet_balances,
         routes::asset_events,
+        routes::list_kept,
+        routes::get_kept,
         admin::hide,
         admin::unhide,
         admin::list,
@@ -252,6 +254,7 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         dto::BurnAssetRequest,
         dto::TxResponse,
         dto::AssetSummaryResponse,
+        dto::KeptAssetResponse,
         dto::CollectionResponse,
         dto::MetadataUploadRequest,
         dto::MetadataUploadResponse,

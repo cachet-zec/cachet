@@ -216,10 +216,22 @@ async fn main() -> anyhow::Result<()> {
 
     // The console runs on its own origin in development; allow it
     // explicitly (never a wildcard — PRIVACY.md P5 keeps origins known).
+    // Comma separated, each an exact origin: a console elsewhere that lists
+    // this instance as a registry must be named here.
     let cors_origin =
         std::env::var("CACHET_CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_owned());
+    let cors_origins = cors_origin
+        .split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .map(|origin| origin.parse::<axum::http::HeaderValue>())
+        .collect::<Result<Vec<_>, _>>()?;
+    anyhow::ensure!(
+        !cors_origins.is_empty(),
+        "CACHET_CORS_ORIGIN must name at least one origin"
+    );
     let cors = tower_http::cors::CorsLayer::new()
-        .allow_origin(cors_origin.parse::<axum::http::HeaderValue>()?)
+        .allow_origin(tower_http::cors::AllowOrigin::list(cors_origins))
         // PUT, DELETE and Authorization exist for the token-gated admin surface
         // (404 unless configured); the origin stays exact, never a wildcard.
         .allow_methods([
@@ -231,6 +243,12 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
             axum::http::header::AUTHORIZATION,
+        ])
+        // A pager in another origin's page reads the listing's totals.
+        .expose_headers([
+            axum::http::HeaderName::from_static("x-registry-count"),
+            axum::http::HeaderName::from_static("x-total-count"),
+            axum::http::HeaderName::from_static("x-unresolved-count"),
         ]);
 
     // Public read-only deployments: mutations disabled, browsing intact.

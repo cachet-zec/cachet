@@ -61,12 +61,20 @@ pub enum ApiError {
     MintsPaused,
     #[error("admin authentication failed")]
     AdminUnauthorized,
+    #[error("invalid query: {0}")]
+    BadQuery(String),
+}
+
+impl From<axum::extract::rejection::QueryRejection> for ApiError {
+    fn from(rejection: axum::extract::rejection::QueryRejection) -> Self {
+        Self::BadQuery(rejection.body_text())
+    }
 }
 
 impl ApiError {
     fn status(&self) -> StatusCode {
         match self {
-            Self::Validation(_) => StatusCode::BAD_REQUEST,
+            Self::Validation(_) | Self::BadQuery(_) => StatusCode::BAD_REQUEST,
             Self::NotFound { .. } => StatusCode::NOT_FOUND,
             Self::ReadOnly => StatusCode::FORBIDDEN,
             Self::HiddenByOperator => StatusCode::GONE,
@@ -90,7 +98,7 @@ impl ApiError {
     /// Stable identifier slug for the problem `type` URI.
     fn slug(&self) -> &'static str {
         match self {
-            Self::Validation(_) => "validation",
+            Self::Validation(_) | Self::BadQuery(_) => "validation",
             Self::NotFound { .. } => "not-found",
             Self::ReadOnly => "read-only-mode",
             Self::HiddenByOperator => "hidden-by-operator",

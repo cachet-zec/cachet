@@ -127,11 +127,13 @@ impl MetadataStore for AssetIndex {
     async fn put(&self, bytes: Vec<u8>) -> Result<[u8; 32], IndexError> {
         let sha256 = hash_bytes(&bytes);
         sqlx::query(
-            "INSERT INTO metadata_bundles (sha256, bytes) VALUES ($1, $2)
+            "INSERT INTO metadata_bundles (sha256, bytes, has_image) VALUES ($1, $2, $3)
              ON CONFLICT (sha256) DO NOTHING",
         )
         .bind(sha256.as_slice())
         .bind(&bytes)
+        // Tested once, here, so no listing ever reads the bytes to ask.
+        .bind(has_embedded_image(&bytes))
         .execute(self.pool())
         .await?;
         Ok(sha256)
@@ -206,10 +208,10 @@ impl MetadataStore for AssetIndex {
         Ok(())
     }
 
-    /// Two round trips regardless of registry size (image test + hidden
-    /// filter), instead of the default's two per asset. The image test
-    /// runs inside Postgres over the stored bytes, so bundle payloads
-    /// (up to ~400 KB each) never cross the wire for a listing.
+    /// Two round trips regardless of registry size (image flag + hidden
+    /// filter), instead of the default's two per asset. The flag is set
+    /// when a bundle is stored (`has_embedded_image`, the same byte test),
+    /// so a listing reads no bundle at all.
     async fn visible_image_hashes(
         &self,
         hashes: &[[u8; 32]],
@@ -218,18 +220,11 @@ impl MetadataStore for AssetIndex {
             return Ok(HashSet::new());
         }
         let keys: Vec<Vec<u8>> = hashes.iter().map(|hash| hash.to_vec()).collect();
-        let rows = sqlx::query(
-            // Byte-level search, not convert_from: the latter RAISES on any
-            // row that is not valid UTF-8, which would turn one bad row into
-            // a 503 for the whole registry listing. This is byte-for-byte
-            // the same test as `has_embedded_image`.
-            r#"SELECT sha256 FROM metadata_bundles
-               WHERE sha256 = ANY($1)
-                 AND position('"image_data_uri":"data:'::bytea in bytes) > 0"#,
-        )
-        .bind(&keys)
-        .fetch_all(self.pool())
-        .await?;
+        let rows =
+            sqlx::query("SELECT sha256 FROM metadata_bundles WHERE sha256 = ANY($1) AND has_image")
+                .bind(&keys)
+                .fetch_all(self.pool())
+                .await?;
         let mut visible: HashSet<[u8; 32]> = rows
             .iter()
             .filter_map(|row| row.get::<Vec<u8>, _>("sha256").try_into().ok())
