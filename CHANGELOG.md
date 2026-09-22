@@ -10,6 +10,9 @@ All notable changes to Cachet are documented here. The format follows
 
 - The landing's engraved watermark starts drawing as soon as the page
   shows, and sweeps outwards in about seven seconds instead of eleven.
+- The landing's opening paragraph says what you can do in plain steps:
+  create, issue, send or burn, then what stays public and what stays
+  shielded.
 
 ### Fixed
 

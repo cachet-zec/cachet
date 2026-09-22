@@ -47,9 +47,9 @@ export default function LandingPage() {
             Issue shielded assets on&nbsp;Zcash.
           </h1>
           <p className="mt-7 max-w-xl text-lg leading-relaxed text-neutral-300">
-            Mint, transfer and burn shielded assets from your browser: your keys never leave the
-            page, and the registry cannot even see which notes are yours. Public, auditable
-            supplies; metadata sealed into the asset id.
+            Create an asset, issue its supply, send it or burn it, all from your browser. The
+            supply is public and anyone can check it. The holders stay shielded, the name and
+            image are sealed into the asset id.
           </p>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <Link href="/mint" className={primaryButton}>
