@@ -665,7 +665,7 @@ export function MintStudio() {
                   readOnly={remint !== null}
                   onChange={(event) => setDescription(event.target.value)}
                   maxLength={4096}
-                  placeholder="What this asset represents, terms, links…"
+                  placeholder="What this asset represents, its terms…"
                 />
               </div>
               {remint ? (

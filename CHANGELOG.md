@@ -19,6 +19,13 @@ All notable changes to Cachet are documented here. The format follows
 - The mint receipt's labels stay whole when the asset id wraps to a
   second line.
 
+### Security
+
+- Next.js 15.5.26: the hardening release that accompanies the 22 September
+  advisory on the social card renderer. The 15.x line was not exposed to the
+  remote code execution; the card renders asset names, so the hardening is
+  taken anyway.
+
 ## [0.5.0] - 2026-09-22
 
 ### Changed
