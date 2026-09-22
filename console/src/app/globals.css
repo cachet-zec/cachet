@@ -174,7 +174,7 @@ body::after {
     stroke-dashoffset: 1;
   }
   /* drawn */
-  30% {
+  22% {
     stroke-dashoffset: 0;
   }
   /* standing */
@@ -190,8 +190,8 @@ body::after {
   /* needs pathLength="1": one dash the length of the line, one gap as long */
   stroke-dasharray: 1 1;
   animation: seal-draw 18s cubic-bezier(0.45, 0, 0.3, 1) infinite backwards;
-  /* once the hero has faded in, then each shape after the one before */
-  animation-delay: calc(0.4s + var(--i, 0) * 130ms);
+  /* from the first frame, each shape close behind the one before */
+  animation-delay: calc(0.1s + var(--i, 0) * 70ms);
 }
 .seal-weave-a {
   animation: seal-turn 140s linear infinite;

@@ -6,6 +6,11 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The landing's engraved watermark starts drawing as soon as the page
+  shows, and sweeps outwards in about seven seconds instead of eleven.
+
 ### Fixed
 
 - The mint receipt's labels stay whole when the asset id wraps to a
