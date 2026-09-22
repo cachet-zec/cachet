@@ -6,6 +6,11 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- The mint receipt's labels stay whole when the asset id wraps to a
+  second line.
+
 ## [0.5.0] - 2026-09-22
 
 ### Changed

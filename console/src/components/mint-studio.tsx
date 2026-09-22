@@ -856,20 +856,22 @@ export function MintStudio() {
                       : "proof built on your machine, relayed as-is"}
                   </span>
                 </p>
-                <p className="font-data mt-2 break-all text-neutral-400">
-                  txid <span className="text-emerald-300">{receipt.txid}</span>
-                </p>
-                <p className="font-data mt-1 flex items-center gap-2 break-all text-neutral-400">
-                  asset{" "}
-                  <Link
-                    data-testid="mint-receipt-asset"
-                    className="text-accent underline decoration-accent/30"
-                    href={`/assets/${receipt.asset_id}`}
-                  >
-                    {receipt.asset_id}
-                  </Link>
-                  <CopyButton value={receipt.asset_id} />
-                </p>
+                {/* Labels in a fixed column, so a wrapping id never breaks them. */}
+                <dl className="font-data mt-2 grid grid-cols-[3rem_minmax(0,1fr)] gap-x-2 gap-y-1 text-neutral-400">
+                  <dt>txid</dt>
+                  <dd className="break-all text-emerald-300">{receipt.txid}</dd>
+                  <dt>asset</dt>
+                  <dd className="flex items-start gap-2">
+                    <Link
+                      data-testid="mint-receipt-asset"
+                      className="min-w-0 break-all text-accent underline decoration-accent/30"
+                      href={`/assets/${receipt.asset_id}`}
+                    >
+                      {receipt.asset_id}
+                    </Link>
+                    <CopyButton value={receipt.asset_id} />
+                  </dd>
+                </dl>
               </div>
             )}
             {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
