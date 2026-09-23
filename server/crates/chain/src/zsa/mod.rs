@@ -109,6 +109,9 @@ pub struct OrchardZsaBackend {
     /// to the database, and on a slow disk that commit is seconds a
     /// visitor would otherwise spend waiting for a page.
     sync_wanted: tokio::sync::Notify,
+    /// Raised by the background loop after each sync attempt; a read that
+    /// asked for one waits on it, briefly.
+    synced: tokio::sync::Notify,
     /// When the index was last found at the chain tip. A read within
     /// `INDEX_FRESH_FOR` of it answers from the index as it stands, without
     /// asking the node and without queuing behind other reads. Cleared by
@@ -175,6 +178,7 @@ impl OrchardZsaBackend {
             index: None,
             sync_lock: tokio::sync::Mutex::new(()),
             sync_wanted: tokio::sync::Notify::new(),
+            synced: tokio::sync::Notify::new(),
             index_synced_at: std::sync::Mutex::new(None),
             index_writes: std::sync::atomic::AtomicU64::new(0),
             chain_info_cache: std::sync::Mutex::new(None),
@@ -228,28 +232,32 @@ impl OrchardZsaBackend {
     /// index. Used by the server's background sync loop so the first
     /// visitor never pays for a cold catch-up scan.
     pub async fn sync_registry(&self) -> Result<(), ChainError> {
-        match &self.index {
+        let result = match &self.index {
             Some(index) => self.sync_index(index).await,
             None => Ok(()),
-        }
+        };
+        // Whatever happened, the readers waiting on this attempt go on.
+        self.synced.notify_waiters();
+        result
     }
 
     /// Bring the index up to the chain tip, wiping it first when the chain
     /// was reset or reorged past the checkpoint (routine on the ephemeral
     /// regtest).
-    /// What a read does before answering from the index: nothing that
-    /// waits. A stale index is answered from as it stands (it is always a
-    /// complete picture, see `AssetIndex::replace`) and the background loop
-    /// is woken to fold the missing blocks, so the next reads are fresh.
+    /// What a read does before answering from the index. A stale index
+    /// wakes the background loop, and the read waits for that fold, but
+    /// only for `READ_WAIT`: past it, the index is answered from as it
+    /// stands (it is always a complete picture, see `AssetIndex::replace`).
     ///
     /// Readers used to fold a few blocks themselves. A fold commits to the
     /// database, and on a busy disk one commit can take seconds: during a
     /// minting spree the one reader that won the lock paid tens of seconds
-    /// for a listing while everyone else was served at once. Now nobody
-    /// pays: the loop folds, and it folds as soon as it is asked.
+    /// for a listing. Now the loop folds, and a read waits a bounded
+    /// moment for it, enough that whoever just minted or burned sees it on
+    /// the next page, never enough to be a stall.
     ///
-    /// Only an index that has never been built makes a reader wait: there is
-    /// nothing to answer from yet.
+    /// Only an index that has never been built makes a reader wait for the
+    /// whole sync: there is nothing to answer from yet.
     async fn sync_index_for_read(
         &self,
         index: &cachet_index::AssetIndex,
@@ -267,9 +275,18 @@ impl OrchardZsaBackend {
         if !built {
             return self.sync_index(index).await;
         }
+        // Register before asking, so the wake-up cannot slip in between.
+        let synced = self.synced.notified();
+        tokio::pin!(synced);
+        synced.as_mut().enable();
         self.sync_wanted.notify_one();
+        // Past the budget the answer is simply the index as it stands.
+        let _ = tokio::time::timeout(Self::READ_WAIT, synced).await;
         Ok(())
     }
+
+    /// The most a read waits for the fold it asked for.
+    const READ_WAIT: std::time::Duration = std::time::Duration::from_millis(1500);
 
     /// Resolves when a read has found the index stale since the last call
     /// (or immediately, if one did while nobody was waiting). The background

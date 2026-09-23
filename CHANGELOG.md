@@ -24,8 +24,10 @@ All notable changes to Cachet are documented here. The format follows
 - A read never folds the index itself any more. It used to catch up a few
   blocks on its way to an answer, and the commit at the end of that fold
   is what a busy disk turns into seconds: during a minting spree, one
-  listing out of many took forty seconds. Reads now answer from the index
-  as it stands and wake the background sync, which folds at once.
+  listing out of many took forty seconds. A read now wakes the background
+  sync and waits for its fold for at most a second and a half, enough for
+  whoever just minted or burned to see it on the next page, then answers
+  from the index as it stands.
 - The background sync has the loop to itself. The block cache warm-up
   and the bundle sweep ran on the same loop, and a warm-up that walks the
   whole chain after a restart held the next fold back for minutes.
