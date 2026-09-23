@@ -141,24 +141,24 @@ async fn main() -> anyhow::Result<()> {
             let backend = Arc::new(backend);
 
             // Background registry sync: keep the index at the chain tip so
-            // no visitor ever pays for a cold catch-up scan. Serialized
-            // with request-triggered syncs by the backend's sync lock.
+            // no visitor ever pays for a cold catch-up scan. Readers never
+            // fold; they wake this loop, which folds at once. Nothing else
+            // runs on this task: the block cache warm-up and the bundle GC
+            // have their own loop below, so a warm-up that walks the whole
+            // chain after a restart (minutes) never delays a fold.
             if has_index {
                 let interval_secs: u64 = std::env::var("CACHET_SYNC_INTERVAL_SECS")
                     .ok()
                     .and_then(|value| value.parse().ok())
                     .unwrap_or(30);
                 let sync_backend = backend.clone();
-                let gc_index = gc_index.clone();
                 tokio::spawn(async move {
                     let mut ticker =
                         tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(5)));
                     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
                     loop {
                         // Every tick, and sooner whenever a read found the
-                        // index behind the chain: readers never fold, they
-                        // ask, and a fold is a few hundred milliseconds when
-                        // the disk is quiet.
+                        // index behind the chain.
                         tokio::select! {
                             _ = ticker.tick() => {}
                             _ = sync_backend.sync_wanted() => {}
@@ -166,19 +166,28 @@ async fn main() -> anyhow::Result<()> {
                         if let Err(error) = sync_backend.sync_registry().await {
                             tracing::warn!(%error, "background registry sync failed; will retry");
                         }
-                        // Keep the block page cache hot too: the first
-                        // pass walks the chain, later passes only fetch
-                        // new blocks — first-visitor wallet scans become
-                        // as fast as repeat ones.
-                        if let Err(error) = sync_backend.warm_block_cache().await {
+                    }
+                });
+                // Keep the block page cache hot too: the first pass walks
+                // the chain, later passes only fetch new blocks — first-
+                // visitor wallet scans become as fast as repeat ones. And
+                // the chain-anchored bundle GC: the open uploader's abuse
+                // bound. Referenced = every envelope hash in the
+                // description journal (which the sync keeps fresh, and
+                // which survives chain resets); everything else is swept
+                // after a 30-minute grace. The orphan gauge feeds the
+                // upload cap.
+                let warm_backend = backend.clone();
+                let gc_index = gc_index.clone();
+                tokio::spawn(async move {
+                    let mut ticker =
+                        tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(5)));
+                    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+                    loop {
+                        ticker.tick().await;
+                        if let Err(error) = warm_backend.warm_block_cache().await {
                             tracing::warn!(%error, "block cache warm-up failed; will retry");
                         }
-                        // Chain-anchored bundle GC: the open uploader's
-                        // abuse bound. Referenced = every envelope hash
-                        // in the description journal (which the sync just
-                        // refreshed, and which survives chain resets);
-                        // everything else is swept after a 30-minute
-                        // grace. The orphan gauge feeds the upload cap.
                         if let Some(gc) = &gc_index {
                             gc_pass(gc).await;
                         }

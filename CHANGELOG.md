@@ -26,6 +26,9 @@ All notable changes to Cachet are documented here. The format follows
   is what a busy disk turns into seconds: during a minting spree, one
   listing out of many took forty seconds. Reads now answer from the index
   as it stands and wake the background sync, which folds at once.
+- The background sync has the loop to itself. The block cache warm-up
+  and the bundle sweep ran on the same loop, and a warm-up that walks the
+  whole chain after a restart held the next fold back for minutes.
 - Index folds commit without waiting for the disk to confirm them. The
   index is a projection of the chain and its checkpoint travels in the
   same transaction, so a commit lost to a crash is simply refolded.
