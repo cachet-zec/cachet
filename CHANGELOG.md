@@ -13,6 +13,9 @@ All notable changes to Cachet are documented here. The format follows
 - The landing's opening paragraph says what you can do in plain steps:
   create, issue, send or burn, then what stays public and what stays
   shielded.
+- The landing's registry rows are filled with sealed names only. A
+  free-text label is whatever its issuer typed; the console still lists
+  every asset.
 
 ### Fixed
 

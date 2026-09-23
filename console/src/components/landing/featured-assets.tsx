@@ -13,11 +13,14 @@ import { rowIndex, stamp } from "@/lib/ui";
  * The registry showcase: the operator's featured assets first, then the
  * newest entries whose name is actually attested, as ledger lines.
  *
- * `resolved` is asked for because most of this testnet is minted by scripts
- * under a shared demo key and carries no description at all: an unfiltered
- * showcase is five rows of hex, which says nothing about what the registry
- * does. The landing is editorial; nothing is withheld - the console lists
- * everything, and the link beside this block goes straight there.
+ * Only names sealed into the asset id fill the rows. Most of this testnet
+ * is minted by scripts under a shared demo key and carries no description
+ * at all, and a free-text label is whatever its issuer typed: a showcase
+ * of either is five rows that say nothing about what the registry does.
+ * `named_first` puts the sealed names ahead, newest first inside the group,
+ * so the fill is always drawn from them. The landing is editorial; nothing
+ * is withheld - the console lists everything, and the link beside this
+ * block goes straight there.
  */
 /** Rows shown on the landing. */
 const FEATURED_COUNT = 5;
@@ -28,10 +31,11 @@ type Row = Awaited<ReturnType<typeof fetchShowcase>>[number];
 
 async function fetchShowcase() {
   const { data, error } = await api.GET("/api/v1/assets", {
-    params: { query: { limit: FILL_LIMIT, resolved: true } },
+    params: { query: { limit: FILL_LIMIT, resolved: true, order: "named_first" } },
   });
   if (error) throw new Error(error.detail);
-  if (FEATURED_ASSET_IDS.length === 0) return data.slice(0, FEATURED_COUNT);
+  const sealed = data.filter((asset) => asset.name_source === "envelope");
+  if (FEATURED_ASSET_IDS.length === 0) return sealed.slice(0, FEATURED_COUNT);
 
   // Featured first, in configured order. One that fell out of the newest
   // window is fetched on its own; one the API no longer serves (hidden,
@@ -49,7 +53,7 @@ async function fetchShowcase() {
   );
   const rows = featured.filter((asset) => asset !== null);
   const chosen = new Set(rows.map((asset) => asset.asset_id));
-  for (const asset of data) {
+  for (const asset of sealed) {
     if (rows.length >= FEATURED_COUNT) break;
     if (!chosen.has(asset.asset_id)) rows.push(asset);
   }
