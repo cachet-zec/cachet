@@ -155,7 +155,14 @@ async fn main() -> anyhow::Result<()> {
                         tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(5)));
                     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
                     loop {
-                        ticker.tick().await;
+                        // Every tick, and sooner whenever a read found the
+                        // index behind the chain: readers never fold, they
+                        // ask, and a fold is a few hundred milliseconds when
+                        // the disk is quiet.
+                        tokio::select! {
+                            _ = ticker.tick() => {}
+                            _ = sync_backend.sync_wanted() => {}
+                        }
                         if let Err(error) = sync_backend.sync_registry().await {
                             tracing::warn!(%error, "background registry sync failed; will retry");
                         }

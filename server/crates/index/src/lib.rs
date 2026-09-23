@@ -486,6 +486,15 @@ impl AssetIndex {
     ) -> Result<(), IndexError> {
         self.forget_counts();
         let mut tx = self.pool.begin().await?;
+        // The index is a projection of the chain, and the checkpoint travels
+        // in this same transaction: a commit lost to a crash is refolded
+        // from the previous checkpoint at the next sync. So this commit
+        // need not wait for the disk to confirm it, which on a busy disk is
+        // the difference between milliseconds and seconds per block.
+        // Bundles and moderation keep the default: they are not on chain.
+        sqlx::query("SET LOCAL synchronous_commit = off")
+            .execute(&mut *tx)
+            .await?;
         if replacing {
             sqlx::query("DELETE FROM assets").execute(&mut *tx).await?;
             sqlx::query("DELETE FROM asset_events")

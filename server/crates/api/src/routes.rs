@@ -807,6 +807,8 @@ pub(crate) async fn relay_transaction(
                 .send()
                 .await;
             if let Err(error) = sent {
+                // The URL is the webhook's secret: never in the log.
+                let error = error.without_url();
                 tracing::warn!(%error, "mint webhook delivery failed");
             }
         });

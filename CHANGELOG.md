@@ -21,6 +21,17 @@ All notable changes to Cachet are documented here. The format follows
 
 - The mint receipt's labels stay whole when the asset id wraps to a
   second line.
+- A read never folds the index itself any more. It used to catch up a few
+  blocks on its way to an answer, and the commit at the end of that fold
+  is what a busy disk turns into seconds: during a minting spree, one
+  listing out of many took forty seconds. Reads now answer from the index
+  as it stands and wake the background sync, which folds at once.
+- Index folds commit without waiting for the disk to confirm them. The
+  index is a projection of the chain and its checkpoint travels in the
+  same transaction, so a commit lost to a crash is simply refolded.
+  Bundles and moderation keep the durable default.
+- The Discord webhook's URL, which is its secret, no longer appears in the
+  log line that reports a failed delivery.
 
 ### Security
 

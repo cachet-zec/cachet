@@ -104,6 +104,11 @@ pub struct OrchardZsaBackend {
     /// Serializes index syncs: deltas are additive, so two concurrent
     /// syncs folding the same block range would double-count supplies.
     sync_lock: tokio::sync::Mutex<()>,
+    /// Raised by a read that found the index stale; the background loop
+    /// wakes on it and folds. Readers themselves never fold: a fold commits
+    /// to the database, and on a slow disk that commit is seconds a
+    /// visitor would otherwise spend waiting for a page.
+    sync_wanted: tokio::sync::Notify,
     /// When the index was last found at the chain tip. A read within
     /// `INDEX_FRESH_FOR` of it answers from the index as it stands, without
     /// asking the node and without queuing behind other reads. Cleared by
@@ -169,6 +174,7 @@ impl OrchardZsaBackend {
             scan_start_height: config.scan_start_height.max(1),
             index: None,
             sync_lock: tokio::sync::Mutex::new(()),
+            sync_wanted: tokio::sync::Notify::new(),
             index_synced_at: std::sync::Mutex::new(None),
             index_writes: std::sync::atomic::AtomicU64::new(0),
             chain_info_cache: std::sync::Mutex::new(None),
@@ -231,15 +237,16 @@ impl OrchardZsaBackend {
     /// Bring the index up to the chain tip, wiping it first when the chain
     /// was reset or reorged past the checkpoint (routine on the ephemeral
     /// regtest).
-    /// What a read does before answering from the index. A read never waits
-    /// behind someone else's sync, and never starts a long one itself:
+    /// What a read does before answering from the index: nothing that
+    /// waits. A stale index is answered from as it stands (it is always a
+    /// complete picture, see `AssetIndex::replace`) and the background loop
+    /// is woken to fold the missing blocks, so the next reads are fresh.
     ///
-    ///  - a sync is running: the index is answered from as it stands (it is
-    ///    always a complete picture, see `AssetIndex::replace`);
-    ///  - the index is a few blocks behind: caught up here, one reader pays
-    ///    a few node calls and everyone after it is fresh;
-    ///  - it is far behind (a restart after downtime, a chain reset): left
-    ///    to the background loop, and answered from as it stands.
+    /// Readers used to fold a few blocks themselves. A fold commits to the
+    /// database, and on a busy disk one commit can take seconds: during a
+    /// minting spree the one reader that won the lock paid tens of seconds
+    /// for a listing while everyone else was served at once. Now nobody
+    /// pays: the loop folds, and it folds as soon as it is asked.
     ///
     /// Only an index that has never been built makes a reader wait: there is
     /// nothing to answer from yet.
@@ -260,17 +267,17 @@ impl OrchardZsaBackend {
         if !built {
             return self.sync_index(index).await;
         }
-        match self.sync_lock.try_lock() {
-            Ok(guard) => {
-                self.sync_index_locked(index, Some(Self::READER_MAX_BLOCKS), guard)
-                    .await
-            }
-            Err(_) => Ok(()),
-        }
+        self.sync_wanted.notify_one();
+        Ok(())
     }
 
-    /// The most blocks a reader folds on its way to an answer.
-    const READER_MAX_BLOCKS: u64 = 10;
+    /// Resolves when a read has found the index stale since the last call
+    /// (or immediately, if one did while nobody was waiting). The background
+    /// loop waits on this between its ticks, so a stale index is folded
+    /// within a fold's own duration instead of at the next tick.
+    pub async fn sync_wanted(&self) {
+        self.sync_wanted.notified().await;
+    }
 
     /// Bring the index to the chain tip, however far that is, waiting for
     /// any sync already running. For the background loop, and for the paths
