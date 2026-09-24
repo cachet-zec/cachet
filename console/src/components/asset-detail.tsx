@@ -227,7 +227,17 @@ function SealedImage({ src }: { src: string }) {
   );
 }
 
-export function AssetDetail({ assetId }: { assetId: string }) {
+/** How long a page reached from a mint receipt waits for the block. */
+const JUST_MINTED_WAIT_MS = 3 * 60_000;
+const JUST_MINTED_POLL_MS = 5_000;
+
+export function AssetDetail({
+  assetId,
+  justMinted = false,
+}: {
+  assetId: string;
+  justMinted?: boolean;
+}) {
   const state = useQuery({
     queryKey: ["asset", assetId],
     queryFn: async () => {
@@ -237,6 +247,10 @@ export function AssetDetail({ assetId }: { assetId: string }) {
       if (error) throw new Error(error.detail);
       return data;
     },
+    // Reached from a receipt, the asset is in the mempool and not yet in a
+    // block: keep asking for a few minutes before calling it unknown.
+    retry: justMinted ? JUST_MINTED_WAIT_MS / JUST_MINTED_POLL_MS : 3,
+    retryDelay: justMinted ? JUST_MINTED_POLL_MS : undefined,
   });
 
   const envelope = parseEnvelope(state.data?.description);
@@ -269,6 +283,15 @@ export function AssetDetail({ assetId }: { assetId: string }) {
       >
         ← Back to console
       </Link>
+
+      {state.isPending && justMinted && (
+        <div className={`${card} mt-4`}>
+          <p className="flex items-center gap-3 text-sm text-neutral-300">
+            <span className="h-2 w-2 rounded-full bg-accent motion-safe:animate-pulse" />
+            Relayed. Waiting for the next block, usually a minute on this testnet.
+          </p>
+        </div>
+      )}
 
       {state.isError && (
         <KeptAsset

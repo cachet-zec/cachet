@@ -52,11 +52,18 @@ export async function generateMetadata({
   }
 }
 
-export default async function AssetPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AssetPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ just?: string }>;
+}) {
   const { id } = await params;
+  const { just } = await searchParams;
   return (
     <div className="rise">
-      <AssetDetail assetId={id} />
+      <AssetDetail assetId={id} justMinted={just === "minted"} />
     </div>
   );
 }

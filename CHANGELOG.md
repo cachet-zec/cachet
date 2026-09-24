@@ -16,6 +16,8 @@ All notable changes to Cachet are documented here. The format follows
 - The landing's registry rows are filled with sealed names only. A
   free-text label is whatever its issuer typed; the console still lists
   every asset.
+- The mint receipt ends with a button to the asset, and a page reached
+  from it waits for the next block instead of saying the asset is unknown.
 
 ### Fixed
 

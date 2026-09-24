@@ -872,6 +872,18 @@ export function MintStudio() {
                     <CopyButton value={receipt.asset_id} />
                   </dd>
                 </dl>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <Link
+                    data-testid="mint-receipt-view"
+                    className={`${primaryButton} !px-5 !py-2.5 !text-sm`}
+                    href={`/assets/${receipt.asset_id}?just=minted`}
+                  >
+                    View my asset
+                  </Link>
+                  <span className="text-[13px] text-neutral-500">
+                    it appears once the next block lands, usually within a minute
+                  </span>
+                </div>
               </div>
             )}
             {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
