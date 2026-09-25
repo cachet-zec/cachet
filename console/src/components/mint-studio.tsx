@@ -755,8 +755,7 @@ export function MintStudio() {
                 className="mb-3 rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-sm text-accent"
               >
                 Minting through this instance is paused by its operator. Your keys and this page
-                keep working, the chain is unaffected, and the button comes back the moment it is
-                lifted.
+                keep working, and the button comes back the moment it is lifted.
               </p>
             )}
             {/* Asked before the button: the answer changes what it does. */}

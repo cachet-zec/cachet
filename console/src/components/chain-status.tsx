@@ -45,6 +45,14 @@ export function ChainStatus() {
               read-only
             </span>
           )}
+          {data.mints_paused && (
+            <span
+              title="Minting through this instance is paused by its operator"
+              className="rounded-sm border border-accent/50 px-1.5 py-0.5 text-[13px] uppercase tracking-[0.14em] text-accent"
+            >
+              mints paused
+            </span>
+          )}
         </>
       )}
     </div>
