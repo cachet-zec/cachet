@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import subprocess
 import sys
 import urllib.error
@@ -86,15 +87,56 @@ def checkout_label() -> str:
         return "unknown (not a git checkout)"
 
 
+# The engines are cached by browsers for an hour and served stale for a
+# day (next.config.ts); the query `?v=` on their URLs is what makes a rebuild
+# visible at once. That version is derived from the files themselves, and
+# the two loaders must carry it: a rebuild that forgets to bump it ships an
+# old circuit to every returning browser.
+VERSIONED_LOADERS = (
+    REPO / "console" / "public" / "mint-worker.js",
+    REPO / "console" / "src" / "lib" / "verify-engine.ts",
+)
+VERSION_LINE = re.compile(r'const ENGINE_VERSION = "([^"]*)";')
+
+
+def engine_version(files: dict[str, str]) -> str:
+    # The worker is in the manifest too, and it is where the version is
+    # written: leave it out of the derivation or the version would chase
+    # its own tail.
+    digest = hashlib.sha256()
+    for path in sorted(files):
+        if path.endswith("mint-worker.js"):
+            continue
+        digest.update(f"{path}:{files[path]}\n".encode("utf-8"))
+    return digest.hexdigest()[:12]
+
+
+def loader_versions() -> dict[str, str | None]:
+    found = {}
+    for loader in VERSIONED_LOADERS:
+        match = VERSION_LINE.search(loader.read_text(encoding="utf-8"))
+        found[loader.relative_to(REPO).as_posix()] = match.group(1) if match else None
+    return found
+
+
 def write_manifest() -> int:
+    version = engine_version(engine_files())
+    # Loaders first: the worker's own hash goes into the manifest after.
+    for loader in VERSIONED_LOADERS:
+        text = loader.read_text(encoding="utf-8")
+        updated = VERSION_LINE.sub(f'const ENGINE_VERSION = "{version}";', text, count=1)
+        if updated != text:
+            loader.write_text(updated, encoding="utf-8", newline="\n")
+            print(f"set ENGINE_VERSION = {version} in {loader.relative_to(REPO).as_posix()}")
     files = engine_files()
     body = {
         "about": "SHA-256 of every file a browser mint executes besides the application bundle. "
         "Verify a live site against it with scripts/verify-site.py.",
+        "version": version,
         "files": files,
     }
     MANIFEST.write_bytes((json.dumps(body, indent=2) + "\n").encode("utf-8"))
-    print(f"wrote {MANIFEST.relative_to(REPO).as_posix()} ({len(files)} files)")
+    print(f"wrote {MANIFEST.relative_to(REPO).as_posix()} ({len(files)} files, version {version})")
     return 0
 
 
@@ -114,7 +156,20 @@ def check_manifest() -> int:
         print("\n".join(problems))
         print("an engine file changed without the manifest: rebuild deliberately, then --write-manifest")
         return 1
-    print(f"engine manifest matches {len(actual)} files")
+    version = engine_version(actual)
+    manifest_version = json.loads(MANIFEST.read_bytes()).get("version")
+    stale = {
+        path: found for path, found in loader_versions().items() if found != version
+    }
+    if manifest_version != version or stale:
+        print(f"engine version is {version} (from the files), but:")
+        if manifest_version != version:
+            print(f"  engine-manifest.json says {manifest_version}")
+        for path, found in stale.items():
+            print(f"  {path} asks browsers for {found}")
+        print("returning browsers would keep an old engine: run --write-manifest")
+        return 1
+    print(f"engine manifest matches {len(actual)} files, version {version}")
     return 0
 
 

@@ -42,6 +42,10 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Fixed
 
+- Rebuilt engines reach returning browsers at once. The cache-busting
+  version on the engine URLs is now derived from the engine files by
+  `--write-manifest`, written into both loaders, and checked by CI, so a
+  rebuild can no longer ship while browsers keep the old circuit for a day.
 - The mint receipt's labels stay whole when the asset id wraps to a
   second line.
 - A read never folds the index itself any more. It used to catch up a few

@@ -1,5 +1,6 @@
 {
   "about": "SHA-256 of every file a browser mint executes besides the application bundle. Verify a live site against it with scripts/verify-site.py.",
+  "version": "c65c4f1cec16",
   "files": {
     "mint-engine-mt/cachet_mint_engine.d.ts": "3900564d768e43b19c1293db9dc514a1e0dc0298ae5dc8072d2334ea923e97ab",
     "mint-engine-mt/cachet_mint_engine.js": "76417c790d5b73ea4f7c332a0c893355bd964dabafacc86721ce8a8d77927ad3",
@@ -10,7 +11,7 @@
     "mint-engine/cachet_mint_engine.js": "e4748c78e27b3d96fcfb6f4909c418834fbd4bc313a378ba0e016ddfe635ada3",
     "mint-engine/cachet_mint_engine_bg.wasm": "f15e877cf466fd9b5fa7eb9952cb6fd7ffa71503d0a0633ddb8d50b386d1ed78",
     "mint-engine/cachet_mint_engine_bg.wasm.d.ts": "ea55fa87da6e7c60146ee3f1e4e9084c7021d2b2c62a09ec1f8d7c85eaae52e9",
-    "mint-worker.js": "e8bc764624bb79b0c8c94445e01b3f783ffa529a2626d69636256129fa45d782",
+    "mint-worker.js": "bc6403cf8da06c643c1984040abfc0c70c15e35012f70b652c8dbfdc7aefa539",
     "verify-engine/cachet_verify_engine.d.ts": "3dd126142c911a14faa5134f49f4f4be4e3e7328d621766980c05014f03c231f",
     "verify-engine/cachet_verify_engine.js": "a5d2328b74f344b521dad1fd8c6f5b5c20c276e65a52335088076ed9e3452ff3",
     "verify-engine/cachet_verify_engine_bg.wasm": "f2815c64f64bbfdd6aa2f2e7bb119f810d3f6d5f862d8c6097b1c0cf5d5d053d",

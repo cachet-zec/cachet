@@ -16,7 +16,7 @@
  */
 
 /** Bump on every rebuild of the verification engine, as for the mint one. */
-const ENGINE_VERSION = "1";
+const ENGINE_VERSION = "c65c4f1cec16";
 const BASE = "/verify-engine";
 
 type Derive = (issuanceKeyHex: string, description: string) => string;
