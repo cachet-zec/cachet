@@ -421,9 +421,10 @@ export function MintStudio() {
           >
             <p className="text-base font-medium text-accent">A test network, and not ours</p>
             <p className="mt-1.5 text-sm leading-relaxed text-neutral-300">
-              QEDIT, the team building ZSAs, runs this chain, not Cachet. They can reset it, and a
-              reset erases every asset: it has happened once. Your sealed name, text and image are
-              kept here: minted again unchanged, with the same seed, they give the same asset id.
+              QEDIT, the team building ZSAs, runs this chain, not Cachet. They can reset it at any
+              time, and a reset erases every asset and every balance: it has happened more than
+              once. Nothing here has value. Your sealed name, text and image are kept by this
+              registry: minted again unchanged, with the same seed, they give the same asset id.
             </p>
             <Link
               href="/continuity"

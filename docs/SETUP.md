@@ -16,7 +16,7 @@ time on the first run).
 ```bash
 git clone https://github.com/QED-it/zebra.git qedit-zebra
 cd qedit-zebra
-git checkout 2b036fd6d511011e06f632519c7c9d64c2a8ac2d   # CI-pinned ZSA commit
+git checkout f0635ce96058a598ae1e7d47435a0582057f242d   # CI-pinned ZSA commit (zsa1, Zebra 5.2.0 line)
 
 # REQUIRED until fixed upstream (see docs/upstream/zebra-nu7-panic-issue.md):
 # without this, zebrad aborts ~10s after the NU7 activation block is mined

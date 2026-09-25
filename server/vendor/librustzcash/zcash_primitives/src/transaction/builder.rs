@@ -2,7 +2,8 @@
 
 use core::cmp::Ordering;
 use core::fmt;
-use rand::{CryptoRng, RngCore};
+
+use rand_core::{CryptoRng, RngCore};
 
 use ::sapling::{Note, PaymentAddress, builder::SaplingMetadata};
 use ::transparent::{
@@ -807,9 +808,6 @@ impl<P: consensus::Parameters, U> Builder<'_, P, U> {
     }
 
     /// Adds a transparent P2SH coin to be spent in this transaction.
-    ///
-    /// This is only for use with [`Self::build_for_pczt`]. It is unsupported with
-    /// [`Self::build`], which will return an error.
     #[cfg(feature = "transparent-inputs")]
     pub fn add_transparent_p2sh_input(
         &mut self,
@@ -1336,13 +1334,11 @@ impl<P: consensus::Parameters, U: sapling::builder::ProverProgress> Builder<'_, 
                     unproven_orchard_bundle = Some(OrchardBundle::OrchardZSA(bundle));
                     orchard_meta = meta;
                 }
-            } else {
-                if let Some((bundle, meta)) =
-                    builder.build(&mut rng).map_err(Error::OrchardBuild)?
-                {
-                    unproven_orchard_bundle = Some(OrchardBundle::OrchardVanilla(bundle));
-                    orchard_meta = meta;
-                }
+            } else if let Some((bundle, meta)) =
+                builder.build(&mut rng).map_err(Error::OrchardBuild)?
+            {
+                unproven_orchard_bundle = Some(OrchardBundle::OrchardVanilla(bundle));
+                orchard_meta = meta;
             }
             #[cfg(not(zcash_unstable = "nu7"))]
             if let Some((bundle, meta)) = builder.build(&mut rng).map_err(Error::OrchardBuild)? {
@@ -1678,8 +1674,7 @@ impl<'a, P: consensus::Parameters, U: sapling::builder::ProverProgress> Extensio
 
 #[cfg(all(any(test, feature = "test-dependencies"), feature = "circuits"))]
 mod testing {
-    use rand::RngCore;
-    use rand_core::CryptoRng;
+    use rand_core::{CryptoRng, RngCore};
 
     use ::sapling::prover::mock::{MockOutputProver, MockSpendProver};
     use ::transparent::builder::TransparentSigningSet;
@@ -1757,7 +1752,7 @@ mod tests {
 
     #[cfg(zcash_unstable = "nu7")]
     #[cfg(not(feature = "transparent-inputs"))]
-    use crate::zip32::AccountId;
+    use zip32::AccountId;
 
     #[cfg(zcash_unstable = "zfuture")]
     #[cfg(feature = "transparent-inputs")]

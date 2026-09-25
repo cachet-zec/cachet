@@ -61,6 +61,15 @@ Design decisions:
 
 ## Deploy (and redeploy)
 
+This build proves for the fixed Orchard circuit (halo2_gadgets 0.5). It
+must talk to a node of QEDIT's `zsa1` line (Zebra 5.2.0 or later): the
+default for `CACHET_NETWORK=zsa-testnet` is `https://rpc.test-zsa.org`,
+and `CACHET_NODE_URL` overrides it. The older node at
+`dev.zebra.zsa-test.net` verifies with the old circuit and rejects every
+proof from this build. That test network is ephemeral by its operator's
+own description: a reset takes every asset and balance with it, the
+registry's journal and bundles stay, and `/continuity` lists them.
+
 ```bash
 bash infra/prod/deploy.sh root@<ip>
 # or, to stop retyping it:

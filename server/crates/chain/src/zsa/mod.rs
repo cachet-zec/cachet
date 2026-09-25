@@ -80,11 +80,13 @@ impl ZsaConfig {
         }
     }
 
-    /// The public ZSA testnet operated by QEDIT (same protocol rules as the
-    /// regtest single-node image, continuously producing blocks).
+    /// The public ZSA testnet operated by QEDIT, on their `zsa1` line
+    /// (Zebra 5.2.0, the fixed Orchard circuit this build proves for).
+    /// The older node at `dev.zebra.zsa-test.net` verifies with the old
+    /// circuit and rejects this build's proofs. `CACHET_NODE_URL` overrides.
     pub fn zsa_testnet(seed_phrase: impl Into<String>, scan_start_height: u64) -> Self {
         Self {
-            node_url: "https://dev.zebra.zsa-test.net:443".to_owned(),
+            node_url: "https://rpc.test-zsa.org:443".to_owned(),
             seed_phrase: seed_phrase.into(),
             network_label: "zsa-testnet".to_owned(),
             scan_start_height,

@@ -131,7 +131,7 @@ export default function LandingPage() {
             ["What does this site run on?", "The public ZSA testnet, run by QEDIT, not by Cachet."],
             [
               "What if that testnet is reset?",
-              "Every asset on it is gone; it has happened once. What you sealed is kept, and your seed mints it back under the same asset id.",
+              "Every asset on it is gone, and it has happened more than once. What you sealed is kept, and your seed mints it back under the same asset id.",
             ],
             ["So what is real here?", "The proofs, the blocks and the assets: all of it."],
           ].map(([question, answer]) => (
