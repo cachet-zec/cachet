@@ -29,7 +29,9 @@ Design decisions:
   instance during a spam wave (the instance also pauses itself under a
   relay flood and reopens on its own; the webhook below is told);
   `CACHET_DISCORD_WEBHOOK` posts relayed mints — asset ids and txid, never
-  a client address — to a Discord webhook. Both live in `.env.prod`; see
+  a client address — to a Discord webhook, and one line each time the node
+  has been unreachable for five minutes, comes back, or the chain resets.
+  Both live in `.env.prod`; see
   `infra/prod/.env.prod.example`.
 - **A throwaway seed.** The server requires a seed to boot, but this
   instance never signs anything: it gets a seed generated for it alone.
