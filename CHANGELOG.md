@@ -18,6 +18,8 @@ All notable changes to Cachet are documented here. The format follows
   every asset.
 - The mint receipt ends with a button to the asset, and a page reached
   from it waits for the next block instead of saying the asset is unknown.
+- The operator page shows hidden entries a page at a time, with a filter
+  on key, reason or kind.
 - When the operator pauses minting, the landing and the console say so,
   and the landing points to what survives a reset. The mint page's pause
   notice no longer claims the chain is unaffected.

@@ -121,6 +121,8 @@ export function AdminPanel() {
   const [status, setStatus] = useState<string | null>(null);
 
   const [kind, setKind] = useState("issuer");
+  const [hiddenFilter, setHiddenFilter] = useState("");
+  const [hiddenPage, setHiddenPage] = useState(0);
   const [key, setKey] = useState("");
   const [reason, setReason] = useState("");
   const [pause, setPause] = useState<{
@@ -300,6 +302,25 @@ export function AdminPanel() {
       setStatus(unhideError instanceof Error ? unhideError.message : String(unhideError));
     }
   }
+
+  // The hidden list is small per instance but grows for good: shown a
+  // page at a time, filtered by key or reason as typed.
+  const HIDDEN_PAGE = 25;
+  const hiddenNeedle = hiddenFilter.trim().toLowerCase();
+  const hiddenMatches = hiddenNeedle
+    ? entries.filter(
+        (entry) =>
+          entry.key.toLowerCase().includes(hiddenNeedle) ||
+          (entry.reason ?? "").toLowerCase().includes(hiddenNeedle) ||
+          entry.kind.includes(hiddenNeedle),
+      )
+    : entries;
+  const hiddenPages = Math.max(1, Math.ceil(hiddenMatches.length / HIDDEN_PAGE));
+  const hiddenPageAt = Math.min(hiddenPage, hiddenPages - 1);
+  const hiddenShown = hiddenMatches.slice(
+    hiddenPageAt * HIDDEN_PAGE,
+    hiddenPageAt * HIDDEN_PAGE + HIDDEN_PAGE,
+  );
 
   const hiddenIssuerKeys = new Set(
     entries.filter((entry) => entry.kind === "issuer").map((entry) => entry.key),
@@ -830,30 +851,78 @@ export function AdminPanel() {
         {entries.length === 0 ? (
           <p className="mt-5 text-base text-neutral-400">Nothing is hidden on this instance.</p>
         ) : (
-          <ul className="mt-3">
-            {entries.map((entry) => (
-              <li
-                key={`${entry.kind}-${entry.key}`}
-                className="grid items-center gap-x-6 gap-y-2 border-b border-line py-3 last:border-b-0 sm:grid-cols-[7rem_minmax(0,1fr)_auto]"
+          <>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <input
+                type="search"
+                value={hiddenFilter}
+                onChange={(event) => {
+                  setHiddenFilter(event.target.value);
+                  setHiddenPage(0);
+                }}
+                placeholder="filter by key, reason or kind"
+                aria-label="Filter hidden entries"
+                className={`${input} max-w-sm`}
+              />
+              <span className="font-data text-[13px] text-neutral-500">
+                {hiddenMatches.length === entries.length
+                  ? `${entries.length} hidden`
+                  : `${hiddenMatches.length} of ${entries.length} hidden`}
+              </span>
+            </div>
+            <ul className="mt-3">
+              {hiddenShown.map((entry) => (
+                <li
+                  key={`${entry.kind}-${entry.key}`}
+                  className="grid items-center gap-x-6 gap-y-2 border-b border-line py-3 last:border-b-0 sm:grid-cols-[7rem_minmax(0,1fr)_auto]"
+                >
+                  <span className={`${stamp} w-fit`}>{entry.kind}</span>
+                  <span className="min-w-0">
+                    <span className="font-data block break-all text-sm text-neutral-200">
+                      {entry.key}
+                    </span>
+                    <span className="font-data text-[13px] text-neutral-500">
+                      {entry.reason ?? "no reason given"}
+                      {entry.bytes_present === false && (
+                        <span className="text-red-300"> · bytes purged</span>
+                      )}
+                    </span>
+                  </span>
+                  <button type="button" className={smallGhost} onClick={() => void unhide(entry)}>
+                    Unhide
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {hiddenPages > 1 && (
+              <nav
+                aria-label="Hidden entries pages"
+                className="mt-4 flex items-center justify-between gap-4"
               >
-                <span className={`${stamp} w-fit`}>{entry.kind}</span>
-                <span className="min-w-0">
-                  <span className="font-data block break-all text-sm text-neutral-200">
-                    {entry.key}
-                  </span>
-                  <span className="font-data text-[13px] text-neutral-500">
-                    {entry.reason ?? "no reason given"}
-                    {entry.bytes_present === false && (
-                      <span className="text-red-300"> · bytes purged</span>
-                    )}
-                  </span>
-                </span>
-                <button type="button" className={smallGhost} onClick={() => void unhide(entry)}>
-                  Unhide
+                <button
+                  type="button"
+                  className={smallGhost}
+                  disabled={hiddenPageAt === 0}
+                  onClick={() => setHiddenPage(hiddenPageAt - 1)}
+                >
+                  Previous
                 </button>
-              </li>
-            ))}
-          </ul>
+                <span className="font-data text-[13px] text-neutral-500">
+                  {hiddenPageAt * HIDDEN_PAGE + 1}–
+                  {Math.min(hiddenMatches.length, (hiddenPageAt + 1) * HIDDEN_PAGE)} of{" "}
+                  {hiddenMatches.length}
+                </span>
+                <button
+                  type="button"
+                  className={smallGhost}
+                  disabled={hiddenPageAt >= hiddenPages - 1}
+                  onClick={() => setHiddenPage(hiddenPageAt + 1)}
+                >
+                  Next
+                </button>
+              </nav>
+            )}
+          </>
         )}
       </section>
     </div>
