@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 
 import { CountUp } from "@/components/count-up";
 import { api } from "@/lib/api";
@@ -55,6 +56,15 @@ export function LiveStats() {
         />
         live from the public ZSA testnet
       </p>
+      {chain.data?.mints_paused && (
+        <p className="mt-3 rounded-md border border-accent/40 bg-accent/10 px-3 py-2 text-[13px] leading-snug text-accent">
+          Minting is paused by the operator. What was sealed here stays, and can be minted again
+          with the same seed once it is lifted.{" "}
+          <Link href="/continuity" className="underline decoration-accent/40">
+            What survives a reset
+          </Link>
+        </p>
+      )}
     </div>
   );
 }

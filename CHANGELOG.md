@@ -18,6 +18,16 @@ All notable changes to Cachet are documented here. The format follows
   every asset.
 - The mint receipt ends with a button to the asset, and a page reached
   from it waits for the next block instead of saying the asset is unknown.
+- When the operator pauses minting, the landing and the console say so,
+  and the landing points to what survives a reset. The mint page's pause
+  notice no longer claims the chain is unaffected.
+
+### Added
+
+- The Discord webhook, when set, also hears from the chain: once when the
+  node has been unreachable for five minutes, once when it is back, and
+  once when the chain went backwards, a reset. Never twice for the same
+  event.
 
 ### Fixed
 
