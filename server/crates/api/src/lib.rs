@@ -19,6 +19,7 @@ pub fn with_health(router: axum::Router) -> axum::Router {
     router.route("/healthz", axum::routing::get(routes::health))
 }
 pub mod breaker;
+pub mod chain_watch;
 pub mod snapshot;
 
 use std::sync::Arc;

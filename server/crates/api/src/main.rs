@@ -152,6 +152,13 @@ async fn main() -> anyhow::Result<()> {
                     .and_then(|value| value.parse().ok())
                     .unwrap_or(30);
                 let sync_backend = backend.clone();
+                // The operator hears once when the node is gone for a
+                // while, once when it is back, once when the chain resets.
+                let mut watch = cachet_api::chain_watch::ChainWatch::new(
+                    std::env::var("CACHET_DISCORD_WEBHOOK")
+                        .ok()
+                        .map(|url| Arc::<str>::from(url.trim())),
+                );
                 tokio::spawn(async move {
                     let mut ticker =
                         tokio::time::interval(std::time::Duration::from_secs(interval_secs.max(5)));
@@ -163,8 +170,12 @@ async fn main() -> anyhow::Result<()> {
                             _ = ticker.tick() => {}
                             _ = sync_backend.sync_wanted() => {}
                         }
-                        if let Err(error) = sync_backend.sync_registry().await {
-                            tracing::warn!(%error, "background registry sync failed; will retry");
+                        match sync_backend.sync_registry().await {
+                            Ok(()) => watch.sync_ok(sync_backend.as_ref()).await,
+                            Err(error) => {
+                                tracing::warn!(%error, "background registry sync failed; will retry");
+                                watch.sync_failed(&error.to_string()).await;
+                            }
                         }
                     }
                 });

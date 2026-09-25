@@ -122,7 +122,9 @@ disables) with `CACHET_RELAY_BREAKER_PAUSE_SECS` (how long, default
 the token-gated moderation API and the console's `/admin` page; must be
 at least 32 characters or it is refused — see SECURITY.md),
 `CACHET_DISCORD_WEBHOOK` (posts relayed mints to a Discord webhook:
-asset ids and txid, never a client address), and `CACHET_FEATURED_ASSETS`
+asset ids and txid, never a client address; also one line when the node
+has been unreachable for five minutes, when it is back, and when the
+chain resets), and `CACHET_FEATURED_ASSETS`
 (comma-separated asset ids the landing showcase leads with, in order;
 baked into the console at build time by `deploy.sh`, so it is editorial
 for the landing only and the console keeps listing everything). The console
