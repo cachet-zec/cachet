@@ -14,8 +14,8 @@
     "openapi:generate": "pnpm --filter @cachet/api-client generate"
   },
   "devDependencies": {
-    "prettier": "^3.6.0",
-    "turbo": "^2.5.0"
+    "prettier": "^3.9.9",
+    "turbo": "^2.11.4"
   },
   "pnpm": {
     "overrides": {
