@@ -57,6 +57,9 @@ const nextConfig: NextConfig = {
   // from it.
   images: { unoptimized: true },
 
+  // No `X-Powered-By: Next.js`: it tells a scanner which advisories to try.
+  poweredByHeader: false,
+
   // Privacy/security headers on every console response. Referrer-Policy is
   // the load-bearing one: outbound links (issuer external_url, GitHub) must
   // never learn which asset page the visitor came from.

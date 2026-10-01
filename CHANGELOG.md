@@ -67,6 +67,10 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Security
 
+- rustls 0.23.45 (RUSTSEC-2026-0285, TLS 1.3 handshake messages accepted
+  across encryption levels; used by the database client). Development
+  dependencies brace-expansion and js-yaml moved to patched versions, so
+  `pnpm audit` is clean. The console no longer sends `X-Powered-By`.
 - Next.js 15.5.26: the hardening release that accompanies the 22 September
   advisory on the social card renderer. The 15.x line was not exposed to the
   remote code execution; the card renders asset names, so the hardening is
