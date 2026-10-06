@@ -71,6 +71,32 @@ bundle by `sha256` from any registry → re-hash the bytes → compare. Match
 issuance. No match or no bundle ⇒ display the asset as unnamed; never
 trust unverified metadata.
 
+## Asset identity (ZIP 227)
+
+An asset has several names, all derived from two public inputs: the
+issuer's key (`issuer`, its 33-byte ZIP 227 encoding) and the exact
+description bytes committed at issuance.
+
+```
+asset_desc_hash = BLAKE2b-256("ZSA-AssetDescCRH", description)
+asset_digest    = BLAKE2b-512("ZSA-Asset-Digest", 0x00 || issuer || asset_desc_hash)
+asset_id        = GroupHash^Pallas("z.cash:OrchardZSA", asset_digest)   (the Asset Base)
+```
+
+`asset_id` is what the chain, this API and the console URLs use. The
+64-byte `asset_digest` is the compact form ZIP 227 suggests wallets
+exchange (a QR code, for one). The reference console derives all
+three in the reader's browser and shows the digest and description hash
+only once the id it derived matches the one requested, so none of them is
+taken from the registry.
+
+[`vectors/zip227-identity.json`](vectors/zip227-identity.json) lists
+issuer/description pairs with all three values. They come from the stack
+the public ZSA testnet verifies with; the reference implementation's tests
+and the CI wasm smoke test recompute them, and the two hashes also match
+Python's `hashlib.blake2b`. A wallet or explorer can check its own
+derivation against them.
+
 ## Why no creator signature on the bundle
 
 Some metadata conventions sign manifests with the issuance key because

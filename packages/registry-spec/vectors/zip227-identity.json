@@ -1,0 +1,44 @@
+{
+  "about": "ZIP 227 identity vectors: what an issuer key and an asset description derive to. Any wallet or explorer that shows ZSA identifiers can check itself against these. Hex is lowercase; descriptions are hashed as their exact UTF-8 bytes.",
+  "derivation": {
+    "issuer": "ik_encoding: 0x00 (BIP-340 algorithm byte) || 32-byte x-only key, 33 bytes",
+    "asset_desc_hash": "BLAKE2b-256, personalization \"ZSA-AssetDescCRH\", over the description bytes",
+    "asset_digest": "BLAKE2b-512, personalization \"ZSA-Asset-Digest\", over 0x00 (AssetId version) || issuer || asset_desc_hash",
+    "asset_id": "AssetBase = GroupHash^Pallas(\"z.cash:OrchardZSA\", asset_digest), 32-byte point encoding"
+  },
+  "source": "QED-it/orchard cf801a5d (the stack the public ZSA testnet verifies with). Values recomputed by server/crates/verify-engine tests; the two hashes were also checked with Python's hashlib.blake2b.",
+  "vectors": [
+    {
+      "comment": "A Cachet envelope, minted from the browser on the public ZSA testnet (confirmed at height 520).",
+      "issuer": "00de18a231dd5ea64deb652ab2826dfd8cdc3c261b097f92c2ad5e0defefbaae78",
+      "description": "{\"v\":1,\"name\":\"Minted From A Browser\",\"sha256\":\"7f9a9e42ba1127d50cea940c3b747d2803aa53dbf7ecda1645d58b0334a83b20\"}",
+      "asset_desc_hash": "142459af24758f2ebc13ec93ca19218c52403aa4206385de70fc59081fe83aa4",
+      "asset_digest": "ed70fd25848cea3dcc744f39c20bf05ef690deb72ee01081b2c44c83c4f156180ea6c4d4e94f6ac337e6627a64cccfacee931446b668597a9ffb861aa179956f",
+      "asset_id": "3081f54e5e0bb0995dc2be069394b7d26307728c3090a287c8f09ba235cdb70e"
+    },
+    {
+      "comment": "The same description under another issuer key: same description hash, different asset.",
+      "issuer": "009aa99143bb05394cdcaa3c383b295dbcf4251ac0e1a66667c94386cae62d6e82",
+      "description": "{\"v\":1,\"name\":\"Minted From A Browser\",\"sha256\":\"7f9a9e42ba1127d50cea940c3b747d2803aa53dbf7ecda1645d58b0334a83b20\"}",
+      "asset_desc_hash": "142459af24758f2ebc13ec93ca19218c52403aa4206385de70fc59081fe83aa4",
+      "asset_digest": "a411822f602622305d544c7ca614b8c17d7ea75bd93687cfab3e1770cc1186bd84af73a630bfd136483e9ac349f3ce58cd877edb89f4b0bd3f0daadf1ff6ad95",
+      "asset_id": "2059ae8148e339c87051dbf413d57db486448be10cb6e1f067ff389e73da6322"
+    },
+    {
+      "comment": "A free-text description (not a Cachet envelope).",
+      "issuer": "00de18a231dd5ea64deb652ab2826dfd8cdc3c261b097f92c2ad5e0defefbaae78",
+      "description": "Gold",
+      "asset_desc_hash": "ab58519c23990c4af7a04348484d322d10985b86b3e7d802202d6bbcd072ebfa",
+      "asset_digest": "d41cad40c7b53a4cc33b6ec3916da4bbc590c60cba9874144f4a4a99e78c7480b8fe881c71b3fcbe87d6eafd9fd37fa8b4e5f2a3f24ddd4531ade0888053329d",
+      "asset_id": "fda19c909166a8b91610c4af6349d29940f9437c8a7dfd84621bdf3e0b527fa4"
+    },
+    {
+      "comment": "Non-ASCII text: hashed as UTF-8 bytes, no normalization.",
+      "issuer": "00de18a231dd5ea64deb652ab2826dfd8cdc3c261b097f92c2ad5e0defefbaae78",
+      "description": "Café ☕ zUSD",
+      "asset_desc_hash": "f06f2cbe39868a2f76ce09dcc92d7ef4a44b45913a138f31eb89378678bf6713",
+      "asset_digest": "0d0896dec5d82b245fba8d8a765c836d85ee9ee5e11f42e2e3e5bdf04b023f717130baa63c691952fd668e2082d6f807c50382a6abbc45a30fb978398d19a2f5",
+      "asset_id": "0fe9d663d2d1389e1212f4519ca6ef493f14c60d5e22f2d69c6f02c811626f9e"
+    }
+  ]
+}

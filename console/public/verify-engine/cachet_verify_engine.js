@@ -1,36 +1,127 @@
 /* @ts-self-types="./cachet_verify_engine.d.ts" */
 
 /**
- * Derive the asset id, as lowercase hex, for the browser.
+ * What ZIP 227 derives from one issuer key and one description, as
+ * lowercase hex.
+ */
+export class Identity {
+    static __wrap(ptr) {
+        const obj = Object.create(Identity.prototype);
+        obj.__wbg_ptr = ptr;
+        IdentityFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        IdentityFinalization.unregister(this);
+        return ptr;
+    }
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_identity_free(ptr, 0);
+    }
+    /**
+     * BLAKE2b-256 of the description, personalized "ZSA-AssetDescCRH".
+     * @returns {string}
+     */
+    get asset_desc_hash() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.__wbg_get_identity_asset_desc_hash(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * BLAKE2b-512 of the encoded Asset Identifier, personalized
+     * "ZSA-Asset-Digest". The Asset Base is this digest hashed to the curve.
+     * @returns {string}
+     */
+    get asset_digest() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.__wbg_get_identity_asset_digest(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * The Asset Base: the id the chain, the registry and the URLs use.
+     * @returns {string}
+     */
+    get asset_id() {
+        let deferred1_0;
+        let deferred1_1;
+        try {
+            const ret = wasm.__wbg_get_identity_asset_id(this.__wbg_ptr);
+            deferred1_0 = ret[0];
+            deferred1_1 = ret[1];
+            return getStringFromWasm0(ret[0], ret[1]);
+        } finally {
+            wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+        }
+    }
+    /**
+     * BLAKE2b-256 of the description, personalized "ZSA-AssetDescCRH".
+     * @param {string} arg0
+     */
+    set asset_desc_hash(arg0) {
+        const ptr0 = passStringToWasm0(arg0, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_identity_asset_desc_hash(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * BLAKE2b-512 of the encoded Asset Identifier, personalized
+     * "ZSA-Asset-Digest". The Asset Base is this digest hashed to the curve.
+     * @param {string} arg0
+     */
+    set asset_digest(arg0) {
+        const ptr0 = passStringToWasm0(arg0, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_identity_asset_digest(this.__wbg_ptr, ptr0, len0);
+    }
+    /**
+     * The Asset Base: the id the chain, the registry and the URLs use.
+     * @param {string} arg0
+     */
+    set asset_id(arg0) {
+        const ptr0 = passStringToWasm0(arg0, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        wasm.__wbg_set_identity_asset_id(this.__wbg_ptr, ptr0, len0);
+    }
+}
+if (Symbol.dispose) Identity.prototype[Symbol.dispose] = Identity.prototype.free;
+
+/**
+ * Derive the asset id, description hash and Asset Digest for the browser,
+ * as lowercase hex.
  *
  * `issuance_key_hex` is the 66-character ZIP 227 encoding served as an
  * asset's `issuer`. Every input comes off the wire, so malformed values
  * are errors rather than panics.
  * @param {string} issuance_key_hex
  * @param {string} description
- * @returns {string}
+ * @returns {Identity}
  */
-export function derive_asset_id(issuance_key_hex, description) {
-    let deferred4_0;
-    let deferred4_1;
-    try {
-        const ptr0 = passStringToWasm0(issuance_key_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len0 = WASM_VECTOR_LEN;
-        const ptr1 = passStringToWasm0(description, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-        const len1 = WASM_VECTOR_LEN;
-        const ret = wasm.derive_asset_id(ptr0, len0, ptr1, len1);
-        var ptr3 = ret[0];
-        var len3 = ret[1];
-        if (ret[3]) {
-            ptr3 = 0; len3 = 0;
-            throw takeFromExternrefTable0(ret[2]);
-        }
-        deferred4_0 = ptr3;
-        deferred4_1 = len3;
-        return getStringFromWasm0(ptr3, len3);
-    } finally {
-        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+export function derive_identity(issuance_key_hex, description) {
+    const ptr0 = passStringToWasm0(issuance_key_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(description, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.derive_identity(ptr0, len0, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
     }
+    return Identity.__wrap(ret[0]);
 }
 function __wbg_get_imports() {
     const import0 = {
@@ -38,6 +129,9 @@ function __wbg_get_imports() {
         __wbg_Error_408e67f47ca7b58b: function(arg0, arg1) {
             const ret = Error(getStringFromWasm0(arg0, arg1));
             return ret;
+        },
+        __wbg___wbindgen_throw_bb96b2010945f0bc: function(arg0, arg1) {
+            throw new Error(getStringFromWasm0(arg0, arg1));
         },
         __wbindgen_init_externref_table: function() {
             const table = wasm.__wbindgen_externrefs;
@@ -54,6 +148,10 @@ function __wbg_get_imports() {
         "./cachet_verify_engine_bg.js": import0,
     };
 }
+
+const IdentityFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_identity_free(ptr, 1));
 
 function getStringFromWasm0(ptr, len) {
     return decodeText(ptr >>> 0, len);
