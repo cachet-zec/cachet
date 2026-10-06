@@ -6,13 +6,14 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { AssetEvents } from "@/components/asset-events";
+import { AssetShare } from "@/components/asset-qr";
 import { CopyButton } from "@/components/copy-button";
 import { IdPlate } from "@/components/id-plate";
 import { KeptAsset } from "@/components/kept-asset";
 import { SealedText } from "@/components/sealed-text";
 import { api, apiBaseUrl, problemMessage } from "@/lib/api";
 import { safeImageDataUri, sealedName } from "@/lib/sealed-name";
-import { deriveAssetId } from "@/lib/verify-engine";
+import { deriveIdentity } from "@/lib/verify-engine";
 import { card, fieldLabel, ghostButton, input, stamp } from "@/lib/ui";
 
 /** A page section's heading: the engraved face, under a hairline. */
@@ -104,8 +105,8 @@ function useDerivedIdentity(assetId: string, issuer?: string | null, description
     enabled: Boolean(issuer && description),
     retry: false,
     queryFn: async () => {
-      const derived = await deriveAssetId(issuer!, description!);
-      return { derived, matches: derived === assetId.toLowerCase() };
+      const derived = await deriveIdentity(issuer!, description!);
+      return { derived, matches: derived.assetId === assetId.toLowerCase() };
     },
   });
 }
@@ -459,6 +460,14 @@ export function AssetDetail({
           </section>
 
           <section className="mt-14">
+            <h2 className={sectionTitle}>Share</h2>
+            <AssetShare
+              assetId={assetId}
+              digest={identity.data?.matches ? identity.data.derived.assetDigest : undefined}
+            />
+          </section>
+
+          <section className="mt-14">
             <h2 className={sectionTitle}>Register entry</h2>
             <dl className="mt-3">
               <EntryRow label="Asset id" value={assetId} />
@@ -471,6 +480,29 @@ export function AssetDetail({
                     All assets from this issuer →
                   </Link>
                 </EntryRow>
+              )}
+              {/* Shown only once this browser derived them from the same
+                  inputs as the asset id it just matched: never the registry's
+                  word. The digest is the 64-byte name ZIP 227 suggests
+                  wallets exchange (a QR code, for one). */}
+              {identity.data?.matches && (
+                <>
+                  <EntryRow
+                    label="Asset digest"
+                    hint="ZIP 227 · BLAKE2b-512"
+                    value={identity.data.derived.assetDigest}
+                  >
+                    <p className="mt-2 max-w-prose text-[13px] leading-relaxed text-neutral-500">
+                      The compact form wallets can exchange. The asset id is this digest hashed to
+                      the curve. Derived in your browser.
+                    </p>
+                  </EntryRow>
+                  <EntryRow
+                    label="Description hash"
+                    hint="ZIP 227 · BLAKE2b-256"
+                    value={identity.data.derived.assetDescHash}
+                  />
+                </>
               )}
               {envelope && (
                 <EntryRow label="Metadata commitment" hint="SHA-256" value={envelope.sha256} />

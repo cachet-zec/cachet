@@ -6,6 +6,21 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Asset pages show the asset's ZIP 227 Asset Digest and description hash,
+  derived in the reader's browser by the verification engine and shown
+  only once the asset id it derived matches. The digest is the 64-byte
+  form ZIP 227 suggests wallets exchange.
+- A Share section on asset pages: a QR code of the page link, or of the
+  Asset Digest once it is derived, with the value beside it to copy. The
+  code is drawn as plain SVG from `uqr` (no dependencies of its own),
+  dark on white so any scanner reads it.
+- `packages/registry-spec/vectors/zip227-identity.json`: issuer and
+  description pairs with their description hash, Asset Digest and asset
+  id, for other wallets and explorers to check against. The engine's tests
+  and the CI wasm smoke test recompute them from the shipped module.
+
 ### Changed
 
 - The protocol stack moves to the line with the fixed Orchard circuit

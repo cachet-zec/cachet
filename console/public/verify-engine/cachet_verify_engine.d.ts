@@ -2,19 +2,50 @@
 /* eslint-disable */
 
 /**
- * Derive the asset id, as lowercase hex, for the browser.
+ * What ZIP 227 derives from one issuer key and one description, as
+ * lowercase hex.
+ */
+export class Identity {
+    private constructor();
+    free(): void;
+    [Symbol.dispose](): void;
+    /**
+     * BLAKE2b-256 of the description, personalized "ZSA-AssetDescCRH".
+     */
+    asset_desc_hash: string;
+    /**
+     * BLAKE2b-512 of the encoded Asset Identifier, personalized
+     * "ZSA-Asset-Digest". The Asset Base is this digest hashed to the curve.
+     */
+    asset_digest: string;
+    /**
+     * The Asset Base: the id the chain, the registry and the URLs use.
+     */
+    asset_id: string;
+}
+
+/**
+ * Derive the asset id, description hash and Asset Digest for the browser,
+ * as lowercase hex.
  *
  * `issuance_key_hex` is the 66-character ZIP 227 encoding served as an
  * asset's `issuer`. Every input comes off the wire, so malformed values
  * are errors rather than panics.
  */
-export function derive_asset_id(issuance_key_hex: string, description: string): string;
+export function derive_identity(issuance_key_hex: string, description: string): Identity;
 
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly derive_asset_id: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly __wbg_get_identity_asset_desc_hash: (a: number) => [number, number];
+    readonly __wbg_get_identity_asset_digest: (a: number) => [number, number];
+    readonly __wbg_get_identity_asset_id: (a: number) => [number, number];
+    readonly __wbg_identity_free: (a: number, b: number) => void;
+    readonly __wbg_set_identity_asset_desc_hash: (a: number, b: number, c: number) => void;
+    readonly __wbg_set_identity_asset_digest: (a: number, b: number, c: number) => void;
+    readonly __wbg_set_identity_asset_id: (a: number, b: number, c: number) => void;
+    readonly derive_identity: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;
     readonly rustsecp256k1_v0_10_0_default_illegal_callback_fn: (a: number, b: number) => void;
     readonly rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;

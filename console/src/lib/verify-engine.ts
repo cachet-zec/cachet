@@ -11,15 +11,37 @@
  * the description, both public. Recomputing it here and comparing against
  * the id the reader asked for closes the chain, with nothing trusted.
  *
+ * The same derivation yields the asset's other ZIP 227 names (description
+ * hash, Asset Digest), so a page can show them without taking them from
+ * the registry either.
+ *
  * The engine is a separate, much smaller wasm module than the mint one:
  * no proving circuit, ~250 KB, loaded on demand and only once per session.
  */
 
 /** Bump on every rebuild of the verification engine, as for the mint one. */
-const ENGINE_VERSION = "c65c4f1cec16";
+const ENGINE_VERSION = "8a6b3ce9e27b";
 const BASE = "/verify-engine";
 
-type Derive = (issuanceKeyHex: string, description: string) => string;
+/** What ZIP 227 derives from an issuer key and a description, in hex. */
+export type AssetIdentity = {
+  /** The Asset Base: the id the chain and the registry use. */
+  assetId: string;
+  /** BLAKE2b-256 of the description ("ZSA-AssetDescCRH"). */
+  assetDescHash: string;
+  /** BLAKE2b-512 of the encoded Asset Identifier ("ZSA-Asset-Digest"). */
+  assetDigest: string;
+};
+
+/** The wasm-bindgen object: getters over wasm memory, freed by hand. */
+type WasmIdentity = {
+  asset_id: string;
+  asset_desc_hash: string;
+  asset_digest: string;
+  free(): void;
+};
+
+type Derive = (issuanceKeyHex: string, description: string) => WasmIdentity;
 
 let engine: Promise<Derive> | null = null;
 
@@ -33,22 +55,34 @@ function load(): Promise<Derive> {
     await mod.default({
       module_or_path: `${BASE}/cachet_verify_engine_bg.wasm?v=${ENGINE_VERSION}`,
     });
-    return mod.derive_asset_id as Derive;
+    return mod.derive_identity as Derive;
   })();
 }
 
 /**
- * Derive the asset id `issuanceKeyHex` would mint `description` under.
+ * Derive the identity `issuanceKeyHex` would mint `description` under.
  *
  * The module is fetched once and reused; a failed load is not cached, so a
  * transient network error does not disable verification for the session.
  */
-export async function deriveAssetId(issuanceKeyHex: string, description: string): Promise<string> {
+export async function deriveIdentity(
+  issuanceKeyHex: string,
+  description: string,
+): Promise<AssetIdentity> {
   if (!engine) {
     engine = load().catch((error) => {
       engine = null;
       throw error;
     });
   }
-  return (await engine)(issuanceKeyHex, description);
+  const derived = (await engine)(issuanceKeyHex, description);
+  try {
+    return {
+      assetId: derived.asset_id,
+      assetDescHash: derived.asset_desc_hash,
+      assetDigest: derived.asset_digest,
+    };
+  } finally {
+    derived.free();
+  }
 }

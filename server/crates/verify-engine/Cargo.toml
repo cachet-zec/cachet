@@ -24,3 +24,14 @@ orchard = { version = "0.14.0", default-features = false, features = ["std", "zs
 nonempty = { version = "0.11", default-features = false }
 wasm-bindgen = "0.2"
 hex = { workspace = true }
+# The Asset Digest (ZIP 227): orchard computes it but keeps it private.
+# Same pin as orchard's, so the lockfile gains nothing.
+blake2b_simd = { version = "=1.0.1", default-features = false }
+
+[dev-dependencies]
+# Tests check the digest against the asset id the chain assigned, by hashing
+# it to the curve exactly as orchard does.
+pasta_curves = "0.5"
+group = "0.13"
+# Reads the published vectors (packages/registry-spec/vectors).
+serde_json = { workspace = true }
