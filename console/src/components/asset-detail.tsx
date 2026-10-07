@@ -132,7 +132,7 @@ function verificationBadge(
     return {
       ok: false,
       label: "✗ metadata hash mismatch",
-      title: "The bundle served does not hash to the commitment in the on-chain description.",
+      title: "The bundle served does not hash to the commitment in the asset description.",
     };
   }
   if (identity?.matches && hasEnvelope && bundle?.verified) {
@@ -459,7 +459,7 @@ export function AssetDetail({
                         : "pending"
                 }
                 text={{
-                  ok: "Name, text and image match the hash sealed on chain.",
+                  ok: "Name, text and image match the hash sealed into the asset id.",
                   failed:
                     "The bundle served does not hash to the commitment in the description. Its content is not shown.",
                   pending: "Fetching the metadata bundle and hashing it…",
@@ -521,7 +521,7 @@ export function AssetDetail({
                 <EntryRow label="Metadata commitment" hint="SHA-256" value={envelope.sha256} />
               )}
               {state.data.description && (
-                <EntryRow label="On-chain description" value={state.data.description} />
+                <EntryRow label="Asset description" value={state.data.description} />
               )}
               {!state.data.description && <ResolveDescription assetId={assetId} />}
             </dl>
@@ -662,7 +662,7 @@ function ResolveDescription({ assetId }: { assetId: string }) {
   return (
     <div className="grid gap-x-8 gap-y-1.5 border-b border-line py-4 last:border-b-0 sm:grid-cols-[13rem_minmax(0,1fr)]">
       <dt>
-        <span className="block text-base font-medium text-neutral-100">On-chain description</span>
+        <span className="block text-base font-medium text-neutral-100">Asset description</span>
         <span className="font-data block text-[13px] text-neutral-500">unresolved</span>
       </dt>
       <dd className="min-w-0">

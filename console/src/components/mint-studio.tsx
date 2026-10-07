@@ -49,7 +49,7 @@ export function MintStudio() {
   const [remintId, setRemintId] = useState<string | null>(null);
   const [finalize, setFinalize] = useState(true);
   // Sealing an asset that exists, with no new units (/mint?seal=<asset id>):
-  // its on-chain description is loaded and locked, and only the seed that
+  // its asset description is loaded and locked, and only the seed that
   // issued it gives the same id. `remintId` holds the id this seed gives.
   const [sealing, setSealing] = useState<{ assetId: string; description: string } | null>(null);
   // The asset this page is bound to, if any: content locked, id checked.
@@ -265,9 +265,9 @@ export function MintStudio() {
       const trimmedSeed = seed.trim();
 
       // 1. Seal the full bundle — name, optional description and image —
-      //    into a metadata bundle; its hash goes into the on-chain
+      //    into a metadata bundle; its hash goes into the asset
       //    description and thus the asset id itself. Sealing an existing
-      //    asset reuses its on-chain description: nothing new is stored.
+      //    asset reuses its asset description: nothing new is stored.
       setPhase(1);
       let chainDescription: string;
       if (sealing) {

@@ -1,5 +1,6 @@
-//! Asset metadata: the bridge between the 512-byte on-chain description
-//! and rich off-chain metadata.
+//! Asset metadata: the bridge between the asset description (at most 512
+//! bytes, Cachet's cap; the chain carries only its hash) and rich
+//! off-chain metadata.
 //!
 //! Model (v1):
 //! - A **metadata bundle** is a JSON document (name, long description,
@@ -163,7 +164,7 @@ fn image_signature_matches(prefix: &str, payload: &str) -> bool {
     }
 }
 
-/// The compact on-chain description envelope.
+/// The compact asset description envelope.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChainDescription {
     pub v: u32,

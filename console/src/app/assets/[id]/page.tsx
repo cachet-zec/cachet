@@ -44,7 +44,7 @@ export async function generateMetadata({
         alt: `${asset.display_name}, a Zcash Shielded Asset`,
       },
       title: `${asset.display_name} · Cachet`,
-      description: `A Zcash Shielded Asset on the public ZSA testnet. Supply ${String(asset.total_supply ?? "?")}, ${state}. Metadata sealed on chain and verified in your browser.`,
+      description: `A Zcash Shielded Asset on the public ZSA testnet. Supply ${String(asset.total_supply ?? "?")}, ${state}. Metadata sealed into the asset id and verified in your browser.`,
       path,
     });
   } catch {

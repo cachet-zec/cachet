@@ -1035,7 +1035,7 @@
     "/api/v1/metadata": {
       "post": {
         "tags": ["metadata"],
-        "summary": "Register a metadata bundle and get back the on-chain description that\nbinds it to the asset at issuance.",
+        "summary": "Register a metadata bundle and get back the asset description that\nbinds it to the asset at issuance.",
         "operationId": "upload_metadata",
         "requestBody": {
           "content": {
@@ -1819,7 +1819,7 @@
           },
           "description": {
             "type": ["string", "null"],
-            "description": "Raw chain description, when known. The chain only stores the\ndescription hash, so this is present only for assets issued through\nthis instance (local journal)."
+            "description": "Raw asset description, when known. The chain only stores the\ndescription hash, so this is present only for assets issued through\nthis instance (local journal)."
           },
           "display_name": {
             "type": ["string", "null"],
@@ -2180,7 +2180,7 @@
           },
           "description": {
             "type": "string",
-            "description": "The on-chain description as it was: for a Cachet asset, the v1\nenvelope naming the sealed bundle."
+            "description": "The asset description as it was: for a Cachet asset, the v1\nenvelope naming the sealed bundle."
           },
           "display_name": {
             "type": "string"
@@ -2230,7 +2230,7 @@
         "properties": {
           "chain_description": {
             "type": "string",
-            "description": "Ready-to-use on-chain description (`{\"v\":1,\"name\":…,\"sha256\":…}`)."
+            "description": "Ready-to-use asset description (`{\"v\":1,\"name\":…,\"sha256\":…}`)."
           },
           "sha256": {
             "type": "string",
@@ -2434,7 +2434,7 @@
       },
       "ResolveDescriptionRequest": {
         "type": "object",
-        "description": "Request body for resolving an asset's on-chain description.\n\nPermissionless by design: the chain stores only the description hash\n(ZIP 227), so a preimage either matches the commitment or is rejected —\nthe registry cannot be lied to. This is how assets issued by *other*\nparties gain names here.",
+        "description": "Request body for resolving an asset's description.\n\nPermissionless by design: the chain stores only the description hash\n(ZIP 227), so a preimage either matches the commitment or is rejected —\nthe registry cannot be lied to. This is how assets issued by *other*\nparties gain names here.",
         "required": ["description"],
         "properties": {
           "description": {

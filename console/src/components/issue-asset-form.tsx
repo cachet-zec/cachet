@@ -22,7 +22,7 @@ export function IssueAssetForm() {
   const issue = useMutation({
     mutationFn: async () => {
       // 1. Register the metadata bundle; its hash becomes part of the
-      //    immutable on-chain description.
+      //    immutable asset description.
       setStage("Sealing metadata…");
       const meta = await api.POST("/api/v1/metadata", {
         body: {

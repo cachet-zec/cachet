@@ -1,7 +1,7 @@
 /**
  * Asset-id derivation, in the reader's browser.
  *
- * Re-hashing a bundle against the `sha256` inside an on-chain description
+ * Re-hashing a bundle against the `sha256` inside an asset description
  * proves the bundle matches the description. It does not prove the
  * description is the one the chain committed to - a registry serving a
  * fabricated pair would pass that check.

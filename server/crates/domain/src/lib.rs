@@ -30,7 +30,7 @@ pub enum NameSource {
     /// Cachet v1 envelope: the name is sealed (via the bundle hash) into
     /// the asset id itself.
     Envelope,
-    /// Free-text on-chain description: issuer-chosen, no format, display
+    /// Free-text asset description: issuer-chosen, no format, display
     /// only as an unverified label.
     FreeText,
 }

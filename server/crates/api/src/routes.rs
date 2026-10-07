@@ -866,7 +866,7 @@ pub(crate) async fn relay_transaction(
     Ok((StatusCode::ACCEPTED, Json(txid.into())))
 }
 
-/// Register a metadata bundle and get back the on-chain description that
+/// Register a metadata bundle and get back the asset description that
 /// binds it to the asset at issuance.
 #[utoipa::path(
     post,

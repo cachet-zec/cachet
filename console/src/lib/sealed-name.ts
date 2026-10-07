@@ -1,5 +1,5 @@
 /**
- * The name an asset page shows, read from the on-chain description in the
+ * The name an asset page shows, read from the asset description in the
  * browser instead of taken from the registry's `display_name`.
  *
  * The page checks that the description derives the asset id, so a name
