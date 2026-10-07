@@ -60,6 +60,11 @@ const nextConfig: NextConfig = {
   // No `X-Powered-By: Next.js`: it tells a scanner which advisories to try.
   poweredByHeader: false,
 
+  // No browser source maps in production. It is Next's default; written
+  // down so it cannot be switched on by accident: a map ships the build's
+  // internal paths for nothing (the source is public on GitHub anyway).
+  productionBrowserSourceMaps: false,
+
   // Privacy/security headers on every console response. Referrer-Policy is
   // the load-bearing one: outbound links (issuer external_url, GitHub) must
   // never learn which asset page the visitor came from.
