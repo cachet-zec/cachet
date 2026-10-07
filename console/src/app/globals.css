@@ -477,3 +477,31 @@ a:focus-visible .seal-edge {
     transition: none;
   }
 }
+
+/* Number fields: the browser's spinner arrows are tiny targets drawn in
+   the system's colours. Typing and the arrow keys still work. */
+input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Selects draw their own chevron, in the page's ink, instead of the
+   system arrow. */
+.select-field {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%238da596' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.9rem center;
+  background-size: 12px 8px;
+  padding-right: 2.5rem;
+  cursor: pointer;
+}
+.select-field:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

@@ -37,7 +37,7 @@ export function RegistrySwitch() {
         data-testid="registry-switch"
         value={current}
         onChange={(event) => choose(event.target.value)}
-        className="rounded-[2px] border border-line bg-ground px-2 py-1 text-[13px] text-neutral-200 outline-none focus:border-accent/60"
+        className="select-field rounded-[2px] border border-line bg-ground px-2 py-1 text-[13px] text-neutral-200 outline-none focus:border-accent/60"
       >
         {REGISTRIES.map((registry) => (
           <option key={registry} value={registry}>

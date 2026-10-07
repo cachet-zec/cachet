@@ -1,19 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { CopyButton } from "@/components/copy-button";
 import { HoldingsPanel } from "@/components/holdings-panel";
 import { ImagePicker } from "@/components/image-picker";
 import { MintGauge } from "@/components/mint-gauge";
 import { SignedTransaction, type SignedTx } from "@/components/signed-transaction";
-import { SwapPanel } from "@/components/swap-panel";
+import { SeedCard } from "@/components/seed-card";
 import { api, problemMessage } from "@/lib/api";
 import { fetchKept, loadSealedContent } from "@/lib/kept";
+import { useBrowserWallet } from "@/lib/browser-wallet";
 import { assertSealsWhatWasTyped } from "@/lib/sealed-check";
 import { safeImageDataUri } from "@/lib/sealed-name";
-import { card, cardTitle, ghostButton, input, label, primaryButton, stamp } from "@/lib/ui";
+import { card, cardTitle, input, label, primaryButton, stamp } from "@/lib/ui";
 
 /**
  * The browser mint studio: keys are generated and held in this page's
@@ -22,16 +24,9 @@ import { card, cardTitle, ghostButton, input, label, primaryButton, stamp } from
  * read-only deployments by design — the instance signs nothing.
  */
 export function MintStudio() {
-  const workerRef = useRef<Worker | null>(null);
-  const nextId = useRef(0);
-
-  const [seed, setSeed] = useState("");
-  // Masked by default: a phrase on screen is on every screenshot and
-  // stream. Copy works while masked, so revealing is never required.
-  const [seedRevealed, setSeedRevealed] = useState(false);
-  const [seedSaved, setSeedSaved] = useState(false);
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [issuer, setIssuer] = useState<string | null>(null);
+  const router = useRouter();
+  const { call, seed, seedSaved, issuer, warm, engineReady, engineThreads, provingReady } =
+    useBrowserWallet();
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -71,27 +66,6 @@ export function MintStudio() {
   const [holdRelay, setHoldRelay] = useState(false);
   const [signed, setSigned] = useState<{ tx: SignedTx; relayFailed: boolean } | null>(null);
 
-  const call = useCallback(<T,>(cmd: string, args?: Record<string, unknown>): Promise<T> => {
-    if (!workerRef.current) {
-      workerRef.current = new Worker("/mint-worker.js", { type: "module" });
-    }
-    const worker = workerRef.current;
-    const id = nextId.current++;
-    return new Promise<T>((resolve, reject) => {
-      const onMessage = (event: MessageEvent) => {
-        if (event.data.id !== id) return;
-        worker.removeEventListener("message", onMessage);
-        if (event.data.ok) resolve(event.data.result as T);
-        else reject(new Error(event.data.error));
-      };
-      worker.addEventListener("message", onMessage);
-      worker.postMessage({ id, cmd, args });
-    });
-  }, []);
-
-  const [engineThreads, setEngineThreads] = useState(1);
-  const [engineReady, setEngineReady] = useState(false);
-  const [provingReady, setProvingReady] = useState(false);
   // The operator's pause switch, read from the public chain info and
   // re-read every 15 s so a flip reaches an open page without a reload.
   const [paused, setPaused] = useState(false);
@@ -108,47 +82,16 @@ export function MintStudio() {
       clearInterval(timer);
     };
   }, []);
-  const provingWarmed = useRef(false);
 
-  // Warm up on mount: spawn the worker and let the browser download and
-  // compile the wasm engine while the visitor reads the page. On
-  // cross-origin-isolated pages the worker picks the threaded build;
-  // remember the pool size so progress copy can be honest about speed.
+  // Warm up on mount: let the browser download and compile the wasm
+  // engine while the visitor reads the page.
+  useEffect(() => warm(), [warm]);
+
+  // Old links to take an offer here: swaps have their own page now.
   useEffect(() => {
-    call<{ threads: number }>("engine_info")
-      .then((info) => {
-        setEngineThreads(info.threads);
-        setEngineReady(true);
-      })
-      .catch(() => {});
-    return () => {
-      // Forget it as well as stop it: a remount (React's development double
-      // mount, for one) would otherwise keep talking to a dead worker.
-      workerRef.current?.terminate();
-      workerRef.current = null;
-    };
-  }, [call]);
-
-  const generateSeed = async () => {
-    setError(null);
-    const { seed } = await call<{ seed: string }>("generate_seed");
-    setSeed(seed);
-    setSeedSaved(false);
-    setSeedRevealed(false);
-  };
-
-  // The moment the user has confirmed the seed is saved, start building
-  // the proving key in the worker: it takes seconds, is seed-independent,
-  // and the user is about to spend those seconds typing a name anyway.
-  // Fired once per page; the vendored proving-key cache keeps it for
-  // every mint of the session.
-  useEffect(() => {
-    if (!seedSaved || provingWarmed.current) return;
-    provingWarmed.current = true;
-    call("prepare_proving")
-      .then(() => setProvingReady(true))
-      .catch(() => {});
-  }, [seedSaved, call]);
+    const take = new URLSearchParams(window.location.search).get("take");
+    if (take) router.replace(`/swaps?take=${encodeURIComponent(take)}`);
+  }, [router]);
 
   // A kept asset to bring back, named in the address.
   useEffect(() => {
@@ -238,22 +181,6 @@ export function MintStudio() {
       cancelled = true;
     };
   }, [locked, issuer, seed, call]);
-
-  // Derive the issuer identity whenever a plausible seed is present.
-  useEffect(() => {
-    const words = seed.trim().split(/\s+/).length;
-    if (words !== 24 && words !== 12) {
-      setIssuer(null);
-      return;
-    }
-    let cancelled = false;
-    call<{ issuer: string }>("issuer_info", { seed: seed.trim(), description: "probe" })
-      .then((info) => !cancelled && setIssuer(info.issuer))
-      .catch(() => !cancelled && setIssuer(null));
-    return () => {
-      cancelled = true;
-    };
-  }, [seed, call]);
 
   const mint = async () => {
     setError(null);
@@ -519,153 +446,12 @@ export function MintStudio() {
 
         <div className="flex min-w-0 flex-col gap-5">
           {/* Step 1: identity */}
-          <section className={`${card} rise rise-2`}>
-            <h2 className={`${cardTitle} mb-3`}>1 · Issuer identity</h2>
-            {/* Empty state: two clearly separate paths. */}
-            {!seed && !pasteOpen && (
-              <div className="flex flex-wrap items-center gap-3">
-                <button
-                  type="button"
-                  className={ghostButton}
-                  onClick={generateSeed}
-                  disabled={!!stage}
-                >
-                  Generate a new seed
-                </button>
-                <button
-                  type="button"
-                  className="text-sm text-neutral-300 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
-                  onClick={() => setPasteOpen(true)}
-                >
-                  I already have one
-                </button>
-              </div>
-            )}
-
-            {/* Generated: the phrase is a credential being issued, not a form —
-            a numbered, read-only word grid. */}
-            {seed !== "" && !pasteOpen && (
-              <>
-                <ol
-                  data-testid="mint-seed-grid"
-                  className="grid grid-cols-2 gap-x-4 gap-y-1.5 rounded-md border border-white/10 bg-black/30 p-3.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)] sm:grid-cols-4"
-                >
-                  {seed
-                    .trim()
-                    .split(/\s+/)
-                    .map((word, index) => (
-                      <li
-                        key={`${index}-${word}`}
-                        className="font-data flex items-baseline gap-1.5 text-sm text-neutral-200"
-                      >
-                        <span className="w-4 shrink-0 text-right text-[13px] text-neutral-600">
-                          {index + 1}
-                        </span>
-                        {/* Fixed-width mask: even word lengths stay private. */}
-                        {seedRevealed ? word : <span className="text-neutral-500">••••••</span>}
-                      </li>
-                    ))}
-                </ol>
-                <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                  <CopyButton value={seed} label="Copy phrase" />
-                  <button
-                    type="button"
-                    data-testid="mint-seed-reveal"
-                    aria-pressed={seedRevealed}
-                    title="Copy works while hidden: the clipboard gets the real phrase either way."
-                    className="text-[13px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
-                    onClick={() => setSeedRevealed(!seedRevealed)}
-                  >
-                    {seedRevealed ? "hide words" : "show words"}
-                  </button>
-                  <button
-                    type="button"
-                    className="text-[13px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
-                    onClick={generateSeed}
-                    disabled={!!stage}
-                  >
-                    generate another
-                  </button>
-                  <button
-                    type="button"
-                    className="text-[13px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
-                    onClick={() => {
-                      setSeed("");
-                      setSeedSaved(false);
-                      setPasteOpen(true);
-                    }}
-                    disabled={!!stage}
-                  >
-                    use my own instead
-                  </button>
-                  <span className="font-data text-[13px] uppercase tracking-[0.16em] text-accent">
-                    testnet identity
-                  </span>
-                </div>
-              </>
-            )}
-
-            {/* Import: the one case where typing makes sense. */}
-            {pasteOpen && (
-              <>
-                <textarea
-                  data-testid="mint-seed"
-                  className={`${input} min-h-20 resize-y`}
-                  value={seed}
-                  onChange={(event) => {
-                    setSeed(event.target.value);
-                    setSeedSaved(false);
-                  }}
-                  placeholder="12 or 24 words…"
-                  spellCheck={false}
-                  autoFocus
-                />
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5">
-                  <p className="text-[13px] text-neutral-600">
-                    Testnet only - never paste a seed that guards real funds.
-                  </p>
-                  <button
-                    type="button"
-                    className="text-[13px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
-                    onClick={() => {
-                      setPasteOpen(false);
-                      void generateSeed();
-                    }}
-                    disabled={!!stage}
-                  >
-                    generate a new one instead
-                  </button>
-                </div>
-              </>
-            )}
-
-            {seed && (issuer || !pasteOpen) && (
-              <label className="mt-3 flex cursor-pointer items-start gap-2 text-[13px] leading-relaxed text-neutral-400">
-                <input
-                  type="checkbox"
-                  data-testid="mint-seed-saved"
-                  className="mt-0.5 h-4 w-4 accent-accent"
-                  checked={seedSaved}
-                  onChange={(event) => setSeedSaved(event.target.checked)}
-                />
-                <span>
-                  I saved this phrase somewhere safe. It IS the issuer identity: lose it and nobody
-                  can ever mint under this identity again; this page keeps it in memory only and
-                  forgets it on reload.
-                </span>
-              </label>
-            )}
-            {issuer && (
-              <p className="font-data mt-3 break-all text-[13px] text-neutral-500">
-                issuer key <span className="text-neutral-300">{issuer}</span>
-              </p>
-            )}
-            {pasteOpen && seed !== "" && !issuer && (
-              <p className="mt-3 text-[13px] text-neutral-500">
-                Enter a valid 12 or 24-word phrase.
-              </p>
-            )}
-          </section>
+          <SeedCard
+            title="1 · Issuer identity"
+            savedNote="It IS the issuer identity: lose it and nobody can ever mint under this identity again."
+            busy={!!stage}
+            className="rise rise-2"
+          />
 
           {/* Step 2: the asset */}
           <section className={`${card} rise rise-3`}>
@@ -1034,13 +820,17 @@ export function MintStudio() {
         mintCount={mintCount}
       />
 
-      {/* Atomic swaps: same worker, same keys; holdings refresh after each step. */}
-      <SwapPanel
-        call={call}
-        seed={seed}
-        enabled={issuer !== null && seedSaved}
-        onChange={() => setMintCount((count) => count + 1)}
-      />
+      {/* Swaps have their own page; the seed above carries over to it. */}
+      <p className="px-1 text-sm leading-relaxed text-neutral-400">
+        Trade what you hold for another asset, in one shielded transaction:{" "}
+        <Link
+          href="/swaps"
+          className="text-accent underline decoration-accent/30 underline-offset-4"
+        >
+          open the swap board
+        </Link>
+        . This seed goes with you.
+      </p>
     </div>
   );
 }
