@@ -227,6 +227,29 @@ impl HotWallet {
         }
     }
 
+    /// Close a block: the tree state after it stays available as an anchor
+    /// for the last `MAX_CHECKPOINTS` blocks. Call once per block, after
+    /// its transactions, in height order. A swap needs it: both parties
+    /// must witness their notes against the SAME anchor, and the other
+    /// party's anchor is rarely this wallet's current one.
+    pub fn checkpoint(&mut self, height: u32) {
+        self.tree.checkpoint(height);
+    }
+
+    /// How many checkpoints back `anchor` sits (0: the current state).
+    fn checkpoint_depth(&self, anchor: &Anchor) -> Option<usize> {
+        (0..=MAX_CHECKPOINTS).find(|&depth| {
+            self.tree
+                .root(depth)
+                .is_some_and(|root| Anchor::from(root) == *anchor)
+        })
+    }
+
+    /// Whether this wallet can witness its notes against `anchor`.
+    pub fn knows_anchor(&self, anchor: &Anchor) -> bool {
+        self.checkpoint_depth(anchor).is_some()
+    }
+
     /// Anchor of the current tree state, valid for spends of any marked note.
     pub fn anchor(&self) -> Result<Anchor, NotesError> {
         self.tree.root(0).map(Anchor::from).ok_or_else(|| {
@@ -286,6 +309,55 @@ impl HotWallet {
         asset: AssetBase,
         amount: u64,
     ) -> Result<SelectedInputs, NotesError> {
+        self.select_inputs_at_depth(account, asset, amount, 0)
+    }
+
+    /// Every unspent note of `account`, each with its path at the current
+    /// anchor (a swap offer hands one over whole).
+    pub fn unspent_notes(&self, account: u32) -> Result<Vec<(Note, MerklePath)>, NotesError> {
+        self.notes
+            .iter()
+            .filter(|owned| !owned.spent && self.accounts[owned.account_slot].index == account)
+            .map(|owned| {
+                let witness = self.tree.witness(owned.position, 0).map_err(|error| {
+                    NotesError::Tree(format!(
+                        "could not witness note at {:?}: {error:?}",
+                        owned.position
+                    ))
+                })?;
+                let path = MerklePath::from_parts(
+                    u64::from(owned.position) as u32,
+                    witness
+                        .try_into()
+                        .map_err(|_| NotesError::Tree("witness has unexpected depth".to_owned()))?,
+                );
+                Ok((owned.note, path))
+            })
+            .collect()
+    }
+
+    /// Like `select_inputs`, with every path witnessed against `anchor`
+    /// (the current state or one of the last `MAX_CHECKPOINTS` blocks).
+    pub fn select_inputs_at(
+        &self,
+        account: u32,
+        asset: AssetBase,
+        amount: u64,
+        anchor: &Anchor,
+    ) -> Result<SelectedInputs, NotesError> {
+        let depth = self.checkpoint_depth(anchor).ok_or_else(|| {
+            NotesError::Tree("this wallet has not seen that anchor in its recent blocks".to_owned())
+        })?;
+        self.select_inputs_at_depth(account, asset, amount, depth)
+    }
+
+    fn select_inputs_at_depth(
+        &self,
+        account: u32,
+        asset: AssetBase,
+        amount: u64,
+        depth: usize,
+    ) -> Result<SelectedInputs, NotesError> {
         let mut inputs = Vec::new();
         let mut total = 0u64;
 
@@ -294,7 +366,7 @@ impl HotWallet {
                 && owned.note.asset() == asset
                 && self.accounts[owned.account_slot].index == account
         }) {
-            let witness = self.tree.witness(owned.position, 0).map_err(|error| {
+            let witness = self.tree.witness(owned.position, depth).map_err(|error| {
                 NotesError::Tree(format!(
                     "could not witness note at {:?}: {error:?}",
                     owned.position

@@ -38,6 +38,9 @@ export function build_issuance_tx(seed_phrase, description, amount, finalize, fi
  * (recipient null) of `amount` units of `asset_id`, spending notes the
  * scanned wallet owns. Change returns to the wallet's own address.
  *
+ * `from_slot` spends from a swap slot instead of the main account: how an
+ * offer is withdrawn (to the main address) or cancelled.
+ *
  * Heavy: Halo2 proving. Run inside the Web Worker, ideally after
  * `prepare_proving` has warmed the proving key.
  * @param {string} seed_phrase
@@ -45,16 +48,17 @@ export function build_issuance_tx(seed_phrase, description, amount, finalize, fi
  * @param {bigint} amount
  * @param {string | null | undefined} recipient
  * @param {number} target_height
+ * @param {number | null} [from_slot]
  * @returns {any}
  */
-export function build_spend_tx(seed_phrase, asset_id, amount, recipient, target_height) {
+export function build_spend_tx(seed_phrase, asset_id, amount, recipient, target_height, from_slot) {
     const ptr0 = passStringToWasm0(seed_phrase, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(asset_id, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len1 = WASM_VECTOR_LEN;
     var ptr2 = isLikeNone(recipient) ? 0 : passStringToWasm0(recipient, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     var len2 = WASM_VECTOR_LEN;
-    const ret = wasm.build_spend_tx(ptr0, len0, ptr1, len1, amount, ptr2, len2, target_height);
+    const ret = wasm.build_spend_tx(ptr0, len0, ptr1, len1, amount, ptr2, len2, target_height, isLikeNone(from_slot) ? Number.MAX_SAFE_INTEGER : (from_slot) >>> 0);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
@@ -108,6 +112,153 @@ export function issuer_info(seed_phrase, description) {
  */
 export function prepare_proving() {
     wasm.prepare_proving();
+}
+
+/**
+ * The maker's side: check the taker's transaction against the offer this
+ * seed made from `slot` and countersign it, or refuse. Returns the
+ * signature message as JSON.
+ * @param {string} seed_phrase
+ * @param {number} slot
+ * @param {string} offer_json
+ * @param {string} take_json
+ * @returns {string}
+ */
+export function swap_countersign(seed_phrase, slot, offer_json, take_json) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(seed_phrase, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(offer_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(take_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.swap_countersign(ptr0, len0, slot, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
+ * The taker's last step: add the maker's signature to the pending swap
+ * and return the finished transaction, ready to relay.
+ * @param {string} countersignature_json
+ * @returns {any}
+ */
+export function swap_finish(countersignature_json) {
+    const ptr0 = passStringToWasm0(countersignature_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.swap_finish(ptr0, len0);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * The maker's offer, as JSON: the one note waiting in `slot`, for
+ * `want_amount` of `want_asset`. Paid to a fresh address of the main
+ * account, so the taker cannot link it to the address this seed hands out.
+ * @param {string} seed_phrase
+ * @param {number} slot
+ * @param {string} want_asset
+ * @param {bigint} want_amount
+ * @returns {string}
+ */
+export function swap_make_offer(seed_phrase, slot, want_asset, want_amount) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(seed_phrase, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(want_asset, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.swap_make_offer(ptr0, len0, slot, ptr1, len1, want_amount);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * The address of swap slot `slot` (unified encoding): where a maker sends
+ * the exact units it is about to offer.
+ * @param {string} seed_phrase
+ * @param {number} slot
+ * @returns {string}
+ */
+export function swap_slot_address(seed_phrase, slot) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(seed_phrase, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.swap_slot_address(ptr0, len0, slot);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
+ * The taker's side: build the swap the offer describes, from this
+ * wallet's main account (witnessed at the offer's anchor), prove it and
+ * sign its own spends. Returns the message for the maker, as JSON; the
+ * half-built swap stays here for `swap_finish`.
+ *
+ * Heavy: one Halo2 proof for the whole bundle.
+ * @param {string} seed_phrase
+ * @param {string} offer_json
+ * @param {number} target_height
+ * @returns {string}
+ */
+export function swap_take(seed_phrase, offer_json, target_height) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(seed_phrase, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(offer_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.swap_take(ptr0, len0, ptr1, len1, target_height);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
 }
 
 /**

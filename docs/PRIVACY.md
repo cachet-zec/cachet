@@ -126,6 +126,14 @@ nobody has to discover it:
   logged (P2). Holdings are the exception and stay one: the wallet panel
   names what you hold from the whole listing, the same request for every
   caller, never from a lookup per asset held.
+- **Swap counterparties see what the swap needs, and no more.** A swap
+  offer hands the taker the full viewing key of a one-off swap slot, so
+  the taker sees the offered note (by design, the only thing that slot
+  holds) and the fresh address the maker is paid at. The maker sees the
+  transaction it countersigns: the taker's spends are nullifiers and the
+  taker's outputs are encrypted to the taker. Neither learns the other's
+  main holdings (ADR 004). Messages pass between the two pages by hand;
+  the operator relays the finished transaction like any other.
 - **Operator ↔ Discord (opt-in).** When the operator configures
   `CACHET_DISCORD_WEBHOOK`, a mint relayed through this instance posts
   the minted asset ids and txid — public chain data — to a Discord

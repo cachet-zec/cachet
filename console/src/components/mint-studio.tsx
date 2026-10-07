@@ -8,6 +8,7 @@ import { HoldingsPanel } from "@/components/holdings-panel";
 import { ImagePicker } from "@/components/image-picker";
 import { MintGauge } from "@/components/mint-gauge";
 import { SignedTransaction, type SignedTx } from "@/components/signed-transaction";
+import { SwapPanel } from "@/components/swap-panel";
 import { api, problemMessage } from "@/lib/api";
 import { fetchKept, loadSealedContent } from "@/lib/kept";
 import { assertSealsWhatWasTyped } from "@/lib/sealed-check";
@@ -1031,6 +1032,14 @@ export function MintStudio() {
         engineThreads={engineThreads}
         provingReady={provingReady}
         mintCount={mintCount}
+      />
+
+      {/* Atomic swaps: same worker, same keys; holdings refresh after each step. */}
+      <SwapPanel
+        call={call}
+        seed={seed}
+        enabled={issuer !== null && seedSaved}
+        onChange={() => setMintCount((count) => count + 1)}
       />
     </div>
   );

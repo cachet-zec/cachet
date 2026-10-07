@@ -1,20 +1,20 @@
 {
   "about": "SHA-256 of every file a browser mint executes besides the application bundle. Verify a live site against it with scripts/verify-site.py.",
-  "version": "f21000cc0cd8",
+  "version": "314cd44da048",
   "files": {
-    "mint-engine-mt/cachet_mint_engine.d.ts": "efaa3f2e8b82d7043c878310b9eae222fe43d5a9e612bc1833446720521ab363",
-    "mint-engine-mt/cachet_mint_engine.js": "5cc0a0ed111a1129136877c90ca0aed525a1f3c2f055eb0ae35338bc96311ce0",
-    "mint-engine-mt/cachet_mint_engine_bg.wasm": "00c154c396a90e8dd4252cb57fa52d703bdf84013be67e93875d9eb976a17505",
-    "mint-engine-mt/cachet_mint_engine_bg.wasm.d.ts": "f5b0280c4eab138a9bd53bc975ea0a1012e4fe8f8605777bc801226f0a2af54d",
+    "mint-engine-mt/cachet_mint_engine.d.ts": "a76e8156fa94a012625d5bcf37abdae2f2f9fcf0afc2773f37c044a20da97924",
+    "mint-engine-mt/cachet_mint_engine.js": "3c8123120669db3b4f30892ed5d1d66ec65d1978949b2bfaf0edfedd31121d80",
+    "mint-engine-mt/cachet_mint_engine_bg.wasm": "e9db5c6733ed1a4ba5b95986147ce8dc7bcd31b77ca286548ce335f4eb6d87b5",
+    "mint-engine-mt/cachet_mint_engine_bg.wasm.d.ts": "101b059ac63e44cd97600c50d021048ec0a3d8d35649289d44a0fe17c4bfd15e",
     "mint-engine-mt/snippets/wasm-bindgen-rayon-38edf6e439f6d70d/src/workerHelpers.no-bundler.js": "568d5e98c772b6849ae7244ea92599b534f21c8e679499fe943cf3635f9c0c21",
-    "mint-engine/cachet_mint_engine.d.ts": "8125ae56f4c48866d74a38787faa6b9cb6cad5db8cff4eb42f86fc9068f52b76",
-    "mint-engine/cachet_mint_engine.js": "934f9aacb46131f4035f1c9b6bdd6e40a3635f4d967f0dc2eefb146a569d17f6",
-    "mint-engine/cachet_mint_engine_bg.wasm": "2678ca8c81c19bf5152f20f696b58f35ef5359de74e8264acd586cec77449b4e",
-    "mint-engine/cachet_mint_engine_bg.wasm.d.ts": "ea55fa87da6e7c60146ee3f1e4e9084c7021d2b2c62a09ec1f8d7c85eaae52e9",
-    "mint-worker.js": "2f2c42a5ae9a8efc5589154f6b673b95b1645009949ede0e9cb117c6e6d11ecb",
+    "mint-engine/cachet_mint_engine.d.ts": "79fc7a8dc353da2fdc0c69fc06c94cfcaf4d1dfbb5226189f5bfce4f6ca3913b",
+    "mint-engine/cachet_mint_engine.js": "586aeb588a67c22c2ea3356289e3304d75af7f86e48884813bff610dbca5bb39",
+    "mint-engine/cachet_mint_engine_bg.wasm": "2871dbbfe5781f1bfd54032bdb57c2bbbd12ee586ce651e37dbff00bc7f23ff4",
+    "mint-engine/cachet_mint_engine_bg.wasm.d.ts": "f4f621b0d9aaca9ee7664ba7f8f7f90b61e1cc4b3f6ededc5e89cad718d9c532",
+    "mint-worker.js": "0105e4f4a571da923f85bc3694886eee74bff96d6ed4df8f6b05d67d6508461d",
     "verify-engine/cachet_verify_engine.d.ts": "6a1324b2826425464fa9f3f3568c8db45a6bcf05771bf4b9f571d62ad46f741e",
     "verify-engine/cachet_verify_engine.js": "bff2527cfbefa43e5c2918b62c2fe50fd5b87b8989ddf718e3c640b3c21df525",
-    "verify-engine/cachet_verify_engine_bg.wasm": "de497c95b37f927c291628d65ac4366d045274f6869a68dc0d2d9b903b520856",
+    "verify-engine/cachet_verify_engine_bg.wasm": "e426277efc074589e8364e01d23a7dd00e5df42397a3369186d4353e620911ef",
     "verify-engine/cachet_verify_engine_bg.wasm.d.ts": "e2e3be410987096c682d8cd504ea6f50ef23b045aae5b3822d988014df970042"
   }
 }

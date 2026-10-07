@@ -446,6 +446,7 @@ dependencies = [
  "bip0039",
  "bls12_381",
  "cachet-notes",
+ "cachet-swap",
  "getrandom 0.2.17",
  "hex",
  "jubjub",
@@ -455,6 +456,7 @@ dependencies = [
  "sapling-crypto",
  "serde",
  "serde-wasm-bindgen",
+ "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-rayon",
  "zcash_address",
@@ -473,6 +475,27 @@ dependencies = [
  "orchard",
  "thiserror 2.0.20",
  "zcash_primitives",
+]
+
+[[package]]
+name = "cachet-swap"
+version = "0.5.0"
+dependencies = [
+ "bridgetree",
+ "ff",
+ "hex",
+ "incrementalmerkletree",
+ "nonempty 0.11.0",
+ "orchard",
+ "pasta_curves",
+ "rand 0.8.8",
+ "sapling-crypto",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "zcash_primitives",
+ "zcash_protocol",
+ "zcash_transparent",
 ]
 
 [[package]]
@@ -2149,7 +2172,6 @@ dependencies = [
 [[package]]
 name = "orchard"
 version = "0.14.0"
-source = "git+https://github.com/QED-it/orchard?rev=cf801a5d6701bc128e21678ba0034564af4a2aca#cf801a5d6701bc128e21678ba0034564af4a2aca"
 dependencies = [
  "aes",
  "bitvec",

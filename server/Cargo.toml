@@ -2,10 +2,11 @@
 resolver = "2"
 # The vendored librustzcash workspace must resolve against its OWN root
 # (workspace-inherited deps), not this one.
-exclude = ["vendor/librustzcash"]
+exclude = ["vendor/librustzcash", "vendor/orchard"]
 members = [
     "crates/domain",
     "crates/notes",
+    "crates/swap",
     "crates/chain",
     "crates/index",
     "crates/api",
@@ -87,7 +88,9 @@ features = ["transparent-inputs"]
 [patch.crates-io]
 # The librustzcash crates are vendored (QED-it rev c5c232db + the
 # proving-key cache patch) — see vendor/librustzcash/README.md.
-orchard = { git = "https://github.com/QED-it/orchard", rev = "cf801a5d6701bc128e21678ba0034564af4a2aca" }
+# Vendored QED-it orchard cf801a5 + the signing-parts accessor patch, see
+# vendor/orchard/README.cachet.md.
+orchard = { path = "vendor/orchard" }
 sapling-crypto = { git = "https://github.com/QED-it/sapling-crypto", rev = "e785faaa5eaf67bd2cb328fdd82a345df44e5754" }
 zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "9f7e93d42cef839d02b9d75918117941d453f8cb" }
 zcash_primitives = { path = "vendor/librustzcash/zcash_primitives" }
