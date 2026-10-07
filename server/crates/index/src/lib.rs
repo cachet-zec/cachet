@@ -310,6 +310,9 @@ fn summary_from_row(row: &PgRow) -> Result<AssetSummary, IndexError> {
         issuer: row.get::<Option<Vec<u8>>, _>("issuer_ik").map(hex::encode),
         total_supply: (issued.max(0) as u64).saturating_sub(burned.max(0) as u64),
         finalized: row.get("finalized"),
+        last_height: row
+            .get::<Option<i64>, _>("last_height")
+            .map(|height| height.max(0) as u64),
     })
 }
 
@@ -623,6 +626,14 @@ impl AssetIndex {
             .bind(amount)
             .execute(&mut *tx)
             .await?;
+            // GREATEST skips NULL: the first event sets it.
+            sqlx::query(
+                "UPDATE assets SET last_height = GREATEST(last_height, $2) WHERE asset_id = $1",
+            )
+            .bind(event.asset_id.as_slice())
+            .bind(height)
+            .execute(&mut *tx)
+            .await?;
         }
 
         let height = i64::try_from(checkpoint.tip_height)
@@ -883,7 +894,7 @@ impl AssetIndex {
     /// Single-asset lookup from the index (same shape as one `list` row).
     pub async fn get_asset(&self, asset_id: AssetId) -> Result<Option<AssetSummary>, IndexError> {
         let row = sqlx::query(
-            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik,
+            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik, a.last_height,
                     CASE WHEN m.key IS NULL THEN d.description END AS description
              FROM assets a
              LEFT JOIN asset_descriptions d USING (asset_id)
@@ -904,6 +915,9 @@ impl AssetIndex {
                 issuer: row.get::<Option<Vec<u8>>, _>("issuer_ik").map(hex::encode),
                 total_supply: (issued.max(0) as u64).saturating_sub(burned.max(0) as u64),
                 finalized: row.get("finalized"),
+                last_height: row
+                    .get::<Option<i64>, _>("last_height")
+                    .map(|height| height.max(0) as u64),
             })
         })
         .transpose()
@@ -912,7 +926,7 @@ impl AssetIndex {
     /// Registry listing, newest first, with journaled descriptions.
     pub async fn list(&self) -> Result<Vec<AssetSummary>, IndexError> {
         let rows = sqlx::query(
-            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik,
+            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik, a.last_height,
                     CASE WHEN m.key IS NULL THEN d.description END AS description
              FROM assets a
              LEFT JOIN asset_descriptions d USING (asset_id)
@@ -980,7 +994,7 @@ impl AssetIndex {
         };
 
         let mut page = QueryBuilder::<Postgres>::new(
-            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik,
+            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik, a.last_height,
                     CASE WHEN m.key IS NULL THEN d.description END AS description",
         );
         page.push(LISTING_FROM);
@@ -989,6 +1003,7 @@ impl AssetIndex {
         page.push(match query.order {
             ListingOrder::Newest => " ORDER BY a.ord DESC",
             ListingOrder::NamedFirst => " ORDER BY a.name_rank ASC, a.ord DESC",
+            ListingOrder::Active => " ORDER BY a.last_height DESC NULLS LAST, a.ord DESC",
         });
         page.push(" OFFSET ");
         page.push_bind(bounded(query.offset));

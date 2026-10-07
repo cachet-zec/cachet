@@ -138,7 +138,9 @@ nobody has to discover it:
   which assets are traded in what amounts, as anyone reading the board
   does, and sees the swap transaction before it is relayed, as it sees any
   relayed transaction. Passing the messages by hand keeps them off the
-  registry entirely.
+  registry entirely. An asset page shows the offers for its asset from
+  the whole board, the same request on every page, so looking at an asset
+  does not tell the operator you mean to trade it.
 - **Operator ↔ Discord (opt-in).** When the operator configures
   `CACHET_DISCORD_WEBHOOK`, a mint relayed through this instance posts
   the minted asset ids and txid — public chain data — to a Discord

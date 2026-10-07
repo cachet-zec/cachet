@@ -443,6 +443,9 @@ pub struct AssetSummaryResponse {
     pub issuer: Option<String>,
     pub total_supply: u64,
     pub finalized: bool,
+    /// Height of the latest public event (issuance, burn or seal), when
+    /// known. Shielded transfers never count.
+    pub last_height: Option<u64>,
 }
 
 impl From<cachet_domain::AssetSummary> for AssetSummaryResponse {
@@ -473,6 +476,7 @@ impl From<cachet_domain::AssetSummary> for AssetSummaryResponse {
             issuer: summary.issuer,
             total_supply: summary.total_supply,
             finalized: summary.finalized,
+            last_height: summary.last_height,
         }
     }
 }

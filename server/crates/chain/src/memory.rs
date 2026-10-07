@@ -226,6 +226,7 @@ impl ChainBackend for InMemoryChain {
             issuer: Some(memory_issuer()),
             total_supply: asset.total_supply,
             finalized: asset.finalized,
+            last_height: last_height(&state.events, asset_id),
         })
     }
 
@@ -242,6 +243,7 @@ impl ChainBackend for InMemoryChain {
                     issuer: Some(memory_issuer()),
                     total_supply: asset.total_supply,
                     finalized: asset.finalized,
+                    last_height: last_height(&state.events, *asset_id),
                 })
             })
             .collect())
@@ -443,6 +445,15 @@ impl ChainBackend for InMemoryChain {
             reason: "raw transactions require the OrchardZSA backend".to_owned(),
         })
     }
+}
+
+/// The height of an asset's latest event on the fake chain.
+fn last_height(events: &[AssetEvent], asset_id: AssetId) -> Option<u64> {
+    events
+        .iter()
+        .filter(|event| event.asset_id == asset_id)
+        .map(|event| event.height)
+        .max()
 }
 
 #[cfg(test)]

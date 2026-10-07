@@ -234,6 +234,11 @@ pub struct AssetSummary {
     pub issuer: Option<String>,
     pub total_supply: u64,
     pub finalized: bool,
+    /// Height of the asset's latest public event (an issuance, a burn or a
+    /// seal), when the backend keeps heights. Transfers are shielded and
+    /// never count: this is issuer and burner activity only.
+    #[serde(default)]
+    pub last_height: Option<u64>,
 }
 
 /// A collection: the set of assets sharing one issuance key. This is the

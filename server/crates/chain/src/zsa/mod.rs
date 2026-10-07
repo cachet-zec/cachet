@@ -1152,6 +1152,7 @@ impl ChainBackend for OrchardZsaBackend {
             issuer: scanned.issuer_ik.map(hex::encode),
             total_supply: scanned.total_supply(),
             finalized: scanned.finalized,
+            last_height: None,
         })
     }
 
@@ -1177,6 +1178,7 @@ impl ChainBackend for OrchardZsaBackend {
                 issuer: state.issuer_ik.map(hex::encode),
                 total_supply: state.total_supply(),
                 finalized: state.finalized,
+                last_height: None,
             })
             .collect())
     }
