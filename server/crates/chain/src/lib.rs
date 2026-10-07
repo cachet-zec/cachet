@@ -14,6 +14,45 @@
 pub mod memory;
 pub mod zsa;
 
+/// The Orchard roots a wallet can still build on: the final root of each of
+/// the last [`ANCHOR_WINDOW`] blocks, with the latest height it stood at
+/// (a root lasts as long as no block adds Orchard notes).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RecentAnchors {
+    pub tip_height: u64,
+    latest: std::collections::HashMap<[u8; 32], u64>,
+}
+
+/// How many blocks back an anchor stays usable: a wallet keeps checkpoints
+/// for that many (`MAX_CHECKPOINTS` in cachet-notes, which the browser's
+/// mint engine compiles; kept equal here rather than exported from there,
+/// so the engine's bytes do not move for a server-side check).
+pub const ANCHOR_WINDOW: u64 = 100;
+
+impl RecentAnchors {
+    /// From `(height, root)` pairs; roots of blocks outside the window are
+    /// dropped.
+    pub fn new(tip_height: u64, roots: impl IntoIterator<Item = (u64, [u8; 32])>) -> Self {
+        let low = tip_height.saturating_sub(ANCHOR_WINDOW - 1);
+        let mut latest = std::collections::HashMap::new();
+        for (height, root) in roots {
+            if (low..=tip_height).contains(&height) {
+                let entry = latest.entry(root).or_insert(height);
+                *entry = (*entry).max(height);
+            }
+        }
+        Self { tip_height, latest }
+    }
+
+    /// Blocks since `anchor` was last the chain's Orchard root, or `None`
+    /// when it is not a root of any recent block (invented, or too old).
+    pub fn age(&self, anchor: &[u8; 32]) -> Option<u64> {
+        self.latest
+            .get(anchor)
+            .map(|height| self.tip_height.saturating_sub(*height))
+    }
+}
+
 /// Build (and cache, process-wide) the Orchard ZSA proving key so the
 /// first mint of this process does not pay for it. Costs seconds of CPU;
 /// call it from a background thread at boot on instances that sign
@@ -142,6 +181,13 @@ pub trait ChainBackend: Send + Sync {
         Ok(None)
     }
 
+    /// The Orchard roots of the last [`ANCHOR_WINDOW`] blocks, to check a
+    /// swap offer's anchor against. `None` when this backend keeps no
+    /// Orchard tree to read.
+    async fn recent_anchors(&self) -> Result<Option<std::sync::Arc<RecentAnchors>>, ChainError> {
+        Ok(None)
+    }
+
     /// Chain-level collections: assets grouped by issuance key (the only
     /// provenance statement the chain itself makes), largest first.
     async fn collections(&self) -> Result<Vec<CollectionSummary>, ChainError>;
@@ -209,4 +255,28 @@ pub struct RawBlocks {
 pub struct RawBlock {
     pub height: u64,
     pub txs: Vec<String>,
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::*;
+
+    #[test]
+    fn a_root_ages_from_the_last_block_it_stood_at() {
+        // Root A stood at 400..=450, root B from 451; tip 500.
+        let roots =
+            (400..=500).map(|height| (height, if height <= 450 { [1; 32] } else { [2; 32] }));
+        let anchors = RecentAnchors::new(500, roots);
+        assert_eq!(anchors.age(&[2; 32]), Some(0));
+        assert_eq!(anchors.age(&[1; 32]), Some(50));
+        assert_eq!(anchors.age(&[3; 32]), None);
+    }
+
+    #[test]
+    fn roots_older_than_the_window_are_forgotten() {
+        let anchors = RecentAnchors::new(500, [(400, [1; 32]), (401, [2; 32])]);
+        // 401 is the oldest height a wallet at 500 still checkpoints.
+        assert_eq!(anchors.age(&[1; 32]), None);
+        assert_eq!(anchors.age(&[2; 32]), Some(ANCHOR_WINDOW - 1));
+    }
 }

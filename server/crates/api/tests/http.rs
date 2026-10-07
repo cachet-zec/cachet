@@ -1862,3 +1862,76 @@ async fn the_swap_board_carries_a_swap_between_two_parties() {
     .await;
     assert_eq!(one["status"], "closed");
 }
+
+/// The board lists an offer only on a recent root of the chain, takes it off
+/// before takers' wallets lose that root, and refuses a take once they have.
+#[tokio::test]
+async fn the_swap_board_holds_offers_to_the_chains_recent_roots() {
+    let chain = Arc::new(InMemoryChain::new());
+    let app = cachet_api::with_health(cachet_api::router(
+        chain.clone(),
+        Some(Arc::new(cachet_index::MemoryMetadataStore::new())),
+        false,
+        None,
+    ));
+    let fixture = cachet_swap::testing::setup();
+    let offer = serde_json::to_string(&fixture.offer).unwrap();
+    let anchor: [u8; 32] = hex::decode(&fixture.offer.anchor)
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let roots =
+        |tip: u64, root: [u8; 32]| Some(cachet_chain::RecentAnchors::new(tip, [(500, root)]));
+    let listed = |app: Router| async move {
+        let (_, listed) = send(
+            &app,
+            Request::get("/api/v1/swaps").body(Body::empty()).unwrap(),
+        )
+        .await;
+        listed.as_array().unwrap().len()
+    };
+
+    // An anchor the chain never had: refused before it is listed.
+    chain.set_recent_anchors(roots(500, [7; 32]));
+    let (status, _) = send(&app, post_json("/api/v1/swaps", json!({"offer": offer}))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // The chain's current root: listed.
+    chain.set_recent_anchors(roots(500, anchor));
+    let (status, posted) = send(&app, post_json("/api/v1/swaps", json!({"offer": offer}))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = posted["id"].as_str().unwrap().to_owned();
+    assert_eq!(listed(app.clone()).await, 1);
+
+    // 95 blocks on: off the board, and its maker is told so.
+    chain.set_recent_anchors(roots(595, anchor));
+    assert_eq!(listed(app.clone()).await, 0);
+    let (_, one) = send(
+        &app,
+        Request::get(format!("/api/v1/swaps/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(one["status"], "stale");
+
+    // 100 blocks on, no wallet can build on it: a take is refused unread.
+    chain.set_recent_anchors(Some(cachet_chain::RecentAnchors::new(
+        600,
+        [(600, [9; 32])],
+    )));
+    let take = json!({"version": 1, "tx": "00", "maker_action": 0, "alpha": "00"}).to_string();
+    let (status, problem) = send(
+        &app,
+        post_json(&format!("/api/v1/swaps/{id}/take"), json!({"take": take})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(
+        problem["detail"]
+            .as_str()
+            .unwrap()
+            .contains("anchor is too old"),
+        "{problem}"
+    );
+}
