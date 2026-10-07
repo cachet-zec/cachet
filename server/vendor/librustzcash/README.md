@@ -16,6 +16,9 @@ functional patch applied.
 - `prepare_orchard_zsa_proving_key()` is added so callers can warm the
   cache off the critical path (the mint studio does it while the user
   fills the form; the server could do it at boot).
+- `orchard_zsa_proving_key()` is public, so a bundle assembled outside
+  `Builder` (the two-party swap in `crates/swap`) proves with the same
+  cached key.
 
 Nothing else is modified. The workspace root `Cargo.toml` is trimmed to
 the vendored members and its (cargo-ignored) `[patch]` section removed;

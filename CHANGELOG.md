@@ -8,6 +8,20 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Added
 
+- Atomic swaps between two browsers: one OrchardZSA transaction carries
+  both sides' spends and outputs, so a trade lands whole or not at all.
+  The mint page's Swap section makes an offer (the units wait in a
+  one-off swap slot; withdraw to cancel) or takes one; three messages
+  pass between the pages by hand. The taker proves the whole swap, the
+  maker checks the transaction against its offer before countersigning.
+  Protocol in `crates/swap` and ADR 004; tested natively (proof and every
+  signature verified) and end to end with two browsers on regtest.
+- `server/vendor/orchard`: QED-it orchard `cf801a5` with an accessor
+  patch (a spend's `alpha`, and the parts of a partially signed bundle) so
+  a counterparty can sign its own spend in a bundle someone else built.
+- The browser wallet checkpoints every scanned block, so a spend can be
+  witnessed against any of its last 100 roots, and two scans of the same
+  blocks no longer reset it.
 - Asset pages show the asset's ZIP 227 Asset Digest and description hash,
   derived in the reader's browser by the verification engine and shown
   only once the asset id it derived matches. The digest is the 64-byte

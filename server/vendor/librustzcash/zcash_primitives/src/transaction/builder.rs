@@ -1580,8 +1580,11 @@ fn orchard_vanilla_proving_key() -> &'static orchard::circuit::ProvingKey {
     PK.get_or_init(orchard::circuit::ProvingKey::build::<OrchardVanilla>)
 }
 
+/// CACHET PATCH: public so a bundle built outside `Builder` (a two-party
+/// swap, assembled from orchard's own builder) proves with the same cached
+/// key.
 #[cfg(all(feature = "circuits", zcash_unstable = "nu7"))]
-fn orchard_zsa_proving_key() -> &'static orchard::circuit::ProvingKey {
+pub fn orchard_zsa_proving_key() -> &'static orchard::circuit::ProvingKey {
     static PK: std::sync::OnceLock<orchard::circuit::ProvingKey> = std::sync::OnceLock::new();
     PK.get_or_init(orchard::circuit::ProvingKey::build::<OrchardZSA>)
 }

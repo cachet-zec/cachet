@@ -1,0 +1,29 @@
+# Atomic two-party ZSA swap: both parties' spends and outputs in ONE
+# OrchardZSA bundle, so the swap lands whole or not at all. Pure logic, no
+# I/O: the mint engine compiles it to wasm for the browser; the tests run
+# natively. See src/lib.rs for the protocol.
+[package]
+name = "cachet-swap"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[dependencies]
+orchard = { version = "0.14.0", default-features = false, features = ["circuit", "std", "zsa-issuance"] }
+zcash_primitives = { version = "0.28.0", default-features = false, features = ["std", "circuits", "zsa-issuance", "zip-233"] }
+zcash_protocol = { version = "0.9.0" }
+zcash_transparent = { version = "0.8.0", default-features = false }
+sapling-crypto = { version = "0.7.0", default-features = false }
+pasta_curves = "0.5"
+ff = "0.13"
+nonempty = { version = "0.11", default-features = false }
+rand = "0.8"
+serde = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+zcash_protocol = { version = "0.9.0" }
+incrementalmerkletree = "0.8.2"
+bridgetree = "0.7.1"

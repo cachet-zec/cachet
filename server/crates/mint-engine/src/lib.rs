@@ -70,12 +70,28 @@ impl Keys {
     }
 
     fn spending_key(&self) -> SpendingKey {
+        self.account_key(0)
+    }
+
+    fn account_key(&self, account: u32) -> SpendingKey {
         SpendingKey::from_zip32_seed(
             self.seed.as_slice(),
             constants::regtest::COIN_TYPE,
-            AccountId::ZERO,
+            AccountId::try_from(account).expect("account indices here are far below 2^31"),
         )
         .expect("spending key derivation from a valid 64-byte seed cannot fail")
+    }
+
+    /// The one-off account of swap slot `slot` (see `SWAP_SLOTS`).
+    fn swap_key(&self, slot: u32) -> SpendingKey {
+        self.account_key(SWAP_ACCOUNT_BASE + slot)
+    }
+
+    /// Every account the browser wallet tracks: the main one and the slots.
+    fn tracked_keys(&self) -> Vec<(u32, SpendingKey)> {
+        std::iter::once((0, self.spending_key()))
+            .chain((0..SWAP_SLOTS).map(|slot| (SWAP_ACCOUNT_BASE + slot, self.swap_key(slot))))
+            .collect()
     }
 
     fn default_address(&self) -> Address {
@@ -101,6 +117,15 @@ impl Keys {
         )))
     }
 }
+
+/// Swap slots: one-off accounts an offer's units wait in. An offer hands
+/// the taker its account's full viewing key, which shows everything the
+/// account holds; a slot holds the offered note and nothing else, so the
+/// main account's holdings stay private.
+const SWAP_SLOTS: u32 = 4;
+
+/// ZIP-32 account index of slot 0; far from the accounts a person uses.
+const SWAP_ACCOUNT_BASE: u32 = 1000;
 
 fn desc_hash(description: &str) -> Result<[u8; 32], JsError> {
     Ok(compute_asset_desc_hash(
@@ -399,32 +424,52 @@ struct HoldingOut {
 }
 
 #[derive(Serialize)]
+struct SlotOut {
+    slot: u32,
+    holdings: Vec<HoldingOut>,
+}
+
+#[derive(Serialize)]
 struct WalletState {
     /// This seed's account-0 receiving address (unified encoding), so the
     /// user can be paid.
     address: String,
     scanned_height: u32,
     holdings: Vec<HoldingOut>,
+    /// Swap slots holding units (an offer waiting, or one to withdraw).
+    swap_slots: Vec<SlotOut>,
 }
 
-fn wallet_state(entry: &BrowserWallet, address: Address) -> Result<JsValue, JsError> {
-    let holdings = entry
-        .wallet
-        .balances_by_account()
-        .into_iter()
-        .find(|(account, _)| *account == 0)
-        .map(|(_, holdings)| holdings)
-        .unwrap_or_default()
+fn holdings_out(holdings: Vec<([u8; 32], u64)>) -> Vec<HoldingOut> {
+    holdings
         .into_iter()
         .map(|(asset, amount)| HoldingOut {
             asset_id: hex::encode(asset),
             amount: amount.to_string(),
+        })
+        .collect()
+}
+
+fn wallet_state(entry: &BrowserWallet, address: Address) -> Result<JsValue, JsError> {
+    let by_account = entry.wallet.balances_by_account();
+    let holdings = by_account
+        .iter()
+        .find(|(account, _)| *account == 0)
+        .map(|(_, holdings)| holdings_out(holdings.clone()))
+        .unwrap_or_default();
+    let swap_slots = by_account
+        .iter()
+        .filter(|(account, holdings)| *account >= SWAP_ACCOUNT_BASE && !holdings.is_empty())
+        .map(|(account, holdings)| SlotOut {
+            slot: account - SWAP_ACCOUNT_BASE,
+            holdings: holdings_out(holdings.clone()),
         })
         .collect();
     Ok(serde_wasm_bindgen::to_value(&WalletState {
         address: encode_unified(address)?,
         scanned_height: u32::try_from(entry.scanned_height).unwrap_or(u32::MAX),
         holdings,
+        swap_slots,
     })?)
 }
 
@@ -436,7 +481,7 @@ pub fn wallet_reset(seed_phrase: &str) -> Result<JsValue, JsError> {
     let address = keys.default_address();
     let entry = BrowserWallet {
         owner: address.to_raw_address_bytes(),
-        wallet: HotWallet::from_spending_keys([(0, keys.spending_key())]),
+        wallet: HotWallet::from_spending_keys(keys.tracked_keys()),
         scanned_height: 0,
     };
     let state = wallet_state(&entry, address)?;
@@ -466,7 +511,7 @@ pub fn wallet_scan(seed_phrase: &str, blocks: JsValue) -> Result<JsValue, JsErro
         _ => {
             *guard = Some(BrowserWallet {
                 owner: address.to_raw_address_bytes(),
-                wallet: HotWallet::from_spending_keys([(0, keys.spending_key())]),
+                wallet: HotWallet::from_spending_keys(keys.tracked_keys()),
                 scanned_height: 0,
             });
         }
@@ -489,6 +534,11 @@ pub fn wallet_scan(seed_phrase: &str, blocks: JsValue) -> Result<JsValue, JsErro
         .expect("wallet present after the block above");
     let scan_result: Result<(), String> = (|| {
         for block in blocks {
+            // Two scans of one page (two panels refreshing at once) must
+            // not break the wallet: a block it already applied is skipped.
+            if block.height <= entry.scanned_height {
+                continue;
+            }
             if block.height != entry.scanned_height + 1 {
                 return Err(format!(
                     "blocks must be contiguous: expected height {}, got {}",
@@ -516,6 +566,11 @@ pub fn wallet_scan(seed_phrase: &str, blocks: JsValue) -> Result<JsValue, JsErro
                     .process_transaction(tx)
                     .map_err(|error| format!("scan failed: {error}"))?;
             }
+            // Each block's final root stays an anchor this wallet can
+            // witness against: a swap is built on the maker's anchor.
+            entry
+                .wallet
+                .checkpoint(u32::try_from(block.height).map_err(|_| "height out of range")?);
             entry.scanned_height = block.height;
         }
         Ok(())
@@ -536,6 +591,9 @@ pub fn wallet_scan(seed_phrase: &str, blocks: JsValue) -> Result<JsValue, JsErro
 /// (recipient null) of `amount` units of `asset_id`, spending notes the
 /// scanned wallet owns. Change returns to the wallet's own address.
 ///
+/// `from_slot` spends from a swap slot instead of the main account: how an
+/// offer is withdrawn (to the main address) or cancelled.
+///
 /// Heavy: Halo2 proving. Run inside the Web Worker, ideally after
 /// `prepare_proving` has warmed the proving key.
 #[wasm_bindgen]
@@ -545,12 +603,17 @@ pub fn build_spend_tx(
     amount: u64,
     recipient: Option<String>,
     target_height: u32,
+    from_slot: Option<u32>,
 ) -> Result<JsValue, JsError> {
     if amount == 0 {
         return Err(JsError::new("amount must be positive"));
     }
+    if from_slot.is_some_and(|slot| slot >= SWAP_SLOTS) {
+        return Err(JsError::new("no such swap slot"));
+    }
     let keys = Keys::from_phrase(seed_phrase)?;
     let own_address = keys.default_address();
+    let account = from_slot.map_or(0, |slot| SWAP_ACCOUNT_BASE + slot);
 
     let asset_bytes: [u8; 32] = hex::decode(asset_id)
         .ok()
@@ -575,7 +638,7 @@ pub fn build_spend_tx(
             .ok_or_else(|| JsError::new("wallet not scanned: scan the chain first"))?;
         let selected = entry
             .wallet
-            .select_inputs(0, asset, amount)
+            .select_inputs(account, asset, amount)
             .map_err(|error| JsError::new(&format!("{error}")))?;
         let anchor = entry
             .wallet
@@ -661,6 +724,216 @@ pub fn build_spend_tx(
         tx_hex: hex::encode(tx_bytes),
         txid: hex::encode(txid),
         asset_id: asset_id.to_owned(),
+    })?)
+}
+
+// ---------------------------------------------------------------------------
+// Atomic swap (crates/swap): an offer waits in a one-off slot account; the
+// taker builds, proves and signs the whole swap; the maker countersigns the
+// one spend that is its own. Every message is JSON the page passes along;
+// keys never leave this module.
+
+/// The taker's swap between its message and the maker's answer. One at a
+/// time per page: a new take replaces it.
+static PENDING_SWAP: std::sync::Mutex<Option<cachet_swap::PendingSwap>> =
+    std::sync::Mutex::new(None);
+
+fn swap_error(error: cachet_swap::SwapError) -> JsError {
+    JsError::new(&error.to_string())
+}
+
+fn slot_checked(slot: u32) -> Result<u32, JsError> {
+    if slot < SWAP_SLOTS {
+        Ok(slot)
+    } else {
+        Err(JsError::new("no such swap slot"))
+    }
+}
+
+/// The address of swap slot `slot` (unified encoding): where a maker sends
+/// the exact units it is about to offer.
+#[wasm_bindgen]
+pub fn swap_slot_address(seed_phrase: &str, slot: u32) -> Result<String, JsError> {
+    let keys = Keys::from_phrase(seed_phrase)?;
+    encode_unified(
+        FullViewingKey::from(&keys.swap_key(slot_checked(slot)?)).address_at(0u32, Scope::External),
+    )
+}
+
+/// The maker's offer, as JSON: the one note waiting in `slot`, for
+/// `want_amount` of `want_asset`. Paid to a fresh address of the main
+/// account, so the taker cannot link it to the address this seed hands out.
+#[wasm_bindgen]
+pub fn swap_make_offer(
+    seed_phrase: &str,
+    slot: u32,
+    want_asset: &str,
+    want_amount: u64,
+) -> Result<String, JsError> {
+    let keys = Keys::from_phrase(seed_phrase)?;
+    let slot = slot_checked(slot)?;
+    let want_bytes: [u8; 32] = hex::decode(want_asset)
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| JsError::new("asset id must be 32 bytes of hex"))?;
+    let want = Option::<AssetBase>::from(AssetBase::from_bytes(&want_bytes))
+        .ok_or_else(|| JsError::new("invalid asset id"))?;
+
+    let guard = wallet_guard();
+    let entry = guard
+        .as_ref()
+        .filter(|entry| entry.owner == keys.default_address().to_raw_address_bytes())
+        .ok_or_else(|| JsError::new("wallet not scanned: scan the chain first"))?;
+    let notes = entry
+        .wallet
+        .unspent_notes(SWAP_ACCOUNT_BASE + slot)
+        .map_err(|error| JsError::new(&format!("{error}")))?;
+    let [(note, path)] = &notes[..] else {
+        return Err(JsError::new(if notes.is_empty() {
+            "this swap slot holds nothing yet: send it the units to offer and scan"
+        } else {
+            "this swap slot holds more than one note: withdraw it and fund it again"
+        }));
+    };
+    let anchor = entry
+        .wallet
+        .anchor()
+        .map_err(|error| JsError::new(&format!("{error}")))?;
+
+    // A fresh diversified address of the main account: the wallet finds a
+    // payment at any of them, and this one appears nowhere else.
+    let mut index = [0u8; 4];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut index);
+    let receive = FullViewingKey::from(&keys.spending_key())
+        .address_at(u32::from_le_bytes(index) | 0x8000_0000, Scope::External);
+
+    let offer = cachet_swap::make_offer(
+        note,
+        path,
+        anchor,
+        &FullViewingKey::from(&keys.swap_key(slot)),
+        want,
+        want_amount,
+        receive,
+    )
+    .map_err(swap_error)?;
+    serde_json::to_string(&offer).map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// The taker's side: build the swap the offer describes, from this
+/// wallet's main account (witnessed at the offer's anchor), prove it and
+/// sign its own spends. Returns the message for the maker, as JSON; the
+/// half-built swap stays here for `swap_finish`.
+///
+/// Heavy: one Halo2 proof for the whole bundle.
+#[wasm_bindgen]
+pub fn swap_take(
+    seed_phrase: &str,
+    offer_json: &str,
+    target_height: u32,
+) -> Result<String, JsError> {
+    let keys = Keys::from_phrase(seed_phrase)?;
+    let offer: cachet_swap::Offer =
+        serde_json::from_str(offer_json).map_err(|_| JsError::new("that is not a swap offer"))?;
+    let want_bytes: [u8; 32] = hex::decode(&offer.want_asset)
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| JsError::new("the offer's asset id is malformed"))?;
+    let want = Option::<AssetBase>::from(AssetBase::from_bytes(&want_bytes))
+        .ok_or_else(|| JsError::new("the offer's asset id is invalid"))?;
+    let anchor_bytes: [u8; 32] = hex::decode(&offer.anchor)
+        .ok()
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or_else(|| JsError::new("the offer's anchor is malformed"))?;
+    let anchor = Option::<Anchor>::from(Anchor::from_bytes(anchor_bytes))
+        .ok_or_else(|| JsError::new("the offer's anchor is invalid"))?;
+
+    let inputs = {
+        let guard = wallet_guard();
+        let entry = guard
+            .as_ref()
+            .filter(|entry| entry.owner == keys.default_address().to_raw_address_bytes())
+            .ok_or_else(|| JsError::new("wallet not scanned: scan the chain first"))?;
+        if !entry.wallet.knows_anchor(&anchor) {
+            return Err(JsError::new(
+                "this wallet has not seen the block the offer was made at: scan the chain, or ask for a fresh offer",
+            ));
+        }
+        entry
+            .wallet
+            .select_inputs_at(0, want, offer.want_amount, &anchor)
+            .map_err(|error| JsError::new(&format!("{error}")))?
+            .inputs
+    };
+
+    let (take, pending) = cachet_swap::take(
+        &offer,
+        &inputs,
+        keys.default_address(),
+        keys.orchard_ovk(),
+        target_height.into(),
+        rand::rngs::OsRng,
+    )
+    .map_err(swap_error)?;
+    *PENDING_SWAP
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(pending);
+    serde_json::to_string(&take).map_err(|error| JsError::new(&error.to_string()))
+}
+
+/// The maker's side: check the taker's transaction against the offer this
+/// seed made from `slot` and countersign it, or refuse. Returns the
+/// signature message as JSON.
+#[wasm_bindgen]
+pub fn swap_countersign(
+    seed_phrase: &str,
+    slot: u32,
+    offer_json: &str,
+    take_json: &str,
+) -> Result<String, JsError> {
+    let keys = Keys::from_phrase(seed_phrase)?;
+    let offer: cachet_swap::Offer =
+        serde_json::from_str(offer_json).map_err(|_| JsError::new("that is not a swap offer"))?;
+    let take: cachet_swap::Take =
+        serde_json::from_str(take_json).map_err(|_| JsError::new("that is not a swap answer"))?;
+    let signature = cachet_swap::countersign(
+        &offer,
+        &keys.swap_key(slot_checked(slot)?),
+        &FullViewingKey::from(&keys.spending_key()).to_ivk(Scope::External),
+        &take,
+        rand::rngs::OsRng,
+    )
+    .map_err(swap_error)?;
+    serde_json::to_string(&signature).map_err(|error| JsError::new(&error.to_string()))
+}
+
+#[derive(Serialize)]
+struct FinishedSwap {
+    tx_hex: String,
+    txid: String,
+}
+
+/// The taker's last step: add the maker's signature to the pending swap
+/// and return the finished transaction, ready to relay.
+#[wasm_bindgen]
+pub fn swap_finish(countersignature_json: &str) -> Result<JsValue, JsError> {
+    let countersignature: cachet_swap::Countersignature =
+        serde_json::from_str(countersignature_json)
+            .map_err(|_| JsError::new("that is not a swap signature"))?;
+    let pending = PENDING_SWAP
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+        .take()
+        .ok_or_else(|| JsError::new("no swap is waiting for a signature on this page"))?;
+    let tx = cachet_swap::finish(pending, &countersignature).map_err(swap_error)?;
+    let mut tx_bytes = Vec::new();
+    tx.write(&mut tx_bytes)
+        .map_err(|error| JsError::new(&format!("serialization failed: {error}")))?;
+    let mut txid = *tx.txid().as_ref();
+    txid.reverse();
+    Ok(serde_wasm_bindgen::to_value(&FinishedSwap {
+        tx_hex: hex::encode(tx_bytes),
+        txid: hex::encode(txid),
     })?)
 }
 

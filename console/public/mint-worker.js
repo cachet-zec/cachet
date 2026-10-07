@@ -16,7 +16,7 @@ let engineThreads = 1;
 // files' hashes, and checked by CI: /mint-engine*/ is cached for an hour
 // (see next.config.ts), and this query is what busts that cache so a
 // rebuilt engine reaches returning browsers at once.
-const ENGINE_VERSION = "f21000cc0cd8";
+const ENGINE_VERSION = "314cd44da048";
 
 async function load(variant) {
   const base = `/mint-engine${variant}`;
@@ -81,7 +81,19 @@ self.onmessage = async (event) => {
         BigInt(args.amount),
         args.recipient ?? undefined,
         args.target_height,
+        args.from_slot ?? undefined,
       );
+    } else if (cmd === "swap_slot_address") {
+      result = mod.swap_slot_address(args.seed, args.slot);
+    } else if (cmd === "swap_make_offer") {
+      result = mod.swap_make_offer(args.seed, args.slot, args.want_asset, BigInt(args.want_amount));
+    } else if (cmd === "swap_take") {
+      // Heavy: one proof for the whole swap bundle.
+      result = mod.swap_take(args.seed, args.offer, args.target_height);
+    } else if (cmd === "swap_countersign") {
+      result = mod.swap_countersign(args.seed, args.slot, args.offer, args.take);
+    } else if (cmd === "swap_finish") {
+      result = mod.swap_finish(args.countersignature);
     } else if (cmd === "build") {
       // Heavy: proving key + Halo2 proof. ~45s single-threaded,
       // a handful of seconds on the threaded build.

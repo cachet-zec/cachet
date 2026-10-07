@@ -96,10 +96,11 @@ export function HoldingsPanel({
     setScanning(true);
     try {
       const trimmedSeed = seed.trim();
-      let height = wallet?.scanned_height ?? 0;
-      if (height === 0) {
-        setWallet(await call<WalletState>("wallet_reset", { seed: trimmedSeed }));
-      }
+      // Resume from where the engine's wallet really is: the swap panel
+      // scans the same wallet, so this panel's last height may be behind.
+      const current = await call<WalletState>("wallet_scan", { seed: trimmedSeed, blocks: [] });
+      setWallet(current);
+      let height = current.scanned_height;
       for (;;) {
         // A full scan is dozens of heavy pages; a transient network drop
         // must not force the user to click again. Retry with backoff —
@@ -141,7 +142,7 @@ export function HoldingsPanel({
       scanInFlight.current = false;
       setScanning(false);
     }
-  }, [call, seed, wallet]);
+  }, [call, seed]);
 
   // A fresh mint advanced the chain: pick it up so the new asset appears
   // here without a manual rescan.

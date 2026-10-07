@@ -22,10 +22,13 @@ export function build_issuance_tx(seed_phrase: string, description: string, amou
  * (recipient null) of `amount` units of `asset_id`, spending notes the
  * scanned wallet owns. Change returns to the wallet's own address.
  *
+ * `from_slot` spends from a swap slot instead of the main account: how an
+ * offer is withdrawn (to the main address) or cancelled.
+ *
  * Heavy: Halo2 proving. Run inside the Web Worker, ideally after
  * `prepare_proving` has warmed the proving key.
  */
-export function build_spend_tx(seed_phrase: string, asset_id: string, amount: bigint, recipient: string | null | undefined, target_height: number): any;
+export function build_spend_tx(seed_phrase: string, asset_id: string, amount: bigint, recipient: string | null | undefined, target_height: number, from_slot?: number | null): any;
 
 /**
  * Generate a fresh 24-word BIP-39 seed phrase. Called in the browser;
@@ -50,6 +53,42 @@ export function issuer_info(seed_phrase: string, description: string): any;
 export function prepare_proving(): void;
 
 /**
+ * The maker's side: check the taker's transaction against the offer this
+ * seed made from `slot` and countersign it, or refuse. Returns the
+ * signature message as JSON.
+ */
+export function swap_countersign(seed_phrase: string, slot: number, offer_json: string, take_json: string): string;
+
+/**
+ * The taker's last step: add the maker's signature to the pending swap
+ * and return the finished transaction, ready to relay.
+ */
+export function swap_finish(countersignature_json: string): any;
+
+/**
+ * The maker's offer, as JSON: the one note waiting in `slot`, for
+ * `want_amount` of `want_asset`. Paid to a fresh address of the main
+ * account, so the taker cannot link it to the address this seed hands out.
+ */
+export function swap_make_offer(seed_phrase: string, slot: number, want_asset: string, want_amount: bigint): string;
+
+/**
+ * The address of swap slot `slot` (unified encoding): where a maker sends
+ * the exact units it is about to offer.
+ */
+export function swap_slot_address(seed_phrase: string, slot: number): string;
+
+/**
+ * The taker's side: build the swap the offer describes, from this
+ * wallet's main account (witnessed at the offer's anchor), prove it and
+ * sign its own spends. Returns the message for the maker, as JSON; the
+ * half-built swap stays here for `swap_finish`.
+ *
+ * Heavy: one Halo2 proof for the whole bundle.
+ */
+export function swap_take(seed_phrase: string, offer_json: string, target_height: number): string;
+
+/**
  * Reset the in-module wallet to a fresh state for this seed. Returns the
  * wallet state (empty, scanned_height 0).
  */
@@ -68,9 +107,14 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly build_issuance_tx: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number) => [number, number, number];
-    readonly build_spend_tx: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number) => [number, number, number];
+    readonly build_spend_tx: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly generate_seed_phrase: () => [number, number];
     readonly issuer_info: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly swap_countersign: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly swap_finish: (a: number, b: number) => [number, number, number];
+    readonly swap_make_offer: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
+    readonly swap_slot_address: (a: number, b: number, c: number) => [number, number, number, number];
+    readonly swap_take: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly wallet_reset: (a: number, b: number) => [number, number, number];
     readonly wallet_scan: (a: number, b: number, c: any) => [number, number, number];
     readonly prepare_proving: () => void;
