@@ -10,6 +10,7 @@ export function NavLinks() {
   const consoleActive = pathname.startsWith("/console") || pathname.startsWith("/assets");
   const issuersActive = pathname.startsWith("/issuers");
   const mintActive = pathname.startsWith("/mint");
+  const swapsActive = pathname.startsWith("/swaps");
 
   // py-2.5: the text is 21px tall, a finger needs about twice that.
   const linkClass = (active: boolean) =>
@@ -18,7 +19,7 @@ export function NavLinks() {
       : "py-2.5 text-neutral-400 transition hover:text-accent";
 
   return (
-    <nav className="font-data flex items-center gap-6 text-sm">
+    <nav className="font-data flex items-center gap-4 text-sm sm:gap-6">
       <Link
         href="/console"
         aria-current={consoleActive ? "page" : undefined}
@@ -32,6 +33,13 @@ export function NavLinks() {
         className={linkClass(mintActive)}
       >
         Mint
+      </Link>
+      <Link
+        href="/swaps"
+        aria-current={swapsActive ? "page" : undefined}
+        className={linkClass(swapsActive)}
+      >
+        Swaps
       </Link>
       <Link
         href="/issuers"

@@ -61,6 +61,10 @@ pub enum ApiError {
     MintsPaused,
     #[error("admin authentication failed")]
     AdminUnauthorized,
+    #[error("the swap board is full; try again later")]
+    SwapBoardFull,
+    #[error("this offer is not open: taken, closed or expired")]
+    SwapUnavailable,
     #[error("invalid query: {0}")]
     BadQuery(String),
 }
@@ -80,6 +84,8 @@ impl ApiError {
             Self::HiddenByOperator => StatusCode::GONE,
             Self::NotConfigured { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::UploadPoolFull => StatusCode::TOO_MANY_REQUESTS,
+            Self::SwapBoardFull => StatusCode::TOO_MANY_REQUESTS,
+            Self::SwapUnavailable => StatusCode::CONFLICT,
             Self::RelayBusy => StatusCode::TOO_MANY_REQUESTS,
             Self::RelayBudgetSpent => StatusCode::TOO_MANY_REQUESTS,
             Self::MintsPaused => StatusCode::SERVICE_UNAVAILABLE,
@@ -105,6 +111,8 @@ impl ApiError {
             Self::HiddenByOperator => "hidden-by-operator",
             Self::NotConfigured { .. } => "not-configured",
             Self::UploadPoolFull => "upload-pool-full",
+            Self::SwapBoardFull => "swap-board-full",
+            Self::SwapUnavailable => "swap-unavailable",
             Self::RelayBusy => "relay-busy",
             Self::RelayBudgetSpent => "relay-budget-spent",
             Self::MintsPaused => "mints-paused",

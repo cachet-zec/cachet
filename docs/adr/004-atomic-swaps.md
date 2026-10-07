@@ -60,7 +60,11 @@ librustzcash's cached ZSA proving key is made public for the same build.
 
 ## Limits (prototype)
 
-- Messages are passed by hand between the two pages; no order book yet.
+- Messages pass through the registry's swap board (`/api/v1/swaps`), or by
+  hand. The board holds messages, never keys; capability tokens (stored
+  hashed) decide who reads a take and who reads a countersignature. The
+  maker's page answers takes, so an offer is listed only while that page
+  checks in (every few seconds; off the board after a minute of silence).
 - The offer's anchor must be within the taker's last 100 scanned blocks.
 - Zero fee, as every Cachet transaction on the testnet.
 - A maker cancels by withdrawing the slot (spending the note); a taker's

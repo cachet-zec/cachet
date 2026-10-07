@@ -132,8 +132,13 @@ nobody has to discover it:
   holds) and the fresh address the maker is paid at. The maker sees the
   transaction it countersigns: the taker's spends are nullifiers and the
   taker's outputs are encrypted to the taker. Neither learns the other's
-  main holdings (ADR 004). Messages pass between the two pages by hand;
-  the operator relays the finished transaction like any other.
+  main holdings (ADR 004). Through the swap board, the operator holds the
+  three messages: the offer (public by design), the take and the
+  countersignature (each readable only with its party's token). It learns
+  which assets are traded in what amounts, as anyone reading the board
+  does, and sees the swap transaction before it is relayed, as it sees any
+  relayed transaction. Passing the messages by hand keeps them off the
+  registry entirely.
 - **Operator ↔ Discord (opt-in).** When the operator configures
   `CACHET_DISCORD_WEBHOOK`, a mint relayed through this instance posts
   the minted asset ids and txid — public chain data — to a Discord

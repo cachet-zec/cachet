@@ -95,6 +95,52 @@ pub struct HiddenEntry {
     pub hidden_at: String,
 }
 
+/// How long a take holds an offer for its maker to countersign, seconds.
+/// After that, unsigned, the offer reopens to other takers.
+pub const SWAP_TAKE_HOLD_SECS: i64 = 600;
+
+/// The maker's page countersigns, so an offer whose maker has not checked
+/// in for this long is off the board until it does, seconds.
+pub const SWAP_MAKER_AWAY_SECS: i64 = 60;
+
+/// One offer on the swap board (migration 0012). Tokens are SHA-256 of the
+/// capability tokens handed to the maker and the taker.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapRow {
+    pub id: String,
+    pub offer: String,
+    pub give_asset: [u8; 32],
+    pub give_amount: u64,
+    pub want_asset: [u8; 32],
+    pub want_amount: u64,
+    pub maker_token: [u8; 32],
+    pub created_at: i64,
+    pub expires_at: i64,
+    /// Last time the maker's page checked in.
+    pub maker_seen_at: i64,
+    pub take: Option<String>,
+    pub taker_token: Option<[u8; 32]>,
+    pub taken_at: Option<i64>,
+    pub countersignature: Option<String>,
+    pub closed: bool,
+}
+
+impl SwapRow {
+    /// Whether a taker can take it at `now`: not closed, not expired, its
+    /// maker present to answer, and not held by a take still waiting for
+    /// its countersignature.
+    pub fn is_open(&self, now: i64) -> bool {
+        !self.closed
+            && now < self.expires_at
+            && now < self.maker_seen_at + SWAP_MAKER_AWAY_SECS
+            && (self.take.is_none()
+                || (self.countersignature.is_none()
+                    && self
+                        .taken_at
+                        .is_some_and(|taken| taken + SWAP_TAKE_HOLD_SECS <= now)))
+    }
+}
+
 /// One public event row from folding a block range.
 #[derive(Debug, Clone)]
 pub struct EventRow {

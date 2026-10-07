@@ -21,9 +21,12 @@ rand = "0.8"
 serde = { workspace = true }
 hex = { workspace = true }
 thiserror = { workspace = true }
+# Fixtures for tests (feature `testing`).
+bridgetree = { version = "0.7.1", optional = true }
+
+[features]
+testing = ["dep:bridgetree"]
 
 [dev-dependencies]
 serde_json = { workspace = true }
-zcash_protocol = { version = "0.9.0" }
-incrementalmerkletree = "0.8.2"
-bridgetree = "0.7.1"
+cachet-swap = { path = ".", features = ["testing"] }

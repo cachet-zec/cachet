@@ -1676,3 +1676,143 @@ async fn a_transaction_decodes_to_its_public_zsa_content() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// The swap board carries the three messages and keeps each one for its
+/// party: anyone reads offers, only the maker reads the take, only the
+/// taker reads the countersignature, and a held offer cannot be taken twice.
+#[tokio::test]
+async fn the_swap_board_carries_a_swap_between_two_parties() {
+    let app = app();
+    let offer = serde_json::to_string(&cachet_swap::testing::setup().offer).unwrap();
+    let with_token = |builder: axum::http::request::Builder, token: &str| {
+        builder.header("x-swap-token", token.to_owned())
+    };
+
+    // Nonsense is refused before it is listed.
+    let (status, _) = send(
+        &app,
+        post_json("/api/v1/swaps", json!({"offer": "{\"version\":1}"})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A real offer is listed for anyone.
+    let (status, posted) = send(&app, post_json("/api/v1/swaps", json!({"offer": offer}))).await;
+    assert_eq!(status, StatusCode::CREATED);
+    let id = posted["id"].as_str().unwrap().to_owned();
+    let maker = posted["maker_token"].as_str().unwrap().to_owned();
+    let (_, listed) = send(
+        &app,
+        Request::get("/api/v1/swaps").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(listed[0]["id"], id);
+    assert_eq!(listed[0]["status"], "open");
+    assert_eq!(listed[0]["give_amount"], 5);
+    assert_eq!(listed[0]["want_amount"], 30);
+    let (_, one) = send(
+        &app,
+        Request::get(format!("/api/v1/swaps/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(one["offer"], offer);
+
+    // A take holds it: a second taker is turned away.
+    let take = json!({"version": 1, "tx": "00", "maker_action": 0, "alpha": "00"}).to_string();
+    let (status, taken) = send(
+        &app,
+        post_json(&format!("/api/v1/swaps/{id}/take"), json!({"take": take})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let taker = taken["taker_token"].as_str().unwrap().to_owned();
+    let (status, problem) = send(
+        &app,
+        post_json(&format!("/api/v1/swaps/{id}/take"), json!({"take": take})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(
+        problem["type"],
+        "https://cachetzec.com/problems/swap-unavailable"
+    );
+    let (_, listed) = send(
+        &app,
+        Request::get("/api/v1/swaps").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(listed.as_array().unwrap().len(), 0);
+
+    // Only the maker reads the take.
+    let read_take = |token: &str| {
+        with_token(Request::get(format!("/api/v1/swaps/{id}/take")), token)
+            .body(Body::empty())
+            .unwrap()
+    };
+    let (status, _) = send(&app, read_take(&taker)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (status, envelope) = send(&app, read_take(&maker)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(envelope["take"], take);
+    let taken_at = envelope["taken_at"].as_i64().unwrap();
+
+    // The maker answers that take; only the taker reads the answer.
+    let signature = json!({"version": 1, "signature": "00"}).to_string();
+    let countersign = |token: &str, at: i64| {
+        with_token(
+            Request::post(format!("/api/v1/swaps/{id}/countersignature")),
+            token,
+        )
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            json!({"countersignature": signature, "taken_at": at}).to_string(),
+        ))
+        .unwrap()
+    };
+    let (status, _) = send(&app, countersign(&taker, taken_at)).await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "the taker cannot answer for the maker"
+    );
+    let (status, _) = send(&app, countersign(&maker, taken_at - 1)).await;
+    assert_eq!(
+        status,
+        StatusCode::CONFLICT,
+        "an answer to another take is refused"
+    );
+    let (status, _) = send(&app, countersign(&maker, taken_at)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let read_signature = |token: &str| {
+        with_token(
+            Request::get(format!("/api/v1/swaps/{id}/countersignature")),
+            token,
+        )
+        .body(Body::empty())
+        .unwrap()
+    };
+    let (status, _) = send(&app, read_signature(&maker)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    let (_, answer) = send(&app, read_signature(&taker)).await;
+    assert_eq!(answer["countersignature"], signature);
+
+    // The taker reports it done; the offer is closed.
+    let (status, _) = send(
+        &app,
+        with_token(Request::delete(format!("/api/v1/swaps/{id}")), &taker)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, one) = send(
+        &app,
+        Request::get(format!("/api/v1/swaps/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(one["status"], "closed");
+}

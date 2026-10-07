@@ -270,6 +270,8 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers([
             axum::http::header::CONTENT_TYPE,
             axum::http::header::AUTHORIZATION,
+            // The swap board's capability token (api/src/swaps.rs).
+            axum::http::HeaderName::from_static("x-swap-token"),
         ])
         // A pager in another origin's page reads the listing's totals.
         .expose_headers([
@@ -420,6 +422,21 @@ async fn main() -> anyhow::Result<()> {
 /// no journaled description references after a 30-minute grace window,
 /// and publish the remaining orphan byte total for the upload cap.
 async fn gc_pass(index: &cachet_index::AssetIndex) {
+    // The swap board first: offers closed or expired more than a day ago
+    // are noise, and the board is a mailbox, not an archive.
+    {
+        use cachet_index::MetadataStore;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_secs() as i64)
+            .unwrap_or_default();
+        match index.swap_sweep(now).await {
+            Ok(0) => {}
+            Ok(swept) => tracing::info!(swept, "swap board: old offers swept"),
+            Err(error) => tracing::warn!(%error, "swap board sweep failed; will retry"),
+        }
+    }
+
     const GRACE_SECS: i64 = 30 * 60;
     let texts = match index.all_description_texts().await {
         Ok(texts) => texts,
