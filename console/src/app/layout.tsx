@@ -113,6 +113,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                       </Link>
                     </li>
                     <li>
+                      <Link href="/swaps" className="text-neutral-400 transition hover:text-accent">
+                        Swap board
+                      </Link>
+                    </li>
+                    <li>
                       <Link
                         href="/issuers"
                         className="text-neutral-400 transition hover:text-accent"

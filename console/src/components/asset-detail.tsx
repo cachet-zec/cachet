@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { AssetEvents } from "@/components/asset-events";
+import { AssetOffers } from "@/components/asset-offers";
 import { AssetShare } from "@/components/asset-qr";
 import { CopyButton } from "@/components/copy-button";
 import { IdPlate } from "@/components/id-plate";
@@ -471,6 +472,8 @@ export function AssetDetail({
               />
             </ul>
           </section>
+
+          <AssetOffers assetId={assetId} />
 
           <section className="mt-14">
             <h2 className={sectionTitle}>Share</h2>

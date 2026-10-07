@@ -8,6 +8,22 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Added
 
+- Swaps have their own page: `/swaps` shows the board, and under it the
+  wallet and the make/take form, so taking an offer no longer jumps to the
+  end of the mint page (old `/mint?take=` links forward there). The seed is
+  held by one in-memory browser wallet shared by the mint and swap pages:
+  moving between them keeps it, a reload still forgets it, and nothing
+  stores it. The form scans before offering a choice, shows what is held,
+  suggests the registry's named assets for "you want", and drops the
+  browser's spinner arrows and select chevron for the page's own.
+- Asset pages list the open board offers that give or ask for the asset,
+  and link to `/swaps?want=<asset id>` to ask for it. The board is fetched
+  whole, the same request on every page.
+- The registry listing can be ordered by recent activity
+  (`order=active`): latest issuance, burn or seal first. Assets carry
+  `last_height` (migration 0013); shielded transfers are invisible and
+  never count. The console's registry gains this order and a gallery
+  layout of sealed images.
 - Swap board hardening: a take holds an offer only once the registry has
   checked it is a real answer (the offered note spent on the offer's
   anchor, proof and binding signature valid, the taker's spends signed),

@@ -146,7 +146,10 @@ GET /api/v1/assets?limit=8&offset=16&q=ticket&supply=sealed&order=named_first
 description contains the text, or whose id or issuer key starts with it;
 `issuer` keeps one issuance key; `supply` is `sealed` or `open`;
 `order=named_first` puts sealed names first, then free-text labels, then
-unnamed assets, chain order kept inside each group. These are the caller's
+unnamed assets, chain order kept inside each group; `order=active` puts the
+latest public event first (an issuance, a burn or a seal, at the height each
+asset reports as `last_height`), assets without one last. Shielded transfers
+are invisible to a registry and never count as activity. These are the caller's
 view as well, never moderation. Three response headers carry what a pager
 needs: `X-Registry-Count` (assets listed at all), `X-Total-Count` (assets
 matching, before the page is cut) and `X-Unresolved-Count` (those among

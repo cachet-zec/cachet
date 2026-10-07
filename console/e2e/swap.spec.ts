@@ -36,7 +36,15 @@ async function mint(page: Page, name: string, amount: number): Promise<string> {
   return (await mintWithPhrase(page, name, amount)).assetId;
 }
 
+/** Move between the pages that use keys the way a visitor does: through
+ * the header, so the seed held in memory comes along. */
+async function open(page: Page, name: "Mint" | "Swaps") {
+  await page.locator("header").getByRole("link", { name, exact: true }).click();
+  await expect(page).toHaveURL(name === "Mint" ? /\/mint/ : /\/swaps/);
+}
+
 async function holding(page: Page, assetId: string) {
+  if (!new URL(page.url()).pathname.startsWith("/mint")) await open(page, "Mint");
   await page.getByTestId("holdings-scan").click();
   return page.getByTestId(`holding-${assetId.slice(0, 8)}`);
 }
@@ -51,6 +59,8 @@ test("two browsers swap two assets in one transaction", async ({ browser }) => {
   const silver = await mint(taker, `Swap Silver ${tag}`, 20);
 
   // --- The maker parks 4 GOLD and asks 7 SILVER for them ---
+  await open(maker, "Swaps");
+  await open(taker, "Swaps");
   const makerSwap = maker.getByTestId("swap-panel");
   await makerSwap.getByRole("button", { name: "Scan my holdings" }).click();
   await expect(makerSwap.getByTestId("swap-give-asset").locator("option")).toHaveCount(2, {
@@ -90,18 +100,18 @@ test("two browsers swap two assets in one transaction", async ({ browser }) => {
   await expect(takerSwap.getByTestId("swap-done")).toBeVisible({ timeout: 300_000 });
   await expect(takerSwap.getByTestId("swap-error")).toHaveCount(0);
 
-  // --- Each side's own scan agrees with the offer ---
-  await expect(await holding(taker, gold)).toContainText("× 4", { timeout: 120_000 });
-  await expect(await holding(taker, silver)).toContainText("× 13", { timeout: 120_000 });
-  await expect(await holding(maker, silver)).toContainText("× 7", { timeout: 120_000 });
-  await expect(await holding(maker, gold)).toContainText("× 6", { timeout: 120_000 });
-
   // --- The decoded transaction: no issuance, no burn, shielded actions ---
   await takerSwap.getByTestId("swap-done").getByRole("link").click();
   await expect(taker.getByText("This transaction issues nothing.")).toBeVisible({
     timeout: 30_000,
   });
   await expect(taker.getByText("This transaction burns nothing.")).toBeVisible();
+
+  // --- Each side's own scan agrees with the offer ---
+  await expect(await holding(taker, gold)).toContainText("× 4", { timeout: 120_000 });
+  await expect(await holding(taker, silver)).toContainText("× 13", { timeout: 120_000 });
+  await expect(await holding(maker, silver)).toContainText("× 7", { timeout: 120_000 });
+  await expect(await holding(maker, gold)).toContainText("× 6", { timeout: 120_000 });
 });
 
 test("a swap through the public board, with nothing passed by hand", async ({ browser }) => {
@@ -114,6 +124,7 @@ test("a swap through the public board, with nothing passed by hand", async ({ br
   const { assetId: silver, phrase } = await mintWithPhrase(taker, `Board Silver ${tag}`, 15);
 
   // --- The maker lists 3 GOLD for 5 SILVER (listing is the default) ---
+  await open(maker, "Swaps");
   const makerSwap = maker.getByTestId("swap-panel");
   await makerSwap.getByRole("button", { name: "Scan my holdings" }).click();
   await expect(makerSwap.getByTestId("swap-give-asset").locator("option")).toHaveCount(2, {
@@ -135,9 +146,10 @@ test("a swap through the public board, with nothing passed by hand", async ({ br
   await expect(listed).toContainText("3");
   await expect(listed).toContainText("5");
   await listed.getByTestId("swap-take-link").click();
-  await expect(taker).toHaveURL(/\/mint\?take=[0-9a-f]{32}/);
+  await expect(taker).toHaveURL(/\/swaps\?take=[0-9a-f]{32}/);
+  await expect(taker.getByTestId("swap-needs-wallet")).toContainText("take this offer");
 
-  // The page forgot the seed on navigation: the taker enters it again.
+  // A fresh load forgot the seed: the taker enters it again.
   await taker.getByRole("button", { name: "I already have one" }).click();
   await taker.getByTestId("mint-seed").fill(phrase);
   await taker.getByTestId("mint-seed-saved").check();

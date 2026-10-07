@@ -10,7 +10,7 @@
 //! ```
 
 use cachet_domain::{AssetListQuery, ChainDescription, ListingOrder, SupplyState};
-use cachet_index::{AssetDelta, AssetIndex, Checkpoint, ModerationKind};
+use cachet_index::{AssetDelta, AssetIndex, Checkpoint, EventRow, ModerationKind};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Connection, PgConnection, Row};
 
@@ -128,6 +128,30 @@ async fn fill(index: &AssetIndex) {
             .await
             .expect("apply");
     }
+    // Later activity on a few assets, out of chain order and with a tie,
+    // so "most active first" differs from "newest first". The others keep
+    // no height at all and list last.
+    let events: Vec<EventRow> = [(2usize, 100u64), (7, 100), (11, 90), (4, 95), (2, 40)]
+        .iter()
+        .map(|&(position, height)| EventRow {
+            asset_id: deltas[position].asset_id,
+            height,
+            txid: [position as u8; 32],
+            kind: cachet_domain::AssetEventKind::Burn,
+            amount: 1,
+        })
+        .collect();
+    index
+        .apply(
+            &[],
+            &events,
+            Checkpoint {
+                tip_height: 200,
+                tip_hash: format!("{:064x}", 200),
+            },
+        )
+        .await
+        .expect("apply events");
     for (delta, description) in deltas.iter().zip(descriptions()) {
         if let Some(description) = description {
             index
@@ -181,7 +205,11 @@ fn questions() -> Vec<AssetListQuery> {
         for resolved_only in [false, true] {
             for issuer in [None, Some(vec![ISSUERS[1]; 33]), Some(vec![0x77; 33])] {
                 for supply in [None, Some(SupplyState::Sealed), Some(SupplyState::Open)] {
-                    for order in [ListingOrder::Newest, ListingOrder::NamedFirst] {
+                    for order in [
+                        ListingOrder::Newest,
+                        ListingOrder::NamedFirst,
+                        ListingOrder::Active,
+                    ] {
                         for (offset, limit) in [
                             (0, None),
                             (0, Some(5)),

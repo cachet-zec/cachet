@@ -383,7 +383,8 @@ pub(crate) struct ListAssetsParams {
     #[param(inline)]
     pub supply: Option<SupplyFilter>,
     /// `named_first`: sealed names, then free-text labels, then unnamed,
-    /// chain order kept inside each group. Omitted: newest first.
+    /// chain order kept inside each group. `active`: latest public event
+    /// (issuance, burn or seal) first. Omitted: newest first.
     #[param(inline)]
     pub order: Option<ListOrder>,
 }
@@ -401,6 +402,7 @@ pub(crate) enum SupplyFilter {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ListOrder {
     NamedFirst,
+    Active,
 }
 
 /// Assets the registry lists, before the caller's own filters.
@@ -546,6 +548,7 @@ pub(crate) async fn list_assets(
                 .and_then(cachet_domain::AssetListQuery::search_text),
             order: match params.order {
                 Some(ListOrder::NamedFirst) => cachet_domain::ListingOrder::NamedFirst,
+                Some(ListOrder::Active) => cachet_domain::ListingOrder::Active,
                 None => cachet_domain::ListingOrder::Newest,
             },
             offset: params.offset.unwrap_or(0),
@@ -647,6 +650,7 @@ fn kept_summary(asset_id: AssetId, description: String) -> AssetSummaryResponse 
         issuer: None,
         total_supply: 0,
         finalized: false,
+        last_height: None,
     }
     .into()
 }

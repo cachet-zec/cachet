@@ -200,12 +200,12 @@
           {
             "name": "order",
             "in": "query",
-            "description": "`named_first`: sealed names, then free-text labels, then unnamed,\nchain order kept inside each group. Omitted: newest first.",
+            "description": "`named_first`: sealed names, then free-text labels, then unnamed,\nchain order kept inside each group. `active`: latest public event\n(issuance, burn or seal) first. Omitted: newest first.",
             "required": false,
             "schema": {
               "type": "string",
               "description": "How a listing is ordered.",
-              "enum": ["named_first"]
+              "enum": ["named_first", "active"]
             }
           }
         ],
@@ -1835,6 +1835,12 @@
           "issuer": {
             "type": ["string", "null"],
             "description": "The issuance validating key that minted this asset (ZIP 227\ncanonical encoding, lowercase hex). The chain's only provenance\nstatement: assets sharing this key share an issuer."
+          },
+          "last_height": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Height of the latest public event (issuance, burn or seal), when\nknown. Shielded transfers never count.",
+            "minimum": 0
           },
           "name_source": {
             "type": ["string", "null"],

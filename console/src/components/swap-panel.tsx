@@ -5,10 +5,18 @@ import { useEffect, useRef, useState } from "react";
 
 import { CopyButton } from "@/components/copy-button";
 import { api, problemMessage } from "@/lib/api";
-import { card, cardTitle, ghostButton, input, label, primaryButton, stamp } from "@/lib/ui";
+import { type Call, useBrowserWallet } from "@/lib/browser-wallet";
+import {
+  card,
+  cardTitle,
+  ghostButton,
+  input,
+  label,
+  primaryButton,
+  selectInput,
+  stamp,
+} from "@/lib/ui";
 import { scanToTip, type WalletState } from "@/lib/wallet-scan";
-
-type Call = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 /** The parts of an offer a person decides on (the rest is for the engine). */
 type OfferSummary = {
@@ -46,17 +54,19 @@ async function relayAndConfirm(
  * (polled by both pages), or by hand between the two pages.
  */
 export function SwapPanel({
-  call,
-  seed,
-  enabled,
-  onChange,
+  takeId = null,
+  wantId = null,
+  onChange = () => undefined,
 }: {
-  call: Call;
-  seed: string;
-  enabled: boolean;
-  /** Told after a swap step moved funds, so the holdings refresh. */
-  onChange: () => void;
+  /** A board offer to take, chosen on this page or named in its address. */
+  takeId?: string | null;
+  /** An asset to ask for, when the visitor came from its page. */
+  wantId?: string | null;
+  /** Told after a swap step moved funds. */
+  onChange?: () => void;
 }) {
+  const { call, seed, seedSaved, issuer } = useBrowserWallet();
+  const enabled = issuer !== null && seedSaved;
   const [role, setRole] = useState<"make" | "take">("make");
   const [wallet, setWallet] = useState<WalletState | null>(null);
   const [names, setNames] = useState<Record<string, string>>({});
@@ -104,11 +114,15 @@ export function SwapPanel({
     setTakerToken(null);
   }, [seed]);
 
-  // Arriving from the board (/mint?take=<id>): load that offer to take.
+  // An offer taken from the board: load it on the taker's side.
   useEffect(() => {
     if (!enabled) return;
-    const id = new URLSearchParams(window.location.search).get("take");
+    const id = takeId;
     if (!id || !/^[0-9a-f]{32}$/.test(id)) return;
+    setError(null);
+    setTakeJson(null);
+    setSwapped(null);
+    setTakerToken(null);
     let cancelled = false;
     api.GET("/api/v1/swaps/{id}", { params: { path: { id } } }).then(({ data, error }) => {
       if (cancelled) return;
@@ -126,7 +140,14 @@ export function SwapPanel({
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, takeId]);
+
+  // Asking for a given asset: the maker's form starts with it.
+  useEffect(() => {
+    if (!wantId || !/^[0-9a-f]{64}$/.test(wantId)) return;
+    setRole("make");
+    setWantAsset(wantId);
+  }, [wantId]);
 
   // Names from the whole registry listing (one request identical for every
   // caller), never per asset: a lookup per id would tell the operator what
@@ -405,18 +426,16 @@ export function SwapPanel({
   if (!enabled) return null;
 
   const busy = stage !== null;
+  const heldRow = wallet?.holdings.find((holding) => holding.asset_id === giveAsset);
+  const held = heldRow ? Number(heldRow.amount) : null;
 
   return (
     <section id="swap" className={`${card} rise scroll-mt-8`} data-testid="swap-panel">
-      <h2 className={`${cardTitle} mb-3`}>Swap · one transaction, both sides</h2>
+      <h2 className={`${cardTitle} mb-3`}>2 · Make or take an offer</h2>
       <p className="max-w-prose text-[13px] leading-relaxed text-neutral-500">
-        Both payments travel in one shielded transaction: it lands whole or not at all. Nobody holds
-        anything in between. Offers go on the public{" "}
-        <Link href="/swaps" className="underline decoration-white/20 hover:text-accent">
-          swap board
-        </Link>
-        , or pass between two pages by hand; keys stay in each browser. Testnet only: these assets
-        have no value and the chain can be reset at any time.
+        Both payments travel in one shielded transaction: it lands whole or not at all, and nobody
+        holds anything in between. Offers go on the board above, or pass between two pages by hand.
+        Keys stay in each browser.
       </p>
 
       <div role="radiogroup" aria-label="Your side" className="mt-4 flex flex-wrap gap-2">
@@ -442,7 +461,12 @@ export function SwapPanel({
             {text}
           </button>
         ))}
-        <button type="button" className={ghostButton} onClick={refresh} disabled={busy}>
+        <button
+          type="button"
+          className={`${ghostButton} !px-3.5 !py-2 !text-sm sm:ml-auto`}
+          onClick={refresh}
+          disabled={busy}
+        >
           {wallet ? "Rescan" : "Scan my holdings"}
         </button>
       </div>
@@ -454,20 +478,34 @@ export function SwapPanel({
               <label className={label} htmlFor="swap-give-asset">
                 You give
               </label>
-              <select
-                id="swap-give-asset"
-                data-testid="swap-give-asset"
-                className={input}
-                value={giveAsset}
-                onChange={(event) => setGiveAsset(event.target.value)}
-              >
-                <option value="">{wallet ? "choose a holding" : "scan your holdings first"}</option>
-                {wallet?.holdings.map((holding) => (
-                  <option key={holding.asset_id} value={holding.asset_id}>
-                    {nameOf(holding.asset_id)} · {holding.amount} held
+              {wallet ? (
+                <select
+                  id="swap-give-asset"
+                  data-testid="swap-give-asset"
+                  className={selectInput}
+                  value={giveAsset}
+                  onChange={(event) => setGiveAsset(event.target.value)}
+                >
+                  <option value="">
+                    {wallet.holdings.length > 0 ? "choose a holding" : "nothing held yet"}
                   </option>
-                ))}
-              </select>
+                  {wallet.holdings.map((holding) => (
+                    <option key={holding.asset_id} value={holding.asset_id}>
+                      {nameOf(holding.asset_id)} · {holding.amount} held
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <button
+                  type="button"
+                  id="swap-give-asset"
+                  className="rounded-md border border-dashed border-line-strong px-3.5 py-2.5 text-left text-sm text-neutral-400 transition hover:border-accent/60 hover:text-accent disabled:opacity-40"
+                  onClick={refresh}
+                  disabled={busy}
+                >
+                  Scan to choose from what you hold
+                </button>
+              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <label className={label} htmlFor="swap-give-amount">
@@ -476,30 +514,51 @@ export function SwapPanel({
               <input
                 id="swap-give-amount"
                 data-testid="swap-give-amount"
-                className={input}
+                className={`${input} tabular-nums`}
                 type="number"
+                inputMode="numeric"
                 min={1}
+                max={held ?? undefined}
                 value={giveAmount}
                 onChange={(event) => setGiveAmount(event.target.value)}
               />
+              {held !== null && (
+                <button
+                  type="button"
+                  className="self-start text-[13px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-accent"
+                  onClick={() => setGiveAmount(String(held))}
+                >
+                  of {held.toLocaleString("en-US")} · all
+                </button>
+              )}
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
             <div className="flex flex-col gap-1.5">
               <label className={label} htmlFor="swap-want-asset">
-                You want <span className="text-neutral-600">· asset id</span>
+                You want
               </label>
               <input
                 id="swap-want-asset"
                 data-testid="swap-want-asset"
                 className={`${input} font-data`}
+                list="swap-known-assets"
                 value={wantAsset}
                 onChange={(event) => setWantAsset(event.target.value)}
-                placeholder="64 hex characters"
+                placeholder="type a name, or paste an asset id"
                 spellCheck={false}
+                autoComplete="off"
               />
+              {/* The registry's named assets: picking one fills in its id. */}
+              <datalist id="swap-known-assets">
+                {Object.entries(names)
+                  .filter(([, name]) => name !== "")
+                  .map(([assetId, name]) => (
+                    <option key={assetId} value={assetId} label={name} />
+                  ))}
+              </datalist>
               {/^[0-9a-f]{64}$/.test(wantAsset.trim().toLowerCase()) && (
-                <span className="text-[13px] text-neutral-500">
+                <span data-testid="swap-want-name" className="text-[13px] text-neutral-400">
                   {nameOf(wantAsset.trim().toLowerCase())}
                 </span>
               )}
@@ -511,8 +570,9 @@ export function SwapPanel({
               <input
                 id="swap-want-amount"
                 data-testid="swap-want-amount"
-                className={input}
+                className={`${input} tabular-nums`}
                 type="number"
+                inputMode="numeric"
                 min={1}
                 value={wantAmount}
                 onChange={(event) => setWantAmount(event.target.value)}
@@ -533,7 +593,13 @@ export function SwapPanel({
             type="button"
             data-testid="swap-prepare"
             className={`${primaryButton} self-start`}
-            disabled={busy || !giveAsset || Number(giveAmount) <= 0 || Number(wantAmount) <= 0}
+            disabled={
+              busy ||
+              !giveAsset ||
+              Number(giveAmount) <= 0 ||
+              (held !== null && Number(giveAmount) > held) ||
+              Number(wantAmount) <= 0
+            }
             onClick={prepareOffer}
           >
             Prepare the offer

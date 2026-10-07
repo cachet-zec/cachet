@@ -33,6 +33,9 @@ pub enum ListingOrder {
     /// Names sealed into the asset id, then free-text labels, then assets
     /// without a resolved description; newest first inside each group.
     NamedFirst,
+    /// Latest public event first (issuance, burn or seal), assets with no
+    /// known height last; newest first between equals.
+    Active,
 }
 
 /// A caller's view of the listing. None of it is moderation, except
@@ -139,9 +142,16 @@ impl AssetListQuery {
         let registry_count = assets.len();
 
         assets.retain(|asset| self.keeps(asset));
-        if self.order == ListingOrder::NamedFirst {
-            // Stable: chain order survives inside each group.
-            assets.sort_by_key(|asset| name_rank(asset.description.as_deref()));
+        // Stable sorts: chain order survives between equals.
+        match self.order {
+            ListingOrder::Newest => {}
+            ListingOrder::NamedFirst => {
+                assets.sort_by_key(|asset| name_rank(asset.description.as_deref()));
+            }
+            ListingOrder::Active => {
+                // `None` sorts below every height, so `Reverse` puts it last.
+                assets.sort_by_key(|asset| std::cmp::Reverse(asset.last_height));
+            }
         }
         let total_count = assets.len();
         let unresolved_count = assets
@@ -174,6 +184,7 @@ mod tests {
             issuer: Some(hex::encode([issuer; 33])),
             total_supply: 1,
             finalized,
+            last_height: None,
         }
     }
 
@@ -223,6 +234,26 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(ids(&query.apply(registry())), [3, 4, 1, 5, 2]);
+    }
+
+    #[test]
+    fn active_puts_the_latest_event_first_and_unknown_heights_last() {
+        // Chain order is 5, 4, 3, 2, 1 (newest first).
+        let mut assets = registry();
+        for asset in &mut assets {
+            asset.last_height = match asset.asset_id.as_bytes()[0] {
+                1 => Some(90),
+                2 => Some(120),
+                4 => Some(90),
+                _ => None,
+            };
+        }
+        let query = AssetListQuery {
+            order: ListingOrder::Active,
+            ..Default::default()
+        };
+        // 2 first; 4 and 1 tie and keep chain order; 5 and 3 unknown, last.
+        assert_eq!(ids(&query.apply(assets)), [2, 4, 1, 5, 3]);
     }
 
     #[test]

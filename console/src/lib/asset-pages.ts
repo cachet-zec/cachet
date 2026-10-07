@@ -12,7 +12,7 @@ export type AssetPageQuery = {
   issuer?: string;
   supply?: "sealed" | "open";
   resolved?: boolean;
-  order?: "named_first";
+  order?: "named_first" | "active";
 };
 
 export type AssetPage = {
@@ -78,6 +78,9 @@ export async function fetchAssetPage(query: AssetPageQuery): Promise<AssetPage> 
   if (query.order === "named_first") {
     // Array.sort is stable, so chain order survives inside each group.
     kept = [...kept].sort((a, b) => rank(a.name_source) - rank(b.name_source));
+  } else if (query.order === "active") {
+    // Unknown heights last; a registry without them keeps chain order.
+    kept = [...kept].sort((a, b) => (b.last_height ?? -1) - (a.last_height ?? -1));
   }
   return {
     items: kept.slice(query.offset, query.offset + query.limit),

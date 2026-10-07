@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { SwapBoard } from "@/components/swap-board";
+import { SwapsWorkspace } from "@/components/swaps-workspace";
 import { pageMetadata } from "@/lib/seo";
 
 export const metadata: Metadata = pageMetadata({
@@ -13,7 +13,7 @@ export const metadata: Metadata = pageMetadata({
 export default function SwapsPage() {
   return (
     <div className="rise">
-      <SwapBoard />
+      <SwapsWorkspace />
     </div>
   );
 }

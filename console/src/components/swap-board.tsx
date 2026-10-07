@@ -16,10 +16,17 @@ function remaining(expiresAt: number): string {
 
 /**
  * The public swap board: every open offer, with the names this registry
- * knows for its assets. Taking one opens the mint page bound to it; the
- * swap itself is built, proved and signed in the taker's browser.
+ * knows for its assets. Taking one loads it into the trade panel below;
+ * the swap itself is built, proved and signed in the taker's browser.
  */
-export function SwapBoard() {
+export function SwapBoard({
+  onTake,
+  takingId,
+}: {
+  onTake: (id: string) => void;
+  /** The offer the trade panel holds, if any. */
+  takingId: string | null;
+}) {
   const offers = useQuery({
     queryKey: ["swaps"],
     queryFn: async () => {
@@ -62,9 +69,9 @@ export function SwapBoard() {
         <p className="mt-2 max-w-prose text-sm leading-relaxed text-neutral-500">
           Testnet only. These assets have no value, and the chain can be reset at any time.
         </p>
-        <Link href="/mint#swap" className={`${ghostButton} mt-4 inline-block`}>
+        <a href="#trade" className={`${ghostButton} mt-4 inline-block`}>
           Make an offer
-        </Link>
+        </a>
       </header>
 
       {offers.isPending && <div className="h-24 motion-safe:animate-pulse bg-surface" />}
@@ -78,7 +85,10 @@ export function SwapBoard() {
             <li
               key={offer.id}
               data-testid={`swap-offer-${offer.id}`}
-              className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line py-4 last:border-b-0"
+              aria-current={takingId === offer.id ? "true" : undefined}
+              className={`flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-line py-4 last:border-b-0 ${
+                takingId === offer.id ? "-mx-3 rounded-[3px] bg-accent/[0.06] px-3" : ""
+              }`}
             >
               <p className="min-w-0 flex-1 basis-72 text-base text-neutral-300">
                 <span className="font-display text-xl tabular-nums text-neutral-50">
@@ -94,13 +104,14 @@ export function SwapBoard() {
               <span className="font-data text-[13px] text-neutral-500">
                 {remaining(offer.expires_at)}
               </span>
-              <Link
-                href={`/mint?take=${offer.id}#swap`}
+              <button
+                type="button"
                 data-testid="swap-take-link"
                 className={ghostButton}
+                onClick={() => onTake(offer.id)}
               >
-                Take
-              </Link>
+                {takingId === offer.id ? "Taking" : "Take"}
+              </button>
             </li>
           ))}
         </ul>

@@ -28,6 +28,7 @@ echo "smoke: $SITE + $API"
 
 check "console up"                    http_200 "$SITE"
 check "mint page up"                  http_200 "$SITE/mint"
+check "swaps page up"                 http_200 "$SITE/swaps"
 check "working paper served"          http_200 "$SITE/cachet-whitepaper.pdf"
 check "engine (threaded) served"      http_200 "$SITE/mint-engine-mt/cachet_mint_engine_bg.wasm"
 check "api chain info"                http_200 "$API/api/v1/chain"
@@ -45,4 +46,5 @@ check "cross-origin isolation"        has_header "$SITE/mint" "cross-origin-embe
 check "CORP on api"                   has_header "$API/api/v1/chain" "cross-origin-resource-policy"
 check "compression on engine"         bash -c "curl -s -o /dev/null -H 'Accept-Encoding: gzip' -D- $SITE/mint-engine/cachet_mint_engine_bg.wasm | grep -qi 'content-encoding: gzip'"
 
-echo "smoke: $pass/15 checks green"
+# Any failure has already exited: reaching here means every check passed.
+echo "smoke: all $pass checks green"
