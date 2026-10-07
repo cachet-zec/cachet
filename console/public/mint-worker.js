@@ -16,7 +16,7 @@ let engineThreads = 1;
 // files' hashes, and checked by CI: /mint-engine*/ is cached for an hour
 // (see next.config.ts), and this query is what busts that cache so a
 // rebuilt engine reaches returning browsers at once.
-const ENGINE_VERSION = "314cd44da048";
+const ENGINE_VERSION = "b58681a45d63";
 
 async function load(variant) {
   const base = `/mint-engine${variant}`;

@@ -1603,6 +1603,37 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": ["swaps"],
+        "summary": "Release the take holding an offer (maker token): the maker's page refused\nit, and the offer is open again at once rather than after the hold.",
+        "operationId": "release_take",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Offer id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Released"
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/transactions/{txid}": {

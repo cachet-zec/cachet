@@ -247,6 +247,11 @@ export function SwapPanel({
         if (posted.error) throw new Error(problemMessage(posted.error));
         setBoardStatus("Countersigned. Waiting for the taker to relay the swap…");
       } catch (refusal) {
+        // Refused: release it, so the offer reopens now rather than after
+        // the hold, for a taker whose swap does pay.
+        await api
+          .DELETE("/api/v1/swaps/{id}/take", { params: { path }, headers })
+          .catch(() => undefined);
         setBoardStatus(
           `Refused a take: ${refusal instanceof Error ? refusal.message : String(refusal)}. Still listed.`,
         );

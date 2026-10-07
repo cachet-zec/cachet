@@ -20,7 +20,7 @@
  */
 
 /** Bump on every rebuild of the verification engine, as for the mint one. */
-const ENGINE_VERSION = "314cd44da048";
+const ENGINE_VERSION = "b58681a45d63";
 const BASE = "/verify-engine";
 
 /** What ZIP 227 derives from an issuer key and a description, in hex. */

@@ -364,6 +364,13 @@ async fn the_database_answers_what_the_reference_answers() {
                 .await
                 .expect("sign")
         );
+        // Once countersigned, the take is no longer the maker's to release.
+        assert!(
+            !index
+                .swap_release("offer-1", [9; 32])
+                .await
+                .expect("release")
+        );
         let row = index.swap_get("offer-1").await.expect("get").expect("row");
         assert_eq!(row.take.as_deref(), Some("take-b"));
         assert_eq!(row.countersignature.as_deref(), Some("sig-b"));
