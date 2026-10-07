@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
+import { AssetPicker, type PickableAsset } from "@/components/asset-picker";
 import { CopyButton } from "@/components/copy-button";
 import { api, problemMessage } from "@/lib/api";
 import { type Call, useBrowserWallet } from "@/lib/browser-wallet";
@@ -69,7 +70,10 @@ export function SwapPanel({
   const enabled = issuer !== null && seedSaved;
   const [role, setRole] = useState<"make" | "take">("make");
   const [wallet, setWallet] = useState<WalletState | null>(null);
-  const [names, setNames] = useState<Record<string, string>>({});
+  const [assets, setAssets] = useState<PickableAsset[] | null>(null);
+  const names: Record<string, string> = Object.fromEntries(
+    (assets ?? []).map((asset) => [asset.asset_id, asset.display_name ?? ""]),
+  );
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -159,7 +163,7 @@ export function SwapPanel({
     let cancelled = false;
     api.GET("/api/v1/assets").then(({ data }) => {
       if (cancelled || !data) return;
-      setNames(Object.fromEntries(data.map((a) => [a.asset_id, a.display_name ?? ""])));
+      setAssets(data);
     });
     return () => {
       cancelled = true;
@@ -180,9 +184,19 @@ export function SwapPanel({
     }
   }
 
+  // A first scan reads the whole chain: say how far it has come.
+  const scan = (trimmed: string) =>
+    scanToTip(call, trimmed, (state, tip) =>
+      setStage(
+        state.scanned_height >= tip
+          ? "Scanning the chain…"
+          : `Scanning the chain… block ${state.scanned_height.toLocaleString("en-US")} of ${tip.toLocaleString("en-US")}`,
+      ),
+    );
+
   const refresh = () =>
     step("Scanning the chain…", async () => {
-      setWallet(await scanToTip(call, seed.trim()));
+      setWallet(await scan(seed.trim()));
     });
 
   // --- maker ----------------------------------------------------------------
@@ -190,7 +204,7 @@ export function SwapPanel({
   const prepareOffer = () =>
     step("Parking the units in a swap slot…", async () => {
       const trimmed = seed.trim();
-      let state = await scanToTip(call, trimmed);
+      let state = await scan(trimmed);
       const used = new Set(state.swap_slots.map((s) => s.slot));
       const slot = [0, 1, 2, 3].find((candidate) => !used.has(candidate));
       if (slot === undefined) throw new Error("All four swap slots are in use: withdraw one.");
@@ -357,7 +371,7 @@ export function SwapPanel({
         setListing(null);
         setBoardStatus(null);
       }
-      const state = await scanToTip(call, trimmed);
+      const state = await scan(trimmed);
       const chain = await api.GET("/api/v1/chain");
       if (chain.error) throw new Error(problemMessage(chain.error));
       const built = await call<{ tx_hex: string }>("build_spend", {
@@ -393,7 +407,7 @@ export function SwapPanel({
   const takeOffer = () =>
     step("Scanning the chain…", async () => {
       const trimmed = seed.trim();
-      setWallet(await scanToTip(call, trimmed));
+      setWallet(await scan(trimmed));
       const chain = await api.GET("/api/v1/chain");
       if (chain.error) throw new Error(problemMessage(chain.error));
       setStage("Proving the whole swap in your browser…");
@@ -582,30 +596,15 @@ export function SwapPanel({
               <label className={label} htmlFor="swap-want-asset">
                 You want
               </label>
-              <input
+              <AssetPicker
                 id="swap-want-asset"
-                data-testid="swap-want-asset"
-                className={`${input} font-data`}
-                list="swap-known-assets"
+                testId="swap-want-asset"
                 value={wantAsset}
-                onChange={(event) => setWantAsset(event.target.value)}
-                placeholder="type a name, or paste an asset id"
-                spellCheck={false}
-                autoComplete="off"
+                onChange={setWantAsset}
+                assets={assets ?? []}
+                loading={assets === null}
+                exclude={giveAsset}
               />
-              {/* The registry's named assets: picking one fills in its id. */}
-              <datalist id="swap-known-assets">
-                {Object.entries(names)
-                  .filter(([, name]) => name !== "")
-                  .map(([assetId, name]) => (
-                    <option key={assetId} value={assetId} label={name} />
-                  ))}
-              </datalist>
-              {/^[0-9a-f]{64}$/.test(wantAsset.trim().toLowerCase()) && (
-                <span data-testid="swap-want-name" className="text-[13px] text-neutral-400">
-                  {nameOf(wantAsset.trim().toLowerCase())}
-                </span>
-              )}
             </div>
             <div className="flex flex-col gap-1.5">
               <label className={label} htmlFor="swap-want-amount">

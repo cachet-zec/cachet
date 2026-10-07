@@ -6,6 +6,7 @@ import { SeedCard } from "@/components/seed-card";
 import { SwapBoard } from "@/components/swap-board";
 import { SwapPanel } from "@/components/swap-panel";
 import { useBrowserWallet } from "@/lib/browser-wallet";
+import { cardTitle } from "@/lib/ui";
 
 /**
  * The swaps page: the public board, and under it everything needed to
@@ -51,7 +52,11 @@ export function SwapsWorkspace() {
           Your seed holds what you trade. It stays in this page&apos;s memory, the same one the mint
           page uses, and is gone on reload.
         </p>
-        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
+        {/* Side by side, the two steps share their top edge; while the second
+            waits for the first, they share their height too. */}
+        <div
+          className={`mt-6 grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] ${ready ? "lg:items-start" : ""}`}
+        >
           <SeedCard
             title="1 · Your wallet"
             savedNote="It holds what you trade: lose it and those units are gone."
@@ -61,10 +66,10 @@ export function SwapsWorkspace() {
           ) : (
             <div
               data-testid="swap-needs-wallet"
-              className="rounded-[3px] border border-dashed border-line-strong px-5 py-6 text-sm leading-relaxed text-neutral-400"
+              className="rounded-[3px] border border-dashed border-line-strong p-5 text-sm leading-relaxed text-neutral-400 sm:p-6"
             >
-              <p className="text-base text-neutral-200">2 · Make or take an offer</p>
-              <p className="mt-1.5">
+              <h2 className={`${cardTitle} mb-3 text-neutral-300`}>2 · Make or take an offer</h2>
+              <p className="max-w-prose">
                 {takeId
                   ? "Open your wallet to take this offer: generate a seed, or enter the one holding the asset the offer asks for."
                   : "Open your wallet first: generate a seed, or enter the one that holds your assets. Mint some on the mint page if you have none."}

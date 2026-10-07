@@ -241,8 +241,14 @@ pub(crate) async fn post_offer(
         invalid("the offer does not hold together")
     })?;
     // Built on a root this chain had in its last blocks, or no wallet could
-    // take it. Asked of the node now: an offer is not listed unchecked.
-    let anchors = state.chain.recent_anchors().await?;
+    // take it. A maker posts right after the block that funded its slot, so
+    // a root missing from the cached answer is asked of the node before the
+    // offer is refused.
+    let mut anchors = state.chain.recent_anchors().await?;
+    if !anchor_fresh(anchors.as_deref(), &body.offer, ANCHOR_MARGIN) {
+        state.chain.refresh_anchors().await;
+        anchors = state.chain.recent_anchors().await?;
+    }
     if !anchor_fresh(anchors.as_deref(), &body.offer, ANCHOR_MARGIN) {
         return Err(invalid(
             "the offer is not built on a recent Orchard root of this chain",

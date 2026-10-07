@@ -143,6 +143,9 @@ pub struct OrchardZsaBackend {
     /// Recent Orchard roots by height, with each block's hash, for
     /// `recent_anchors`; refreshed at most every few seconds.
     anchor_cache: tokio::sync::Mutex<AnchorCache>,
+    /// Raised by every block this instance submits (and on request): the
+    /// next `recent_anchors` asks the node rather than its cache.
+    anchors_stale: std::sync::atomic::AtomicBool,
 }
 
 #[derive(Default)]
@@ -200,6 +203,7 @@ impl OrchardZsaBackend {
             relay_lock: tokio::sync::Mutex::new(()),
             block_cache: tokio::sync::RwLock::new(BlockCache::default()),
             anchor_cache: tokio::sync::Mutex::new(AnchorCache::default()),
+            anchors_stale: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -457,6 +461,8 @@ impl OrchardZsaBackend {
             .chain_info_cache
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+        self.anchors_stale
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// The asset id our issuer key produces for a description — known
@@ -1237,7 +1243,10 @@ impl ChainBackend for OrchardZsaBackend {
         // shares one answer, and a refresh asks only for the new blocks.
         const FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(10);
         let mut cache = self.anchor_cache.lock().await;
-        if cache.checked_at.is_some_and(|at| at.elapsed() < FRESH_FOR) {
+        let stale = self
+            .anchors_stale
+            .swap(false, std::sync::atomic::Ordering::SeqCst);
+        if !stale && cache.checked_at.is_some_and(|at| at.elapsed() < FRESH_FOR) {
             return Ok(cache.answer.clone());
         }
         let tip = self.chain_info_inner().await?.tip_height;
@@ -1289,6 +1298,11 @@ impl ChainBackend for OrchardZsaBackend {
         cache.answer = Some(answer.clone());
         cache.checked_at = Some(std::time::Instant::now());
         Ok(Some(answer))
+    }
+
+    async fn refresh_anchors(&self) {
+        self.anchors_stale
+            .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
     async fn kept_description(&self, asset_id: AssetId) -> Result<Option<String>, ChainError> {

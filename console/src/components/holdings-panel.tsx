@@ -6,18 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { api, problemMessage } from "@/lib/api";
 import { card, cardTitle, ghostButton, input, label, primaryButton, stamp } from "@/lib/ui";
-
-/**
- * The browser wallet: scan the public chain locally (raw blocks are the
- * same for every caller — the server never learns which notes are ours),
- * then transfer or burn what the seed holds. Proofs and signatures are
- * computed in the same Web Worker as minting.
- */
-type WalletState = {
-  address: string;
-  scanned_height: number;
-  holdings: { asset_id: string; amount: string }[];
-};
+import { scanToTip, type WalletState } from "@/lib/wallet-scan";
 
 type SpendForm = {
   asset_id: string;
@@ -26,6 +15,12 @@ type SpendForm = {
   amount: string;
 };
 
+/**
+ * The browser wallet: scan the public chain locally (raw blocks are the
+ * same for every caller — the server never learns which notes are ours),
+ * then transfer or burn what the seed holds. Proofs and signatures are
+ * computed in the same Web Worker as minting.
+ */
 export function HoldingsPanel({
   call,
   seed,
@@ -95,47 +90,13 @@ export function HoldingsPanel({
     setError(null);
     setScanning(true);
     try {
-      const trimmedSeed = seed.trim();
-      // Resume from where the engine's wallet really is: the swap panel
-      // scans the same wallet, so this panel's last height may be behind.
-      const current = await call<WalletState>("wallet_scan", { seed: trimmedSeed, blocks: [] });
-      setWallet(current);
-      let height = current.scanned_height;
-      for (;;) {
-        // A full scan is dozens of heavy pages; a transient network drop
-        // must not force the user to click again. Retry with backoff —
-        // the incremental design makes retries always safe (the wallet
-        // only advances when a page is fed in order).
-        const fetchPage = () =>
-          api.GET("/api/v1/chain/transactions", {
-            params: { query: { start_height: height + 1, limit: 25 } },
-          });
-        let page: Awaited<ReturnType<typeof fetchPage>> | null = null;
-        for (let attempt = 1; attempt <= 4; attempt += 1) {
-          try {
-            page = await fetchPage();
-            if (!page.error) break;
-            if (attempt === 4) throw new Error(problemMessage(page.error));
-          } catch (fetchError) {
-            if (attempt === 4) throw fetchError;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
-        }
-        if (!page || page.error || !page.data) throw new Error("chain fetch failed");
-        if (page.data.blocks.length > 0) {
-          const state = await call<WalletState>("wallet_scan", {
-            seed: trimmedSeed,
-            blocks: page.data.blocks,
-          });
-          height = state.scanned_height;
-          setWallet(state);
-        }
-        setProgress({ height, tip: page.data.tip_height });
-        if (height >= page.data.tip_height || page.data.blocks.length === 0) break;
-        // The server cache makes pages near-instant; pace the loop so a
-        // full scan stays well under the API's per-client rate limit.
-        await new Promise((resolve) => setTimeout(resolve, 150));
-      }
+      // Resumes from where the engine's wallet really is: the swap panel
+      // scans the same wallet. Holdings show as each page lands.
+      const state = await scanToTip(call, seed.trim(), (page, tip) => {
+        setWallet(page);
+        setProgress({ height: page.scanned_height, tip });
+      });
+      setWallet(state);
     } catch (scanError) {
       setError(scanError instanceof Error ? scanError.message : String(scanError));
     } finally {
