@@ -1683,7 +1683,19 @@ async fn a_transaction_decodes_to_its_public_zsa_content() {
 #[tokio::test]
 async fn the_swap_board_carries_a_swap_between_two_parties() {
     let app = app();
-    let offer = serde_json::to_string(&cachet_swap::testing::setup().offer).unwrap();
+    let fixture = cachet_swap::testing::setup();
+    let offer = serde_json::to_string(&fixture.offer).unwrap();
+    // A real answer to that offer: the whole swap, proved and signed.
+    let (real_take, _) = cachet_swap::take(
+        &fixture.offer,
+        &fixture.taker_inputs,
+        cachet_swap::testing::address(&fixture.taker_key),
+        orchard::keys::FullViewingKey::from(&fixture.taker_key)
+            .to_ovk(orchard::keys::Scope::External),
+        zcash_protocol::consensus::BlockHeight::from_u32(100),
+        rand::rngs::OsRng,
+    )
+    .unwrap();
     let with_token = |builder: axum::http::request::Builder, token: &str| {
         builder.header("x-swap-token", token.to_owned())
     };
@@ -1719,8 +1731,17 @@ async fn the_swap_board_carries_a_swap_between_two_parties() {
     .await;
     assert_eq!(one["offer"], offer);
 
-    // A take holds it: a second taker is turned away.
-    let take = json!({"version": 1, "tx": "00", "maker_action": 0, "alpha": "00"}).to_string();
+    // A take that is not a real answer to the offer never holds it.
+    let junk = json!({"version": 1, "tx": "00", "maker_action": 0, "alpha": "00"}).to_string();
+    let (status, _) = send(
+        &app,
+        post_json(&format!("/api/v1/swaps/{id}/take"), json!({"take": junk})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // A real take holds it: a second taker is turned away.
+    let take = serde_json::to_string(&real_take).unwrap();
     let (status, taken) = send(
         &app,
         post_json(&format!("/api/v1/swaps/{id}/take"), json!({"take": take})),
@@ -1756,6 +1777,31 @@ async fn the_swap_board_carries_a_swap_between_two_parties() {
     let (status, envelope) = send(&app, read_take(&maker)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(envelope["take"], take);
+
+    // The maker can release a take it refuses: the offer reopens at once.
+    let release = |token: &str| {
+        with_token(Request::delete(format!("/api/v1/swaps/{id}/take")), token)
+            .body(Body::empty())
+            .unwrap()
+    };
+    let (status, _) = send(&app, release(&taker)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "only the maker releases");
+    let (status, _) = send(&app, release(&maker)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+    let (_, listed) = send(
+        &app,
+        Request::get("/api/v1/swaps").body(Body::empty()).unwrap(),
+    )
+    .await;
+    assert_eq!(listed.as_array().unwrap().len(), 1);
+    let (status, taken) = send(
+        &app,
+        post_json(&format!("/api/v1/swaps/{id}/take"), json!({"take": take})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let taker = taken["taker_token"].as_str().unwrap().to_owned();
+    let (_, envelope) = send(&app, read_take(&maker)).await;
     let taken_at = envelope["taken_at"].as_i64().unwrap();
 
     // The maker answers that take; only the taker reads the answer.

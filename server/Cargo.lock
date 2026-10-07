@@ -367,6 +367,7 @@ dependencies = [
  "ed25519-dalek",
  "hex",
  "http-body-util",
+ "orchard",
  "rand 0.8.8",
  "reqwest",
  "serde",
@@ -381,6 +382,7 @@ dependencies = [
  "tracing-subscriber",
  "utoipa",
  "utoipa-swagger-ui",
+ "zcash_protocol",
 ]
 
 [[package]]

@@ -48,7 +48,9 @@ pub(crate) fn router() -> Router<AppState> {
         )
         .route(
             "/api/v1/swaps/{id}/take",
-            get(crate::swaps::read_take).post(crate::swaps::take_offer),
+            get(crate::swaps::read_take)
+                .post(crate::swaps::take_offer)
+                .delete(crate::swaps::release_take),
         )
         .route(
             "/api/v1/swaps/{id}/countersignature",

@@ -41,6 +41,11 @@ pub const RELAYS_IN_FLIGHT_PER_CLIENT: u32 = 8;
 /// anyone real, including a room behind one NAT taking turns.
 pub const RELAYS_PER_MINUTE_PER_CLIENT: u32 = 10;
 
+/// Offers a client may post to the swap board in an hour. A maker has four
+/// swap slots; six an hour leaves room for withdrawing and posting again,
+/// and makes filling the board a matter of many addresses.
+pub const OFFERS_PER_HOUR_PER_CLIENT: u32 = 6;
+
 /// Above this many tracked clients, stale windows are swept on the next
 /// call (a botnet must not make the map the thing that grows).
 const PRUNE_ABOVE: usize = 10_000;
@@ -53,6 +58,7 @@ pub struct ClientLimits {
     uploads: Mutex<HashMap<ClientKey, (Instant, u32)>>,
     relays: Mutex<HashMap<ClientKey, u32>>,
     relay_minutes: Mutex<HashMap<ClientKey, (Instant, u32)>>,
+    offer_hours: Mutex<HashMap<ClientKey, (Instant, u32)>>,
 }
 
 impl ClientLimits {
@@ -63,6 +69,7 @@ impl ClientLimits {
             uploads: Mutex::new(HashMap::new()),
             relays: Mutex::new(HashMap::new()),
             relay_minutes: Mutex::new(HashMap::new()),
+            offer_hours: Mutex::new(HashMap::new()),
         }
     }
 
@@ -100,6 +107,11 @@ impl ClientLimits {
         take_in_minute(&self.relay_minutes, key, RELAYS_PER_MINUTE_PER_CLIENT)
     }
 
+    /// Reserve one swap-board offer in the client's current hour.
+    pub fn take_offer(&self, key: ClientKey) -> bool {
+        take_in_window(&self.offer_hours, key, OFFERS_PER_HOUR_PER_CLIENT, 3600)
+    }
+
     /// Reserve a relay slot; released when the returned guard drops.
     pub fn begin_relay(self: &Arc<Self>, key: ClientKey) -> Option<RelaySlot> {
         let mut relays = self
@@ -124,15 +136,25 @@ fn take_in_minute(
     key: ClientKey,
     budget: u32,
 ) -> bool {
+    take_in_window(windows, key, budget, 60)
+}
+
+/// Count one event in the client's current window of `window_secs`.
+fn take_in_window(
+    windows: &Mutex<HashMap<ClientKey, (Instant, u32)>>,
+    key: ClientKey,
+    budget: u32,
+    window_secs: u64,
+) -> bool {
     let mut windows = windows
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let now = Instant::now();
     if windows.len() > PRUNE_ABOVE {
-        windows.retain(|_, (started, _)| started.elapsed().as_secs() < 60);
+        windows.retain(|_, (started, _)| started.elapsed().as_secs() < window_secs);
     }
     match windows.get_mut(&key) {
-        Some((started, count)) if started.elapsed().as_secs() < 60 => {
+        Some((started, count)) if started.elapsed().as_secs() < window_secs => {
             if *count >= budget {
                 return false;
             }

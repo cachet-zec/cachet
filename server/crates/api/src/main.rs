@@ -280,6 +280,14 @@ async fn main() -> anyhow::Result<()> {
             axum::http::HeaderName::from_static("x-unresolved-count"),
         ]);
 
+    // The swap board verifies each take's proof: build the verifying key
+    // now, off the request path, so the first take does not wait for it.
+    std::thread::spawn(|| {
+        let started = std::time::Instant::now();
+        cachet_swap::prepare_verifying_key();
+        tracing::info!(elapsed = ?started.elapsed(), "swap verifying key ready");
+    });
+
     // Public read-only deployments: mutations disabled, browsing intact.
     // (read_only was resolved above, where the bind address is chosen.)
     if read_only {

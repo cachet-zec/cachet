@@ -511,26 +511,33 @@ pub fn take(
 
 // --- message 3 --------------------------------------------------------------
 
-/// The maker's side: read the transaction it is asked to complete, check
-/// it spends exactly the offered note and pays `receive_ivk`'s address what
-/// the offer asks, and only then sign. `swap_key` is the one-off account's
-/// spending key.
-pub fn countersign(
-    offer: &Offer,
-    swap_key: &SpendingKey,
-    receive_ivk: &IncomingViewingKey,
-    take: &Take,
-    mut rng: impl RngCore + CryptoRng,
-) -> Result<Countersignature, SwapError> {
-    let parts = decode_offer(offer)?;
+/// A take, read and checked against its offer: what both the maker and a
+/// registry must establish before going further.
+struct TakeRead {
+    tx: Transaction,
+    alpha: pallas::Scalar,
+    maker_action: usize,
+    sighash: [u8; 32],
+}
+
+fn zsa_bundle(
+    tx: &Transaction,
+) -> Result<&Bundle<OrchardAuthorized, ZatBalance, OrchardZSA>, SwapError> {
+    match tx.deref().orchard_bundle() {
+        Some(OrchardBundle::OrchardZSA(bundle)) => Ok(bundle),
+        _ => Err(SwapError::Refused("no OrchardZSA bundle")),
+    }
+}
+
+/// Parse a take and check it answers `parts`: a transaction carrying only
+/// an OrchardZSA bundle, built on the offer's anchor, burning nothing,
+/// whose action `maker_action` spends the offered note with
+/// `rk = ak.randomize(alpha)`, under the fixed swap header. Returns it with
+/// the sighash recomputed from the transaction itself.
+fn read_take(parts: &OfferParts, take: &Take) -> Result<TakeRead, SwapError> {
     if take.version != VERSION {
         return Err(SwapError::Version(take.version));
     }
-    let swap_fvk = FullViewingKey::from(swap_key);
-    if swap_fvk.to_bytes() != parts.fvk.to_bytes() {
-        return Err(SwapError::Refused("this key did not make the offer"));
-    }
-
     let raw = hex::decode(&take.tx).map_err(|_| SwapError::Malformed("transaction hex"))?;
     let tx = Transaction::read(raw.as_slice(), BranchId::Nu7)
         .map_err(|_| SwapError::Malformed("transaction"))?;
@@ -543,9 +550,7 @@ pub fn countersign(
             "a swap carries nothing but its Orchard bundle",
         ));
     }
-    let Some(OrchardBundle::OrchardZSA(bundle)) = data.orchard_bundle() else {
-        return Err(SwapError::Refused("no OrchardZSA bundle"));
-    };
+    let bundle = zsa_bundle(&tx)?;
     if !bundle.burn().is_empty() {
         return Err(SwapError::Refused("a swap burns nothing"));
     }
@@ -553,21 +558,111 @@ pub fn countersign(
         return Err(SwapError::Refused("not built against the offer's anchor"));
     }
 
-    // The action to sign spends the offered note, under this key.
+    // The action to sign spends the offered note, under the offer's key.
+    let maker_action = take.maker_action as usize;
     let action = bundle
         .actions()
-        .get(take.maker_action as usize)
+        .get(maker_action)
         .ok_or(SwapError::Refused("no such action"))?;
-    if *action.nullifier() != parts.note.nullifier(&swap_fvk) {
+    if *action.nullifier() != parts.note.nullifier(&parts.fvk) {
         return Err(SwapError::Refused(
             "that action does not spend the offered note",
         ));
     }
     let alpha = alpha_from(&take.alpha)?;
-    let expected_rk = SpendValidatingKey::from(swap_fvk).randomize(&alpha);
+    let expected_rk = SpendValidatingKey::from(parts.fvk.clone()).randomize(&alpha);
     if <[u8; 32]>::from(&expected_rk) != <[u8; 32]>::from(action.rk()) {
         return Err(SwapError::Refused("alpha does not match that action's key"));
     }
+
+    // Recompute the sighash over a rebuild of the parsed transaction. The
+    // rebuild has the fixed header every swap uses, so a transaction with
+    // any other header is refused rather than signed under the wrong hash.
+    let expected = transaction_data::<Received>(bundle.clone(), data.expiry_height());
+    if data.version() != expected.version()
+        || data.consensus_branch_id() != expected.consensus_branch_id()
+        || data.lock_time() != expected.lock_time()
+        || data.zip233_amount() != expected.zip233_amount()
+        || expected.digest(TxIdDigester).header_digest != data.digest(TxIdDigester).header_digest
+    {
+        return Err(SwapError::Refused("not a swap transaction header"));
+    }
+    let sighash: [u8; 32] = *signature_hash(
+        &expected,
+        &SignableInput::Shielded,
+        &expected.digest(TxIdDigester),
+    )
+    .as_ref();
+    Ok(TakeRead {
+        tx,
+        alpha,
+        maker_action,
+        sighash,
+    })
+}
+
+/// The OrchardZSA verifying key, built once per process (seconds).
+fn verifying_key() -> &'static orchard::circuit::VerifyingKey {
+    static KEY: std::sync::OnceLock<orchard::circuit::VerifyingKey> = std::sync::OnceLock::new();
+    KEY.get_or_init(orchard::circuit::VerifyingKey::build::<OrchardZSA>)
+}
+
+/// Build the verifying key now, off the request path (a registry calls
+/// this at startup so the first take is not the one that pays for it).
+pub fn prepare_verifying_key() {
+    let _ = verifying_key();
+}
+
+/// What a registry checks before holding an offer for a take, with no key:
+/// everything the maker will check except the payment (only the maker can
+/// decrypt it), plus what makes a take expensive to fake. The proof must
+/// verify, the binding signature must balance every asset, and every action
+/// but the maker's must carry a valid spend signature. So a take that holds
+/// an offer comes from someone holding real notes on the offer's anchor and
+/// who spent the time to prove the whole swap.
+pub fn check_take(offer: &Offer, take: &Take) -> Result<(), SwapError> {
+    let parts = decode_offer(offer)?;
+    let read = read_take(&parts, take)?;
+    let bundle = zsa_bundle(&read.tx)?;
+    bundle
+        .verify_proof(verifying_key())
+        .map_err(|_| SwapError::Refused("the proof does not verify"))?;
+    bundle
+        .binding_validating_key()
+        .verify(
+            &read.sighash,
+            bundle.authorization().binding_signature().sig(),
+        )
+        .map_err(|_| SwapError::Refused("the binding signature does not verify"))?;
+    for (index, action) in bundle.actions().iter().enumerate() {
+        if index == read.maker_action {
+            continue;
+        }
+        action
+            .rk()
+            .verify(&read.sighash, action.authorization().sig())
+            .map_err(|_| SwapError::Refused("a spend of the taker is not signed"))?;
+    }
+    Ok(())
+}
+
+/// The maker's side: read the transaction it is asked to complete, check
+/// it spends exactly the offered note and pays `receive_ivk`'s address what
+/// the offer asks, and only then sign. `swap_key` is the one-off account's
+/// spending key.
+pub fn countersign(
+    offer: &Offer,
+    swap_key: &SpendingKey,
+    receive_ivk: &IncomingViewingKey,
+    take: &Take,
+    mut rng: impl RngCore + CryptoRng,
+) -> Result<Countersignature, SwapError> {
+    let parts = decode_offer(offer)?;
+    if FullViewingKey::from(swap_key).to_bytes() != parts.fvk.to_bytes() {
+        return Err(SwapError::Refused("this key did not make the offer"));
+    }
+    let read = read_take(&parts, take)?;
+    let bundle = zsa_bundle(&read.tx)?;
 
     // The payment, from what this wallet can decrypt.
     let want = parts.want;
@@ -583,28 +678,9 @@ pub fn countersign(
         return Err(SwapError::Refused("it does not pay what the offer asks"));
     }
 
-    // Recompute the sighash over a rebuild of the parsed transaction. The
-    // rebuild has the fixed header every swap uses, so a transaction with
-    // any other header is refused rather than signed under the wrong hash.
-    let expected = transaction_data::<Received>(bundle.clone(), data.expiry_height());
-    if data.version() != expected.version()
-        || data.consensus_branch_id() != expected.consensus_branch_id()
-        || data.lock_time() != expected.lock_time()
-        || data.zip233_amount() != expected.zip233_amount()
-    {
-        return Err(SwapError::Refused("not a swap transaction header"));
-    }
-    let sighash = signature_hash(
-        &expected,
-        &SignableInput::Shielded,
-        &expected.digest(TxIdDigester),
-    );
-    if expected.digest(TxIdDigester).header_digest != data.digest(TxIdDigester).header_digest {
-        return Err(SwapError::Refused("not a swap transaction header"));
-    }
     let signature = SpendAuthorizingKey::from(swap_key)
-        .randomize(&alpha)
-        .sign(&mut rng, sighash.as_ref());
+        .randomize(&read.alpha)
+        .sign(&mut rng, &read.sighash);
     Ok(Countersignature {
         version: VERSION,
         signature: hex::encode(<[u8; 64]>::from(&signature)),

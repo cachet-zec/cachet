@@ -141,6 +141,12 @@ pub trait MetadataStore: Send + Sync {
         Ok(false)
     }
 
+    /// Drop the take holding an offer (the maker refused it), so the offer
+    /// is open again at once; false if the token, or the state, do not match.
+    async fn swap_release(&self, _id: &str, _maker_token: [u8; 32]) -> Result<bool, IndexError> {
+        Ok(false)
+    }
+
     /// Close an offer: the maker withdrawing it, or the taker reporting it
     /// complete once countersigned. False if the token does not allow it.
     async fn swap_close(&self, _id: &str, _token: [u8; 32]) -> Result<bool, IndexError> {
@@ -410,6 +416,19 @@ impl MetadataStore for AssetIndex {
         .bind(maker_token.as_slice())
         .bind(taken_at)
         .bind(countersignature)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn swap_release(&self, id: &str, maker_token: [u8; 32]) -> Result<bool, IndexError> {
+        let result = sqlx::query(
+            "UPDATE swap_offers SET take = NULL, taker_token = NULL, taken_at = NULL
+             WHERE id = $1 AND maker_token = $2 AND take IS NOT NULL
+               AND countersignature IS NULL AND NOT closed",
+        )
+        .bind(id)
+        .bind(maker_token.as_slice())
         .execute(self.pool())
         .await?;
         Ok(result.rows_affected() == 1)
@@ -712,6 +731,25 @@ impl MetadataStore for MemoryMetadataStore {
         }) {
             Some(row) => {
                 row.countersignature = Some(countersignature.to_owned());
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    async fn swap_release(&self, id: &str, maker_token: [u8; 32]) -> Result<bool, IndexError> {
+        let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        match swaps.iter_mut().find(|row| {
+            row.id == id
+                && row.maker_token == maker_token
+                && row.take.is_some()
+                && row.countersignature.is_none()
+                && !row.closed
+        }) {
+            Some(row) => {
+                row.take = None;
+                row.taker_token = None;
+                row.taken_at = None;
                 Ok(true)
             }
             None => Ok(false),

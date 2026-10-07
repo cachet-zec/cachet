@@ -184,8 +184,8 @@ pub(crate) async fn post_offer(
     if state.write_paths_paused() {
         return Err(ApiError::MintsPaused);
     }
-    if !state.client_limits.take_relay(client) {
-        return Err(ApiError::RelayBudgetSpent);
+    if !state.client_limits.take_offer(client) {
+        return Err(ApiError::SwapOfferBudgetSpent);
     }
     let store = require_metadata_store(&state)?;
     if body.offer.len() > MAX_OFFER_BYTES {
@@ -318,8 +318,29 @@ pub(crate) async fn take_offer(
     if body.take.len() > MAX_TAKE_BYTES {
         return Err(invalid("the take is too large"));
     }
-    serde_json::from_str::<cachet_swap::Take>(&body.take)
-        .map_err(|_| invalid("that is not a swap take"))?;
+    let take: cachet_swap::Take =
+        serde_json::from_str(&body.take).map_err(|_| invalid("that is not a swap take"))?;
+    let row = store
+        .swap_get(&id)
+        .await
+        .map_err(metadata_error)?
+        .ok_or(ApiError::NotFound { what: "swap" })?;
+    if !row.is_open(now()) {
+        return Err(ApiError::SwapUnavailable);
+    }
+    let offer: cachet_swap::Offer =
+        serde_json::from_str(&row.offer).map_err(|_| invalid("the stored offer is unreadable"))?;
+    // A take holds the offer: before it does, it must be a real answer to
+    // it (the maker's note spent on the offer's anchor, the proof and the
+    // binding signature valid, the taker's spends signed). Verifying a
+    // proof is CPU work, kept off the async runtime.
+    let checked = tokio::task::spawn_blocking(move || cachet_swap::check_take(&offer, &take))
+        .await
+        .map_err(|_| invalid("the take could not be checked"))?;
+    if let Err(error) = checked {
+        tracing::debug!(%error, "swap board: take refused");
+        return Err(invalid("the take does not answer this offer"));
+    }
     let token = random_hex::<32>();
     let hash: [u8; 32] = Sha256::digest(hex::decode(&token).expect("hex just made")).into();
     if !store
@@ -374,6 +395,36 @@ pub(crate) async fn read_take(
         take: live.then(|| row.take.clone()).flatten(),
         taken_at: live.then_some(row.taken_at).flatten(),
     }))
+}
+
+/// Release the take holding an offer (maker token): the maker's page refused
+/// it, and the offer is open again at once rather than after the hold.
+#[utoipa::path(
+    delete,
+    path = "/api/v1/swaps/{id}/take",
+    tag = "swaps",
+    params(("id" = String, Path, description = "Offer id")),
+    responses(
+        (status = 204, description = "Released"),
+        (status = 404, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+pub(crate) async fn release_take(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Path(id): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    let store = require_metadata_store(&state)?;
+    let hash = token_hash(&headers)?;
+    if store
+        .swap_release(&id, hash)
+        .await
+        .map_err(metadata_error)?
+    {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(ApiError::NotFound { what: "swap" })
+    }
 }
 
 /// Post the maker's countersignature (maker token).

@@ -96,8 +96,9 @@ pub struct HiddenEntry {
 }
 
 /// How long a take holds an offer for its maker to countersign, seconds.
-/// After that, unsigned, the offer reopens to other takers.
-pub const SWAP_TAKE_HOLD_SECS: i64 = 600;
+/// After that, unsigned, the offer reopens to other takers. The maker's
+/// page answers within seconds, so the hold only has to cover a slow tab.
+pub const SWAP_TAKE_HOLD_SECS: i64 = 120;
 
 /// The maker's page countersigns, so an offer whose maker has not checked
 /// in for this long is off the board until it does, seconds.

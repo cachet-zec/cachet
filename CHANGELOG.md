@@ -8,6 +8,13 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Added
 
+- Swap board hardening: a take holds an offer only once the registry has
+  checked it is a real answer (the offered note spent on the offer's
+  anchor, proof and binding signature valid, the taker's spends signed),
+  so blocking offers costs a real proof over real notes. The maker's page
+  releases a take it refuses (`DELETE /api/v1/swaps/{id}/take`), the hold
+  drops from ten minutes to two, and a client may post six offers an
+  hour. The verifying key is built at startup.
 - A public swap board (`/swaps`, `/api/v1/swaps`): makers list offers,
   takers take them, and the three messages of a swap pass through the
   registry instead of by hand. The registry holds messages, never keys: a

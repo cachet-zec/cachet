@@ -178,3 +178,35 @@ fn an_offer_that_does_not_hold_together_is_refused() {
         Err(SwapError::InsufficientFunds { .. })
     ));
 }
+
+/// What a registry runs before holding an offer: a real take passes; a take
+/// for another offer, or with the maker's randomizer altered, does not.
+#[test]
+fn a_registry_can_tell_a_real_take_from_a_fake_one() {
+    let s = setup();
+    let taker_fvk = FullViewingKey::from(&s.taker_key);
+    let (take_message, _) = take(
+        &s.offer,
+        &s.taker_inputs,
+        address(&s.taker_key),
+        taker_fvk.to_ovk(Scope::External),
+        BlockHeight::from_u32(100),
+        OsRng,
+    )
+    .unwrap();
+    assert_eq!(cachet_swap::check_take(&s.offer, &take_message), Ok(()));
+
+    // Aimed at another offer: it spends a note that offer is not about.
+    let other = setup();
+    assert!(cachet_swap::check_take(&other.offer, &take_message).is_err());
+
+    // The randomizer the maker would sign with no longer fits the action.
+    let mut altered = take_message.clone();
+    altered.alpha = hex::encode([1u8; 32]);
+    assert!(cachet_swap::check_take(&s.offer, &altered).is_err());
+
+    // Not a transaction at all.
+    let mut junk = take_message;
+    junk.tx = "00".to_owned();
+    assert!(cachet_swap::check_take(&s.offer, &junk).is_err());
+}

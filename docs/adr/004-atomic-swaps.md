@@ -65,6 +65,16 @@ librustzcash's cached ZSA proving key is made public for the same build.
   hashed) decide who reads a take and who reads a countersignature. The
   maker's page answers takes, so an offer is listed only while that page
   checks in (every few seconds; off the board after a minute of silence).
+  Before a take holds an offer, the registry checks it with no key
+  (`cachet_swap::check_take`): it spends the offered note on the offer's
+  anchor, the proof and the binding signature verify, and the taker's
+  spends are signed. A take that holds an offer therefore costs a real
+  proof over real notes. The hold lasts two minutes, and the maker's page
+  releases a take it refuses at once. A client may post six offers an hour.
+- Offers are checked for consistency, not against the chain: an offer
+  built on an invented anchor is listed, but no wallet can take it (the
+  taker's wallet only knows real roots). Checking the anchor against the
+  chain is left for later.
 - The offer's anchor must be within the taker's last 100 scanned blocks.
 - Zero fee, as every Cachet transaction on the testnet.
 - A maker cancels by withdrawing the slot (spending the note); a taker's

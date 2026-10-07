@@ -240,6 +240,7 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         swaps::get_offer,
         swaps::take_offer,
         swaps::read_take,
+        swaps::release_take,
         swaps::post_countersignature,
         swaps::read_countersignature,
         swaps::close_offer,
