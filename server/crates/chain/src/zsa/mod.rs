@@ -11,6 +11,7 @@
 //! Asset state is derived by scanning the chain (see [`scan`]).
 
 mod block;
+mod decode;
 mod keys;
 mod rpc;
 mod scan;
@@ -1285,6 +1286,22 @@ impl ChainBackend for OrchardZsaBackend {
                     .collect(),
             })
             .collect())
+    }
+
+    async fn decode_transaction(
+        &self,
+        txid: TxId,
+    ) -> Result<cachet_domain::DecodedTransaction, ChainError> {
+        let verbose = self.rpc.raw_transaction_verbose(&txid).await?;
+        let bytes = hex::decode(&verbose.hex).map_err(|error| ChainError::Unavailable {
+            reason: format!("node returned invalid tx hex for {txid}: {error}"),
+        })?;
+        let tx = Transaction::read(bytes.as_slice(), zcash_protocol::consensus::BranchId::Nu7)
+            .map_err(|error| ChainError::Unavailable {
+                reason: format!("could not parse tx {txid}: {error}"),
+            })?;
+        let height = verbose.height.and_then(|height| u64::try_from(height).ok());
+        Ok(decode::decode(&tx, height, verbose.version.unwrap_or(0)))
     }
 
     async fn asset_events(&self, asset_id: AssetId) -> Result<Vec<AssetEvent>, ChainError> {

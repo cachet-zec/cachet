@@ -197,6 +197,28 @@ pub fn issuer_info(seed_phrase: &str, description: &str) -> Result<JsValue, JsEr
     Ok(serde_wasm_bindgen::to_value(&info)?)
 }
 
+/// Whether an issuance request is a seal of an existing asset with no new
+/// units, refusing the combinations consensus or common sense rule out: a
+/// zero amount that does not seal mints nothing, and a zero amount on a
+/// first issuance would create an asset sealed at zero supply.
+///
+/// Plain `&str` errors so the rule is testable off wasm (building a
+/// `JsError` on the host panics).
+fn seal_only(amount: u64, finalize: bool, first_issuance: bool) -> Result<bool, &'static str> {
+    if amount > 0 {
+        return Ok(false);
+    }
+    if !finalize {
+        return Err("an issuance of zero units must seal the supply, or it does nothing");
+    }
+    if first_issuance {
+        return Err(
+            "only an existing asset can be sealed without minting: this one has no supply yet",
+        );
+    }
+    Ok(true)
+}
+
 #[derive(Serialize)]
 struct BuiltTx {
     /// The complete signed v6 transaction, hex-encoded, ready to relay.
@@ -214,6 +236,11 @@ struct BuiltTx {
 ///
 /// `first_issuance` and `target_height` come from the public chain API —
 /// they are public facts, not secrets.
+///
+/// `amount == 0` seals an existing asset without minting more: the issue
+/// action carries no note and sets `finalize`, which consensus accepts
+/// (an action with no note is refused only when it does not finalize).
+/// It must name an asset that already exists, and must finalize.
 #[wasm_bindgen]
 pub fn build_issuance_tx(
     seed_phrase: &str,
@@ -242,11 +269,15 @@ pub fn build_issuance_tx(
         },
     );
 
+    let seal_only = seal_only(amount, finalize, first_issuance).map_err(JsError::new)?;
+
     builder
         .init_issuance_bundle::<FeeError>(
             keys.issuance_key(),
             asset_desc_hash,
-            Some(IssueInfo {
+            // No note when sealing: orchard then builds an action that is
+            // already finalized, so finalize_asset below is not needed.
+            (!seal_only).then(|| IssueInfo {
                 recipient: keys.issuance_address(),
                 value: NoteValue::from_raw(amount),
             }),
@@ -254,7 +285,7 @@ pub fn build_issuance_tx(
         )
         .map_err(|e| build_error("issuance bundle", format!("{e:?}")))?;
 
-    if finalize {
+    if finalize && !seal_only {
         builder
             .finalize_asset::<FeeError>(&asset_desc_hash)
             .map_err(|e| build_error("finalization", format!("{e:?}")))?;
@@ -636,6 +667,20 @@ pub fn build_spend_tx(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn zero_units_only_ever_seal_an_existing_asset() {
+        // Units are minted as before, sealed or not.
+        assert_eq!(seal_only(5, false, true), Ok(false));
+        assert_eq!(seal_only(5, true, false), Ok(false));
+        // Zero units: a seal of an asset that already exists.
+        assert_eq!(seal_only(0, true, false), Ok(true));
+        // Zero units that do not seal would be an empty action consensus
+        // refuses; zero units on a first issuance would create an asset
+        // sealed at zero supply.
+        assert!(seal_only(0, false, false).is_err());
+        assert!(seal_only(0, true, true).is_err());
+    }
 
     #[test]
     fn seed_round_trip_and_identity_derivation() {

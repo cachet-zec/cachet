@@ -47,6 +47,12 @@ export function MintStudio() {
   const [remintError, setRemintError] = useState<string | null>(null);
   const [remintId, setRemintId] = useState<string | null>(null);
   const [finalize, setFinalize] = useState(true);
+  // Sealing an asset that exists, with no new units (/mint?seal=<asset id>):
+  // its on-chain description is loaded and locked, and only the seed that
+  // issued it gives the same id. `remintId` holds the id this seed gives.
+  const [sealing, setSealing] = useState<{ assetId: string; description: string } | null>(null);
+  // The asset this page is bound to, if any: content locked, id checked.
+  const locked = remint ?? sealing;
 
   const [stage, setStage] = useState<string | null>(null);
   // Which step of the mint is running (1-based), for the gauge.
@@ -56,6 +62,7 @@ export function MintStudio() {
     txid: string;
     asset_id: string;
     reissue: boolean;
+    sealed: boolean;
   } | null>(null);
   const [mintCount, setMintCount] = useState(0);
   // The relay is optional: the signed bytes can be handed over instead,
@@ -165,21 +172,71 @@ export function MintStudio() {
     };
   }, []);
 
-  // The id this seed gives the kept description: the same one, or not.
+  // An asset to seal, named in the address. Its content is shown so the
+  // issuer recognises it; the seal itself signs only its description hash.
+  useEffect(() => {
+    const assetId = new URLSearchParams(window.location.search).get("seal")?.toLowerCase();
+    if (!assetId) return;
+    let cancelled = false;
+    (async () => {
+      if (!/^[0-9a-f]{64}$/.test(assetId)) throw new Error("That is not an asset id.");
+      const { data } = await api.GET("/api/v1/assets/{asset_id}", {
+        params: { path: { asset_id: assetId } },
+      });
+      if (!data) throw new Error("This registry does not know that asset on the chain it reads.");
+      if (data.finalized) throw new Error("This asset is already sealed: its supply is permanent.");
+      if (!data.description) {
+        throw new Error(
+          "This registry does not know the asset's description, so the seed cannot be checked against it. Register the description from the asset page first.",
+        );
+      }
+      const chainDescription = data.description;
+      let shown = {
+        name: data.display_name ?? chainDescription,
+        text: "",
+        image: null as string | null,
+      };
+      try {
+        const sealed = await loadSealedContent(chainDescription);
+        shown = {
+          name: sealed.name,
+          text: sealed.description ?? "",
+          image: sealed.imageDataUri ?? null,
+        };
+      } catch {
+        // A free-text label, or content this registry no longer serves: the
+        // name it lists under is enough to recognise the asset.
+      }
+      if (cancelled) return;
+      setName(shown.name);
+      setDescription(shown.text);
+      setImageDataUri(shown.image);
+      setAmount("0");
+      setFinalize(true);
+      setSealing({ assetId, description: chainDescription });
+    })().catch((error: unknown) => {
+      if (!cancelled) setRemintError(error instanceof Error ? error.message : String(error));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // The id this seed gives the bound description: the same one, or not.
   useEffect(() => {
     setRemintId(null);
-    if (!remint || !issuer) return;
+    if (!locked || !issuer) return;
     let cancelled = false;
     call<{ asset_id: string }>("issuer_info", {
       seed: seed.trim(),
-      description: remint.description,
+      description: locked.description,
     })
       .then((info) => !cancelled && setRemintId(info.asset_id))
       .catch(() => undefined);
     return () => {
       cancelled = true;
     };
-  }, [remint, issuer, seed, call]);
+  }, [locked, issuer, seed, call]);
 
   // Derive the issuer identity whenever a plausible seed is present.
   useEffect(() => {
@@ -208,36 +265,42 @@ export function MintStudio() {
 
       // 1. Seal the full bundle — name, optional description and image —
       //    into a metadata bundle; its hash goes into the on-chain
-      //    description and thus the asset id itself.
+      //    description and thus the asset id itself. Sealing an existing
+      //    asset reuses its on-chain description: nothing new is stored.
       setPhase(1);
-      setStage("Sealing metadata…");
-      const meta = await api.POST("/api/v1/metadata", {
-        body: {
-          name,
-          description: description.trim() === "" ? undefined : description,
-          image_data_uri: imageDataUri ?? undefined,
-          external_url: remint?.externalUrl,
-        },
-      });
-      if (meta.error) throw new Error(problemMessage(meta.error));
-      const chainDescription = meta.data.chain_description;
-      if (remint) {
-        // The kept description was checked against its bundle in this page
-        // when it was loaded. Sealing the same content must give the same
-        // description, to the character, or it is not the same asset.
-        if (chainDescription !== remint.description) {
-          throw new Error(
-            "The registry sealed this content differently: it would not be the same asset. Nothing was signed.",
-          );
-        }
+      let chainDescription: string;
+      if (sealing) {
+        chainDescription = sealing.description;
       } else {
-        // The registry wrote this description and the seed is about to sign
-        // it for good: check it seals exactly what is in the form.
-        await assertSealsWhatWasTyped(chainDescription, {
-          name,
-          description: description.trim() === "" ? undefined : description,
-          imageDataUri: imageDataUri ?? undefined,
+        setStage("Sealing metadata…");
+        const meta = await api.POST("/api/v1/metadata", {
+          body: {
+            name,
+            description: description.trim() === "" ? undefined : description,
+            image_data_uri: imageDataUri ?? undefined,
+            external_url: remint?.externalUrl,
+          },
         });
+        if (meta.error) throw new Error(problemMessage(meta.error));
+        chainDescription = meta.data.chain_description;
+        if (remint) {
+          // The kept description was checked against its bundle in this page
+          // when it was loaded. Sealing the same content must give the same
+          // description, to the character, or it is not the same asset.
+          if (chainDescription !== remint.description) {
+            throw new Error(
+              "The registry sealed this content differently: it would not be the same asset. Nothing was signed.",
+            );
+          }
+        } else {
+          // The registry wrote this description and the seed is about to sign
+          // it for good: check it seals exactly what is in the form.
+          await assertSealsWhatWasTyped(chainDescription, {
+            name,
+            description: description.trim() === "" ? undefined : description,
+            imageDataUri: imageDataUri ?? undefined,
+          });
+        }
       }
 
       // 2. Public chain facts: target height, and whether this asset id
@@ -253,6 +316,9 @@ export function MintStudio() {
       if (remint && info.asset_id !== remint.assetId) {
         throw new Error("This seed gives a different asset id. Nothing was signed.");
       }
+      if (sealing && info.asset_id !== sealing.assetId) {
+        throw new Error("This seed did not issue this asset. Nothing was signed.");
+      }
       const existing = await api.GET("/api/v1/assets/{asset_id}", {
         params: { path: { asset_id: info.asset_id } },
       });
@@ -260,7 +326,14 @@ export function MintStudio() {
         throw new Error("this asset is finalized: its supply is permanent");
       }
       const firstIssuance = !existing.data;
-      if (!firstIssuance) {
+      if (sealing && firstIssuance) {
+        throw new Error("This asset is not on the chain this registry reads. Nothing was signed.");
+      }
+      if (sealing) {
+        setStage(
+          `Sealing ${info.asset_id.slice(0, 8)}…: no new units, the supply becomes permanent.`,
+        );
+      } else if (!firstIssuance) {
         // Reissuing was silent, so a minter could inflate an existing
         // asset believing they had made a new one. Identical metadata
         // means the identical asset, by construction.
@@ -280,8 +353,8 @@ export function MintStudio() {
       const built = await call<{ tx_hex: string; txid: string; asset_id: string }>("build", {
         seed: trimmedSeed,
         description: chainDescription,
-        amount: Number(amount),
-        finalize,
+        amount: sealing ? 0 : Number(amount),
+        finalize: sealing ? true : finalize,
         first_issuance: firstIssuance,
         target_height: chain.data.tip_height + 1,
       });
@@ -332,9 +405,12 @@ export function MintStudio() {
       //    the description and image are swept within the hour. Retry, and
       //    if it still fails, hand the user the exact bytes to re-resolve
       //    with (anyone can, permissionlessly, from the asset page).
-      setPhase(5);
-      setStage("Registering the sealed metadata…");
-      let resolved = false;
+      // A seal adds no description: the asset already has its own.
+      let resolved = sealing !== null;
+      if (!resolved) {
+        setPhase(5);
+        setStage("Registering the sealed metadata…");
+      }
       for (let attempt = 1; attempt <= 4 && !resolved; attempt += 1) {
         const registered = await api
           .POST("/api/v1/assets/{asset_id}/description", {
@@ -363,7 +439,12 @@ export function MintStudio() {
           `Relay reported a different txid (${relayed.data.txid}) than the one your browser computed. Showing yours.`,
         );
       }
-      setReceipt({ txid: built.txid, asset_id: built.asset_id, reissue: !firstIssuance });
+      setReceipt({
+        txid: built.txid,
+        asset_id: built.asset_id,
+        reissue: !firstIssuance,
+        sealed: sealing !== null,
+      });
       setMintCount((count) => count + 1);
     } catch (mintError) {
       const message = mintError instanceof Error ? mintError.message : String(mintError);
@@ -385,10 +466,10 @@ export function MintStudio() {
     issuer !== null &&
     seedSaved &&
     name.trim() !== "" &&
-    Number(amount) > 0 &&
+    (sealing !== null || Number(amount) > 0) &&
     !stage &&
     !paused &&
-    (!remint || remintId === remint.assetId);
+    (!locked || remintId === locked.assetId);
 
   return (
     <div className="flex flex-col gap-8">
@@ -636,6 +717,31 @@ export function MintStudio() {
                 </a>
               </div>
             )}
+            {sealing && (
+              <div
+                data-testid="seal-notice"
+                className="mb-4 rounded-[3px] border border-accent/40 px-4 py-3.5"
+              >
+                <p className="text-base font-medium text-accent">Sealing the supply</p>
+                <p className="mt-1.5 text-sm leading-relaxed text-neutral-300">
+                  One issuance with no new units and the seal set: the chain then refuses any more
+                  of this asset, from anyone, you included. Only the seed that issued it can sign
+                  it. This cannot be undone.
+                </p>
+                <p
+                  data-testid="seal-match"
+                  className="font-data mt-2.5 break-all text-[13px] leading-relaxed text-neutral-400"
+                >
+                  {!issuer
+                    ? `Enter the seed that issued ${sealing.assetId.slice(0, 12)}… above.`
+                    : remintId === null
+                      ? "Deriving the asset id…"
+                      : remintId === sealing.assetId
+                        ? `This seed issued it: ${sealing.assetId}`
+                        : "Not the seed that issued this asset."}
+                </p>
+              </div>
+            )}
             <div className="flex flex-col gap-3.5">
               <div className="flex flex-col gap-1.5">
                 <label className={label} htmlFor="mint-name">
@@ -647,7 +753,7 @@ export function MintStudio() {
                   data-testid="mint-name"
                   className={input}
                   value={name}
-                  readOnly={remint !== null}
+                  readOnly={locked !== null}
                   onChange={(event) => setName(event.target.value)}
                   maxLength={120}
                   placeholder="My first shielded asset"
@@ -663,13 +769,13 @@ export function MintStudio() {
                   data-testid="mint-description"
                   className={`${input} min-h-[72px] resize-y font-sans`}
                   value={description}
-                  readOnly={remint !== null}
+                  readOnly={locked !== null}
                   onChange={(event) => setDescription(event.target.value)}
                   maxLength={4096}
                   placeholder="What this asset represents, its terms…"
                 />
               </div>
-              {remint ? (
+              {locked ? (
                 // The sealed bytes, never re-encoded: a picker would let a
                 // browser rewrite them and the id would change.
                 imageDataUri &&
@@ -685,24 +791,31 @@ export function MintStudio() {
               ) : (
                 <ImagePicker value={imageDataUri} onChange={setImageDataUri} />
               )}
-              <div className="flex flex-col gap-1.5">
-                <label className={label} htmlFor="mint-amount">
-                  Amount
-                </label>
-                <input
-                  id="mint-amount"
-                  data-testid="mint-amount"
-                  className={input}
-                  value={amount}
-                  onChange={(event) => setAmount(event.target.value)}
-                  type="number"
-                  min={1}
-                />
-              </div>
+              {sealing ? (
+                <p className="font-data text-sm text-neutral-400">
+                  Amount 0: no new units, only the seal.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  <label className={label} htmlFor="mint-amount">
+                    Amount
+                  </label>
+                  <input
+                    id="mint-amount"
+                    data-testid="mint-amount"
+                    className={input}
+                    value={amount}
+                    onChange={(event) => setAmount(event.target.value)}
+                    type="number"
+                    min={1}
+                  />
+                </div>
+              )}
               <button
                 type="button"
                 role="switch"
                 aria-checked={finalize}
+                disabled={sealing !== null}
                 onClick={() => setFinalize(!finalize)}
                 className={
                   finalize
@@ -829,7 +942,13 @@ export function MintStudio() {
                 onClick={mint}
                 disabled={!canMint}
               >
-                {holdRelay ? "Prove & sign in my browser" : "Mint in my browser"}
+                {sealing
+                  ? holdRelay
+                    ? "Sign the seal in my browser"
+                    : "Seal the supply"
+                  : holdRelay
+                    ? "Prove & sign in my browser"
+                    : "Mint in my browser"}
               </button>
             </div>
             {stage && <MintGauge phase={phase} steps={holdRelay ? 3 : 5} message={stage} />}
@@ -848,12 +967,18 @@ export function MintStudio() {
               <div className="mt-4 rounded-md border border-emerald-400/25 p-3.5 text-[13px]">
                 <p className="flex flex-wrap items-center gap-2">
                   <span className={stamp}>
-                    {receipt.reissue ? "reissued under your key" : "minted under your key"}
+                    {receipt.sealed
+                      ? "supply sealed under your key"
+                      : receipt.reissue
+                        ? "reissued under your key"
+                        : "minted under your key"}
                   </span>
                   <span className="text-neutral-400">
-                    {receipt.reissue
-                      ? "supply added to an asset this metadata already names"
-                      : "proof built on your machine, relayed as-is"}
+                    {receipt.sealed
+                      ? "no new units; once in a block, the chain refuses any more"
+                      : receipt.reissue
+                        ? "supply added to an asset this metadata already names"
+                        : "proof built on your machine, relayed as-is"}
                   </span>
                 </p>
                 {/* Labels in a fixed column, so a wrapping id never breaks them. */}

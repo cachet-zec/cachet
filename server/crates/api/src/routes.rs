@@ -37,6 +37,7 @@ pub(crate) fn router() -> Router<AppState> {
             post(resolve_description),
         )
         .route("/api/v1/assets/{asset_id}/events", get(asset_events))
+        .route("/api/v1/transactions/{txid}", get(decode_transaction))
         .route("/api/v1/wallet", get(wallet_balances))
         .route("/api/v1/assets/{asset_id}/transfers", post(transfer_asset))
         .route("/api/v1/assets/{asset_id}/burns", post(burn_asset))
@@ -255,6 +256,36 @@ pub(crate) async fn wallet_balances(
     ensure_writable(&state)?;
     let balances = state.chain.wallet_balances().await?;
     Ok(Json(balances.into_iter().map(Into::into).collect()))
+}
+
+/// What one transaction publishes about ZSAs: its issuance bundle (issuer
+/// key, assets, units, seals, reference notes) and its burns, read from the
+/// transaction's own bytes. Transfers stay encrypted; only their action
+/// count shows. Issue-note recipients are public on chain but left out. A
+/// transaction issuing under a key this registry withholds answers 410.
+#[utoipa::path(
+    get,
+    path = "/api/v1/transactions/{txid}",
+    tag = "registry",
+    params(("txid" = String, Path, description = "Transaction id, hex, display byte order")),
+    responses(
+        (status = 200, body = crate::dto::DecodedTransactionResponse),
+        (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 404, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 410, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+        (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+pub(crate) async fn decode_transaction(
+    State(state): State<AppState>,
+    Path(txid): Path<String>,
+) -> Result<Json<crate::dto::DecodedTransactionResponse>, ApiError> {
+    let txid: cachet_domain::TxId = txid.parse().map_err(ApiError::Validation)?;
+    let decoded = state.chain.decode_transaction(txid).await?;
+    if let Some(issuance) = &decoded.issuance {
+        refuse_hidden_issuer(&state, Some(issuance.issuer.as_str())).await?;
+    }
+    Ok(Json(decoded.into()))
 }
 
 /// Public events of an asset's life, oldest first. Transfers are shielded

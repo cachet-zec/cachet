@@ -130,6 +130,93 @@ pub struct AssetEventResponse {
     pub amount: u64,
 }
 
+/// One issue action of a decoded transaction.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DecodedIssueActionResponse {
+    pub asset_id: String,
+    /// ZIP 227 description hash, hex; absent when the backend cannot see it.
+    pub asset_desc_hash: Option<String>,
+    /// Issue notes in the action, the reference note included.
+    pub notes: u32,
+    /// Units issued by this action (the reference note carries zero).
+    pub amount: u64,
+    /// Whether this action seals the asset's supply.
+    pub finalize: bool,
+    /// Whether the action carries the reference note of a first issuance.
+    pub reference_note: bool,
+}
+
+/// The issuance bundle of a decoded transaction.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DecodedIssuanceResponse {
+    /// Issuance validating key, ZIP 227 canonical encoding, hex.
+    pub issuer: String,
+    pub actions: Vec<DecodedIssueActionResponse>,
+}
+
+/// Units of one asset burned in the open.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DecodedBurnResponse {
+    pub asset_id: String,
+    pub amount: u64,
+}
+
+/// What a transaction publishes about ZSAs. Transfers stay encrypted:
+/// only their action count is visible.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct DecodedTransactionResponse {
+    pub txid: String,
+    /// Height of the block holding it; null while it waits in the mempool.
+    pub height: Option<u64>,
+    /// Transaction format version (6 for OrchardZSA).
+    pub version: u32,
+    pub issuance: Option<DecodedIssuanceResponse>,
+    pub burns: Vec<DecodedBurnResponse>,
+    pub orchard_actions: u32,
+    pub transparent_inputs: u32,
+    pub transparent_outputs: u32,
+    pub sapling_spends: u32,
+    pub sapling_outputs: u32,
+}
+
+impl From<cachet_domain::DecodedTransaction> for DecodedTransactionResponse {
+    fn from(tx: cachet_domain::DecodedTransaction) -> Self {
+        Self {
+            txid: tx.txid.to_string(),
+            height: tx.height,
+            version: tx.version,
+            issuance: tx.issuance.map(|issuance| DecodedIssuanceResponse {
+                issuer: issuance.issuer,
+                actions: issuance
+                    .actions
+                    .into_iter()
+                    .map(|action| DecodedIssueActionResponse {
+                        asset_id: action.asset_id.to_string(),
+                        asset_desc_hash: action.asset_desc_hash,
+                        notes: action.notes,
+                        amount: action.amount,
+                        finalize: action.finalize,
+                        reference_note: action.reference_note,
+                    })
+                    .collect(),
+            }),
+            burns: tx
+                .burns
+                .into_iter()
+                .map(|burn| DecodedBurnResponse {
+                    asset_id: burn.asset_id.to_string(),
+                    amount: burn.amount,
+                })
+                .collect(),
+            orchard_actions: tx.orchard_actions,
+            transparent_inputs: tx.transparent_inputs,
+            transparent_outputs: tx.transparent_outputs,
+            sapling_spends: tx.sapling_spends,
+            sapling_outputs: tx.sapling_outputs,
+        }
+    }
+}
+
 impl From<cachet_domain::AssetEvent> for AssetEventResponse {
     fn from(event: cachet_domain::AssetEvent) -> Self {
         Self {

@@ -8,7 +8,8 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use cachet_domain::{
     AccountBalances, AssetEvent, AssetEventKind, AssetId, AssetState, AssetSummary, BurnRequest,
-    CollectionSummary, Holding, IssuanceReceipt, IssuanceRequest, Recipient, TransferRequest, TxId,
+    CollectionSummary, DecodedBurn, DecodedIssuance, DecodedIssueAction, DecodedTransaction,
+    Holding, IssuanceReceipt, IssuanceRequest, Recipient, TransferRequest, TxId,
 };
 
 /// The fake chain has one issuer; this stands in for its ZIP 227 encoded
@@ -364,6 +365,67 @@ impl ChainBackend for InMemoryChain {
             .filter(|event| event.asset_id == asset_id)
             .cloned()
             .collect())
+    }
+
+    /// The fake chain keeps no transactions, only the events they caused:
+    /// a decode is rebuilt from those, which is all the HTTP contract needs.
+    async fn decode_transaction(&self, txid: TxId) -> Result<DecodedTransaction, ChainError> {
+        let state = self.state.lock().expect("in-memory chain lock poisoned");
+        let events: Vec<&AssetEvent> = state.events.iter().filter(|e| e.txid == txid).collect();
+        let Some(first) = events.first() else {
+            return Err(ChainError::UnknownTransaction(txid));
+        };
+        let mut actions: Vec<DecodedIssueAction> = Vec::new();
+        let mut burns = Vec::new();
+        for event in &events {
+            match event.kind {
+                AssetEventKind::Issuance | AssetEventKind::Finalization => {
+                    let index = match actions.iter().position(|a| a.asset_id == event.asset_id) {
+                        Some(index) => index,
+                        None => {
+                            actions.push(DecodedIssueAction {
+                                asset_id: event.asset_id,
+                                asset_desc_hash: state
+                                    .desc_hashes
+                                    .get(&event.asset_id)
+                                    .map(hex::encode),
+                                notes: 0,
+                                amount: 0,
+                                finalize: false,
+                                reference_note: false,
+                            });
+                            actions.len() - 1
+                        }
+                    };
+                    let action = &mut actions[index];
+                    if event.kind == AssetEventKind::Issuance {
+                        action.notes += 1;
+                        action.amount += event.amount;
+                    } else {
+                        action.finalize = true;
+                    }
+                }
+                AssetEventKind::Burn => burns.push(DecodedBurn {
+                    asset_id: event.asset_id,
+                    amount: event.amount,
+                }),
+            }
+        }
+        Ok(DecodedTransaction {
+            txid,
+            height: Some(first.height),
+            version: 6,
+            issuance: (!actions.is_empty()).then(|| DecodedIssuance {
+                issuer: memory_issuer(),
+                actions,
+            }),
+            burns,
+            orchard_actions: 0,
+            transparent_inputs: 0,
+            transparent_outputs: 0,
+            sapling_spends: 0,
+            sapling_outputs: 0,
+        })
     }
 
     async fn relay(&self, _tx_bytes: Vec<u8>) -> Result<crate::RelayReceipt, ChainError> {

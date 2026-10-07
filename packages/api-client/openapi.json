@@ -1286,6 +1286,76 @@
         }
       }
     },
+    "/api/v1/transactions/{txid}": {
+      "get": {
+        "tags": ["registry"],
+        "summary": "What one transaction publishes about ZSAs: its issuance bundle (issuer\nkey, assets, units, seals, reference notes) and its burns, read from the\ntransaction's own bytes. Transfers stay encrypted; only their action\ncount shows. Issue-note recipients are public on chain but left out. A\ntransaction issuing under a key this registry withholds answers 410.",
+        "operationId": "decode_transaction",
+        "parameters": [
+          {
+            "name": "txid",
+            "in": "path",
+            "description": "Transaction id, hex, display byte order",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecodedTransactionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/wallet": {
       "get": {
         "tags": ["issuance"],
@@ -1528,6 +1598,144 @@
             "type": "integer",
             "format": "int64",
             "description": "Sum of the circulating supplies of the issuer's assets.",
+            "minimum": 0
+          }
+        }
+      },
+      "DecodedBurnResponse": {
+        "type": "object",
+        "description": "Units of one asset burned in the open.",
+        "required": ["asset_id", "amount"],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "asset_id": {
+            "type": "string"
+          }
+        }
+      },
+      "DecodedIssuanceResponse": {
+        "type": "object",
+        "description": "The issuance bundle of a decoded transaction.",
+        "required": ["issuer", "actions"],
+        "properties": {
+          "actions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecodedIssueActionResponse"
+            }
+          },
+          "issuer": {
+            "type": "string",
+            "description": "Issuance validating key, ZIP 227 canonical encoding, hex."
+          }
+        }
+      },
+      "DecodedIssueActionResponse": {
+        "type": "object",
+        "description": "One issue action of a decoded transaction.",
+        "required": ["asset_id", "notes", "amount", "finalize", "reference_note"],
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Units issued by this action (the reference note carries zero).",
+            "minimum": 0
+          },
+          "asset_desc_hash": {
+            "type": ["string", "null"],
+            "description": "ZIP 227 description hash, hex; absent when the backend cannot see it."
+          },
+          "asset_id": {
+            "type": "string"
+          },
+          "finalize": {
+            "type": "boolean",
+            "description": "Whether this action seals the asset's supply."
+          },
+          "notes": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Issue notes in the action, the reference note included.",
+            "minimum": 0
+          },
+          "reference_note": {
+            "type": "boolean",
+            "description": "Whether the action carries the reference note of a first issuance."
+          }
+        }
+      },
+      "DecodedTransactionResponse": {
+        "type": "object",
+        "description": "What a transaction publishes about ZSAs. Transfers stay encrypted:\nonly their action count is visible.",
+        "required": [
+          "txid",
+          "version",
+          "burns",
+          "orchard_actions",
+          "transparent_inputs",
+          "transparent_outputs",
+          "sapling_spends",
+          "sapling_outputs"
+        ],
+        "properties": {
+          "burns": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecodedBurnResponse"
+            }
+          },
+          "height": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Height of the block holding it; null while it waits in the mempool.",
+            "minimum": 0
+          },
+          "issuance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DecodedIssuanceResponse"
+              }
+            ]
+          },
+          "orchard_actions": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sapling_outputs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "sapling_spends": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "transparent_inputs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "transparent_outputs": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0
+          },
+          "txid": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Transaction format version (6 for OrchardZSA).",
             "minimum": 0
           }
         }

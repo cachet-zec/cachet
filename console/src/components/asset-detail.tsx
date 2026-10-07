@@ -385,13 +385,26 @@ export function AssetDetail({
                     Sealed forever
                   </p>
                 ) : (
-                  <p
-                    data-testid="open-supply"
-                    title="Not finalized: the issuance key can still add units. The name and metadata cannot change, only the supply."
-                    className="pen-write font-display text-2xl font-medium italic leading-tight text-accent sm:text-3xl"
-                  >
-                    Issuer can mint more
-                  </p>
+                  <div className="flex flex-col items-start gap-2">
+                    <p
+                      data-testid="open-supply"
+                      title="Not finalized: the issuance key can still add units. The name and metadata cannot change, only the supply."
+                      className="pen-write font-display text-2xl font-medium italic leading-tight text-accent sm:text-3xl"
+                    >
+                      Issuer can mint more
+                    </p>
+                    {/* Only the issuer can follow this through: the mint page
+                        checks the seed against this asset before signing. */}
+                    {state.data.description && (
+                      <Link
+                        href={`/mint?seal=${assetId}`}
+                        data-testid="seal-supply-link"
+                        className="text-sm text-neutral-400 underline decoration-white/20 underline-offset-4 transition hover:text-accent"
+                      >
+                        Issuer? Seal the supply →
+                      </Link>
+                    )}
+                  </div>
                 )}
               </div>
 
