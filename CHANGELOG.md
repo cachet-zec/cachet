@@ -6,6 +6,23 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- "Look up an asset" suggests assets as you type: a name, part of a
+  description, or the start of an asset id or issuer key, eight at most,
+  sealed names first, each with its image and supply. A whole id or a
+  link is looked up exactly, as before, and still finds what a reset took.
+
+### Changed
+
+- A browser wallet reads the chain about three times faster: on the first
+  1,000 blocks of the public testnet, the wasm engine's work drops from
+  26.8 s to 8.1 s (5.7 s to 1.3 s natively). Its viewing keys are derived once per scan instead of
+  once per transaction, and the four swap slots, which only ever receive
+  what the wallet itself moves there, are tried only on transactions that
+  spend one of the wallet's notes, and never on issuance. The engines are
+  rebuilt.
+
 ## [0.6.0] - 2026-10-07
 
 ### Added

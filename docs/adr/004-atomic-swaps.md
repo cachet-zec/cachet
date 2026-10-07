@@ -81,6 +81,11 @@ librustzcash's cached ZSA proving key is made public for the same build.
   and withdraws the old listing. A take arriving once no wallet can build
   on the anchor is refused before its proof is checked.
 - Zero fee, as every Cachet transaction on the testnet.
+- A swap slot is funded only by its own seed's moves, so a wallet scan
+  tries the slots' keys only on transactions that spend one of the
+  wallet's notes (and never on issuance): four keys fewer on every other
+  action of the chain. Units sent to a slot address by anybody else are
+  not found by the wallet; nothing in the protocol sends them there.
 - A maker cancels by withdrawing the slot (spending the note); a taker's
   swap built on it then fails, as a double spend.
 
