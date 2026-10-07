@@ -181,8 +181,8 @@ export function TxDetail({ txid }: { txid: string }) {
               </p>
             )}
             <p className="font-data mt-4 text-[13px] text-neutral-500">
-              Decoded by this registry from the transaction&apos;s bytes. Issue-note recipients are
-              public on chain but not shown here.
+              Decoded by this registry from the transaction&apos;s bytes. The addresses that
+              received the minted units are public on chain; this page leaves them out on purpose.
             </p>
           </section>
         </>
