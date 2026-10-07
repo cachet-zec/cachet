@@ -94,6 +94,16 @@ impl Keys {
             .collect()
     }
 
+    /// The wallet over every tracked account. Swap slots are funded only by
+    /// this seed's own moves, so a scan tries their keys only where this
+    /// wallet spends.
+    fn hot_wallet(&self) -> HotWallet {
+        let slots: Vec<u32> = (0..SWAP_SLOTS)
+            .map(|slot| SWAP_ACCOUNT_BASE + slot)
+            .collect();
+        HotWallet::from_spending_keys(self.tracked_keys()).receiving_only_from_own_spends(&slots)
+    }
+
     fn default_address(&self) -> Address {
         FullViewingKey::from(&self.spending_key()).address_at(0u32, Scope::External)
     }
@@ -481,7 +491,7 @@ pub fn wallet_reset(seed_phrase: &str) -> Result<JsValue, JsError> {
     let address = keys.default_address();
     let entry = BrowserWallet {
         owner: address.to_raw_address_bytes(),
-        wallet: HotWallet::from_spending_keys(keys.tracked_keys()),
+        wallet: keys.hot_wallet(),
         scanned_height: 0,
     };
     let state = wallet_state(&entry, address)?;
@@ -511,7 +521,7 @@ pub fn wallet_scan(seed_phrase: &str, blocks: JsValue) -> Result<JsValue, JsErro
         _ => {
             *guard = Some(BrowserWallet {
                 owner: address.to_raw_address_bytes(),
-                wallet: HotWallet::from_spending_keys(keys.tracked_keys()),
+                wallet: keys.hot_wallet(),
                 scanned_height: 0,
             });
         }

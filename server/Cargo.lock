@@ -477,6 +477,7 @@ dependencies = [
  "incrementalmerkletree",
  "orchard",
  "thiserror 2.0.20",
+ "zcash_note_encryption",
  "zcash_primitives",
 ]
 

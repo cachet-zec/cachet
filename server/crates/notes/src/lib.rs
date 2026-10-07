@@ -12,10 +12,14 @@
 
 use bridgetree::BridgeTree;
 use incrementalmerkletree::Position;
-use orchard::keys::{FullViewingKey, IncomingViewingKey, Scope, SpendingKey};
+use orchard::keys::{
+    FullViewingKey, IncomingViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
+};
 use orchard::note::AssetBase;
+use orchard::primitives::OrchardDomain;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::{Address, Anchor, Note};
+use zcash_note_encryption::try_note_decryption;
 use zcash_primitives::transaction::{OrchardBundle, Transaction};
 
 const TREE_DEPTH: u8 = 32;
@@ -34,6 +38,10 @@ struct Account {
     spending_key: SpendingKey,
     full_viewing_key: FullViewingKey,
     address: Address,
+    // Derived once: each derivation is a Sinsemilla commitment, and a scan
+    // needs them for every transaction of the chain.
+    ivk_external: IncomingViewingKey,
+    ivk_internal: IncomingViewingKey,
 }
 
 /// A note we can spend, with everything needed to build the spend.
@@ -65,6 +73,13 @@ pub const ISSUANCE_DIVERSIFIER: u32 = 1;
 
 pub struct HotWallet {
     accounts: Vec<Account>,
+    /// The accounts' external viewing keys, prepared for trial decryption,
+    /// in account order.
+    prepared: Vec<PreparedIncomingViewingKey>,
+    /// Accounts that only ever receive from this wallet's own spends (a
+    /// browser wallet's swap slots), in account order: tried on a
+    /// transaction only when it spends one of our notes.
+    own_spends_only: Vec<bool>,
     tree: BridgeTree<MerkleHashOrchard, u32, TREE_DEPTH>,
     notes: Vec<OwnedNote>,
 }
@@ -76,19 +91,41 @@ impl HotWallet {
             .into_iter()
             .map(|(index, spending_key)| {
                 let full_viewing_key = FullViewingKey::from(&spending_key);
+                let ivk_external = full_viewing_key.to_ivk(Scope::External);
                 Account {
                     index,
                     spending_key,
                     address: full_viewing_key.address_at(0u32, Scope::External),
+                    ivk_internal: full_viewing_key.to_ivk(Scope::Internal),
+                    ivk_external,
                     full_viewing_key,
                 }
             })
+            .collect::<Vec<Account>>();
+        let prepared = accounts
+            .iter()
+            .map(|account| PreparedIncomingViewingKey::new(&account.ivk_external))
             .collect();
+        let own_spends_only = vec![false; accounts.len()];
         Self {
             accounts,
+            prepared,
+            own_spends_only,
             tree: BridgeTree::new(MAX_CHECKPOINTS),
             notes: Vec::new(),
         }
+    }
+
+    /// Say which accounts receive only what this wallet sends them itself,
+    /// such as one-off swap slots funded from the main account. A scan then
+    /// tries their keys only on transactions that spend one of our notes,
+    /// instead of on every action of the chain, and never on issuance. A
+    /// note sent to such an account by anybody else is not found.
+    pub fn receiving_only_from_own_spends(mut self, accounts: &[u32]) -> Self {
+        for (flag, account) in self.own_spends_only.iter_mut().zip(&self.accounts) {
+            *flag = accounts.contains(&account.index);
+        }
+        self
     }
 
     pub fn account_address(&self, account: u32) -> Option<Address> {
@@ -107,35 +144,35 @@ impl HotWallet {
         let mut orchard_action_count = 0;
 
         if let Some(bundle) = tx.orchard_bundle() {
-            let ivks: Vec<IncomingViewingKey> = self
-                .accounts
-                .iter()
-                .map(|account| account.full_viewing_key.to_ivk(Scope::External))
-                .collect();
-
+            // The first account whose external key decrypts an action owns
+            // it, as `Bundle::decrypt_outputs_with_keys` would say, with
+            // the keys prepared once for the whole scan.
+            macro_rules! trial_decrypt {
+                ($bundle:expr) => {{
+                    orchard_action_count = $bundle.actions().len();
+                    let spends_ours = self
+                        .mark_spends($bundle.actions().iter().map(|a| a.nullifier().to_bytes()));
+                    for (action_idx, action) in $bundle.actions().iter().enumerate() {
+                        let domain = OrchardDomain::for_action(action);
+                        if let Some((slot, note)) = self
+                            .prepared
+                            .iter()
+                            .zip(&self.own_spends_only)
+                            .enumerate()
+                            .filter(|(_, (_, own_only))| spends_ours || !**own_only)
+                            .find_map(|(slot, (ivk, _))| {
+                                try_note_decryption(&domain, ivk, action)
+                                    .map(|(note, _, _)| (slot, note))
+                            })
+                        {
+                            received.push((action_idx, note, slot));
+                        }
+                    }
+                }};
+            }
             match bundle {
-                OrchardBundle::OrchardVanilla(bundle) => {
-                    orchard_action_count = bundle.actions().len();
-                    for (action_idx, ivk, note, _recipient, _memo) in
-                        bundle.decrypt_outputs_with_keys(&ivks)
-                    {
-                        if let Some(slot) = ivks.iter().position(|known| *known == ivk) {
-                            received.push((action_idx, note, slot));
-                        }
-                    }
-                    self.mark_spends(bundle.actions().iter().map(|a| a.nullifier().to_bytes()));
-                }
-                OrchardBundle::OrchardZSA(bundle) => {
-                    orchard_action_count = bundle.actions().len();
-                    for (action_idx, ivk, note, _recipient, _memo) in
-                        bundle.decrypt_outputs_with_keys(&ivks)
-                    {
-                        if let Some(slot) = ivks.iter().position(|known| *known == ivk) {
-                            received.push((action_idx, note, slot));
-                        }
-                    }
-                    self.mark_spends(bundle.actions().iter().map(|a| a.nullifier().to_bytes()));
-                }
+                OrchardBundle::OrchardVanilla(bundle) => trial_decrypt!(bundle),
+                OrchardBundle::OrchardZSA(bundle) => trial_decrypt!(bundle),
             }
         }
 
@@ -150,12 +187,17 @@ impl HotWallet {
                 .flat_map(|action| action.notes())
                 .enumerate()
             {
-                if let Some(slot) = self.accounts.iter().position(|account| {
-                    account
-                        .full_viewing_key
-                        .scope_for_address(&note.recipient())
-                        .is_some()
-                }) {
+                // `FullViewingKey::scope_for_address`, with the keys derived
+                // once instead of twice per note and account.
+                // Accounts fed only by our own spends never receive issuance.
+                let recipient = note.recipient();
+                if let Some(slot) = self.accounts.iter().zip(&self.own_spends_only).position(
+                    |(account, own_only)| {
+                        !own_only
+                            && (account.ivk_external.diversifier_index(&recipient).is_some()
+                                || account.ivk_internal.diversifier_index(&recipient).is_some())
+                    },
+                ) {
                     received.push((orchard_action_count + issue_idx, *note, slot));
                 }
             }
@@ -215,7 +257,9 @@ impl HotWallet {
         Ok(())
     }
 
-    fn mark_spends(&mut self, nullifiers: impl Iterator<Item = [u8; 32]>) {
+    /// Mark our notes these nullifiers spend; true if there was one.
+    fn mark_spends(&mut self, nullifiers: impl Iterator<Item = [u8; 32]>) -> bool {
+        let mut any = false;
         for nullifier in nullifiers {
             if let Some(owned) = self
                 .notes
@@ -223,8 +267,10 @@ impl HotWallet {
                 .find(|note| note.nullifier == nullifier)
             {
                 owned.spent = true;
+                any = true;
             }
         }
+        any
     }
 
     /// Close a block: the tree state after it stays available as an anchor
