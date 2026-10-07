@@ -15,7 +15,7 @@
   },
   "devDependencies": {
     "prettier": "^3.9.9",
-    "turbo": "^2.11.4"
+    "turbo": "^2.11.7"
   },
   "pnpm": {
     "overrides": {
