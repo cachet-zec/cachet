@@ -6,7 +6,7 @@
     "license": {
       "name": "MIT"
     },
-    "version": "0.5.0"
+    "version": "0.6.0"
   },
   "paths": {
     "/api/v1/admin/moderation": {
@@ -2616,7 +2616,7 @@
     },
     {
       "name": "metadata",
-      "description": "Content-addressed metadata bundles. A bundle's SHA-256 travels inside the on-chain asset description, so what these endpoints serve can never be silently swapped."
+      "description": "Content-addressed metadata bundles. A bundle's SHA-256 travels inside the asset description, whose hash the asset id commits to, so what these endpoints serve can never be silently swapped."
     },
     {
       "name": "chain",
@@ -2628,7 +2628,7 @@
     },
     {
       "name": "swaps",
-      "description": "The public swap board: a mailbox for the three messages of an atomic swap. Holds messages, never keys; takes and countersignatures are read back with the token their author was handed."
+      "description": "The public swap board: a mailbox for the three messages of an atomic swap (one OrchardZSA transaction for both sides). Holds messages, never keys; takes and countersignatures are read back with the token their author was handed. Offers stand on a recent Orchard root of the chain, and a take holds an offer only once its proof verifies."
     },
     {
       "name": "snapshot",

@@ -6,6 +6,8 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-07
+
 ### Added
 
 - The swap board checks an offer's anchor against the chain: it takes an
@@ -86,9 +88,25 @@ All notable changes to Cachet are documented here. The format follows
   description pairs with their description hash, Asset Digest and asset
   id, for other wallets and explorers to check against. The engine's tests
   and the CI wasm smoke test recompute them from the shipped module.
+- The Discord webhook, when set, also hears from the chain: once when the
+  node has been unreachable for five minutes, once when it is back, and
+  once when the chain went backwards, a reset. Never twice for the same
+  event.
 
 ### Changed
 
+- The browser wallet scans the chain in pages of 100 blocks instead of 25,
+  with no pause between them, and downloads the next page while the
+  worker reads the current one. The swap form says how far a scan has
+  come, block by block.
+- The swap form's "you want" is a search over the registry's names, with
+  the sealed image and a short id for each, then shows the chosen asset as
+  a card; a pasted id still works. On the swaps page, the two steps line up
+  side by side.
+- The README, the API reference page (which now lists the swap board's
+  routes) and the working paper, v1.6, describe this release. The paper
+  adds the swap, the board and the identity work, and drops figures that
+  had aged.
 - The protocol stack moves to the line with the fixed Orchard circuit
   (halo2_gadgets 0.5): orchard 0.14 at `cf801a5d`, librustzcash `c5c232db`
   (zcash_primitives 0.28), sapling-crypto 0.7, QEDIT halo2 `ef3d0ba2`. The
@@ -114,15 +132,12 @@ All notable changes to Cachet are documented here. The format follows
   and the landing points to what survives a reset. The mint page's pause
   notice no longer claims the chain is unaffected.
 
-### Added
-
-- The Discord webhook, when set, also hears from the chain: once when the
-  node has been unreachable for five minutes, once when it is back, and
-  once when the chain went backwards, a reset. Never twice for the same
-  event.
-
 ### Fixed
 
+- An offer posted right after the block that funded its swap slot is no
+  longer refused as "not built on a recent Orchard root": the board's
+  roots, cached a few seconds, are read from the node again before an
+  offer is refused, and every block the instance submits refreshes them.
 - Rebuilt engines reach returning browsers at once. The cache-busting
   version on the engine URLs is now derived from the engine files by
   `--write-manifest`, written into both loaders, and checked by CI, so a

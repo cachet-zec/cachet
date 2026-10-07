@@ -354,7 +354,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "cachet-api"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -387,7 +387,7 @@ dependencies = [
 
 [[package]]
 name = "cachet-chain"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "bip0039",
@@ -419,7 +419,7 @@ dependencies = [
 
 [[package]]
 name = "cachet-domain"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "base64",
  "hex",
@@ -430,7 +430,7 @@ dependencies = [
 
 [[package]]
 name = "cachet-index"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "async-trait",
  "cachet-domain",
@@ -444,7 +444,7 @@ dependencies = [
 
 [[package]]
 name = "cachet-mint-engine"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bip0039",
  "bls12_381",
@@ -471,7 +471,7 @@ dependencies = [
 
 [[package]]
 name = "cachet-notes"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bridgetree",
  "incrementalmerkletree",
@@ -482,7 +482,7 @@ dependencies = [
 
 [[package]]
 name = "cachet-swap"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "bridgetree",
  "cachet-swap",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "cachet-verify-engine"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "blake2b_simd",
  "group",

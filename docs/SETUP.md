@@ -167,8 +167,9 @@ cargo run --manifest-path server/Cargo.toml --bin cachet-server
 
 Notes:
 
-- Default node: `https://dev.zebra.zsa-test.net:443` (override with
-  `CACHET_NODE_URL`).
+- Default node: `https://rpc.test-zsa.org:443`, QEDIT's `zsa1` line with the
+  corrected Orchard circuit (override with `CACHET_NODE_URL`). The older
+  `dev.zebra.zsa-test.net` rejects this build's proofs (docs/DEPLOY.md).
 - `CACHET_SCAN_START_HEIGHT` is the wallet/registry birthday. While the
   testnet is young, `1` gives a complete registry; pin whatever you choose
   so wallet state stays consistent across restarts.

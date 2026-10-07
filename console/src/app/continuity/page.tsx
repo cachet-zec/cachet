@@ -47,16 +47,17 @@ export default function ContinuityPage() {
           The same rule holds when the chain itself changes under the registry. The public ZSA
           testnet is run by QEDIT, the team building ZSAs, not by this registry. A test network can
           be reset by its operators and start again from block zero; it happened on 10 September
-          2026. Everything issued before then exists only on the abandoned chain, so this registry
-          followed the node, dropped its index and re-indexed from the start within a minute, on its
-          own. What was never on the chain stays: the sealed bundles are still served, and an asset
-          id is derived from the issuance key and the sealed description, never assigned by a chain.
-          A re-mint under the same seed with the same name, text and image, byte for byte, is
-          therefore the same asset id again, on the new chain; change any of them and it is a
-          different asset. One trap: an image over about 180 KB is re-encoded by the browser before
-          it is sealed, and another browser may not produce the same bytes. Re-mint with the sealed
-          image this registry serves, which is kept as is, rather than with the original file. A
-          registry that kept showing assets its node can no longer see would be lying.
+          2026, and on 25 September the testnet started again as a new network with a corrected
+          Orchard circuit. Each time, everything issued before exists only on the abandoned chain,
+          so this registry dropped its index and re-indexed the new chain from the start. What was
+          never on the chain stays: the sealed bundles are still served, and an asset id is derived
+          from the issuance key and the sealed description, never assigned by a chain. A re-mint
+          under the same seed with the same name, text and image, byte for byte, is therefore the
+          same asset id again, on the new chain; change any of them and it is a different asset. One
+          trap: an image over about 180 KB is re-encoded by the browser before it is sealed, and
+          another browser may not produce the same bytes. Re-mint with the sealed image this
+          registry serves, which is kept as is, rather than with the original file. A registry that
+          kept showing assets its node can no longer see would be lying.
         </p>
       </section>
 

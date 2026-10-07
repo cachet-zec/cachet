@@ -189,6 +189,11 @@ const GROUPS: { tag: string; title: string; note: string }[] = [
     note: "The tip, raw blocks for scanning on your own machine, and the relay for transactions signed elsewhere.",
   },
   {
+    tag: "swaps",
+    title: "Swaps",
+    note: "The swap board: offers to trade one asset for another in one shielded transaction, and the messages that complete it. The registry carries them and holds no key.",
+  },
+  {
     tag: "snapshot",
     title: "Signed snapshot",
     note: "The whole registry as one deterministic, signed document, for mirrors.",
