@@ -188,6 +188,11 @@ pub trait ChainBackend: Send + Sync {
         Ok(None)
     }
 
+    /// Make the next `recent_anchors` ask the node instead of answering
+    /// from a cache: an anchor missing from a few seconds' old answer may
+    /// be the root of the block that just landed.
+    async fn refresh_anchors(&self) {}
+
     /// Chain-level collections: assets grouped by issuance key (the only
     /// provenance statement the chain itself makes), largest first.
     async fn collections(&self) -> Result<Vec<CollectionSummary>, ChainError>;

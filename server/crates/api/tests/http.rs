@@ -1896,8 +1896,9 @@ async fn the_swap_board_holds_offers_to_the_chains_recent_roots() {
     let (status, _) = send(&app, post_json("/api/v1/swaps", json!({"offer": offer}))).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
-    // The chain's current root: listed.
-    chain.set_recent_anchors(roots(500, anchor));
+    // The root of a block the cached answer predates (the maker's own
+    // funding block, just mined): asked of the node again, then listed.
+    chain.set_recent_anchors_after_refresh(cachet_chain::RecentAnchors::new(500, [(500, anchor)]));
     let (status, posted) = send(&app, post_json("/api/v1/swaps", json!({"offer": offer}))).await;
     assert_eq!(status, StatusCode::CREATED);
     let id = posted["id"].as_str().unwrap().to_owned();

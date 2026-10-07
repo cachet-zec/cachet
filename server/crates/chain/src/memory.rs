@@ -53,11 +53,22 @@ pub struct InMemoryChain {
     state: Mutex<State>,
     /// The fake chain has no Orchard tree; a test can say what it would be.
     anchors: Mutex<Option<std::sync::Arc<crate::RecentAnchors>>>,
+    /// What a node would answer once asked again (`refresh_anchors`).
+    anchors_on_refresh: Mutex<Option<crate::RecentAnchors>>,
 }
 
 impl InMemoryChain {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Answer `recent_anchors` with these once a refresh is asked for, as a
+    /// cache would before it read the node again (tests).
+    pub fn set_recent_anchors_after_refresh(&self, anchors: crate::RecentAnchors) {
+        *self
+            .anchors_on_refresh
+            .lock()
+            .expect("in-memory anchors lock poisoned") = Some(anchors);
     }
 
     /// Answer `recent_anchors` with these, as a node would (tests).
@@ -217,6 +228,17 @@ impl ChainBackend for InMemoryChain {
             state.created.push((asset_id, description.to_owned()));
         }
         Ok(())
+    }
+
+    async fn refresh_anchors(&self) {
+        let fresh = self
+            .anchors_on_refresh
+            .lock()
+            .expect("in-memory anchors lock poisoned")
+            .take();
+        if let Some(fresh) = fresh {
+            self.set_recent_anchors(Some(fresh));
+        }
     }
 
     async fn recent_anchors(
