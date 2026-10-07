@@ -27,7 +27,7 @@ pub fn prepare_proving() {
 use async_trait::async_trait;
 use cachet_domain::{
     AccountBalances, AssetEvent, AssetId, AssetSummary, BurnRequest, CollectionSummary,
-    IssuanceReceipt, IssuanceRequest, TransferRequest, TxId,
+    DecodedTransaction, IssuanceReceipt, IssuanceRequest, TransferRequest, TxId,
 };
 
 /// Errors surfaced by chain backends.
@@ -40,6 +40,10 @@ pub enum ChainError {
     /// The asset does not exist on the chain this backend is connected to.
     #[error("unknown asset: {0}")]
     UnknownAsset(AssetId),
+
+    /// Neither the chain nor the mempool holds this transaction.
+    #[error("unknown transaction: {0}")]
+    UnknownTransaction(TxId),
 
     /// Further issuance was attempted on a finalized asset.
     #[error("asset {0} is finalized; no further issuance is allowed")]
@@ -149,6 +153,10 @@ pub trait ChainBackend: Send + Sync {
     /// Public events of an asset's life (issuances, burns, finalization),
     /// oldest first. Transfers are shielded and never listed.
     async fn asset_events(&self, asset_id: AssetId) -> Result<Vec<AssetEvent>, ChainError>;
+
+    /// The public ZSA content of one transaction (issuance, burns, and how
+    /// many shielded actions it carries), mined or still in the mempool.
+    async fn decode_transaction(&self, txid: TxId) -> Result<DecodedTransaction, ChainError>;
 
     /// Move units of an asset from the wallet to a recipient.
     async fn transfer(&self, request: TransferRequest) -> Result<TxId, ChainError>;

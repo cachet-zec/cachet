@@ -87,6 +87,7 @@ impl ApiError {
             Self::Chain(chain_error) => match chain_error {
                 ChainError::Rejected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
                 ChainError::UnknownAsset(_) => StatusCode::NOT_FOUND,
+                ChainError::UnknownTransaction(_) => StatusCode::NOT_FOUND,
                 ChainError::AssetFinalized(_) => StatusCode::CONFLICT,
                 ChainError::InsufficientFunds { .. } => StatusCode::UNPROCESSABLE_ENTITY,
                 ChainError::InvalidRecipient { .. } => StatusCode::BAD_REQUEST,
@@ -113,6 +114,7 @@ impl ApiError {
             Self::Chain(chain_error) => match chain_error {
                 ChainError::Rejected { .. } => "rejected-by-node",
                 ChainError::UnknownAsset(_) => "unknown-asset",
+                ChainError::UnknownTransaction(_) => "unknown-transaction",
                 ChainError::AssetFinalized(_) => "asset-finalized",
                 ChainError::InsufficientFunds { .. } => "insufficient-funds",
                 ChainError::InvalidRecipient { .. } => "invalid-recipient",

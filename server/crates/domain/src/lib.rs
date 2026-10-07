@@ -7,6 +7,7 @@
 //! HTTP DTOs live in `cachet-api`.
 
 pub mod asset;
+pub mod decoded;
 pub mod id;
 pub mod listing;
 pub mod metadata;
@@ -16,6 +17,7 @@ pub use asset::{
     BurnRequest, CollectionSummary, Holding, IssuanceReceipt, IssuanceRequest, Recipient,
     TransferRequest,
 };
+pub use decoded::{DecodedBurn, DecodedIssuance, DecodedIssueAction, DecodedTransaction};
 pub use id::{AssetId, TxId};
 pub use listing::{AssetListPage, AssetListQuery, ListingOrder, SupplyState, name_rank};
 pub use metadata::{ChainDescription, MetadataBundle};

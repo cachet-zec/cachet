@@ -1601,3 +1601,78 @@ async fn a_backend_without_a_journal_keeps_nothing() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }
+
+/// A transaction decodes to what it published: the issuance (asset,
+/// units, seal) and the burns. Malformed ids are a 400, unknown ones a
+/// 404 with their own problem type.
+#[tokio::test]
+async fn a_transaction_decodes_to_its_public_zsa_content() {
+    let app = app();
+    let (_, issued) = send(
+        &app,
+        post_json(
+            "/api/v1/assets",
+            json!({"description": "Decode Me", "amount": 40, "finalize": true}),
+        ),
+    )
+    .await;
+    let asset_id = issued["asset_id"].as_str().unwrap().to_owned();
+    let issue_txid = issued["txid"].as_str().unwrap().to_owned();
+
+    let (status, decoded) = send(
+        &app,
+        Request::get(format!("/api/v1/transactions/{issue_txid}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(decoded["txid"], issue_txid);
+    let action = &decoded["issuance"]["actions"][0];
+    assert_eq!(action["asset_id"], asset_id);
+    assert_eq!(action["amount"], 40);
+    assert_eq!(action["finalize"], true);
+    assert_eq!(decoded["burns"].as_array().unwrap().len(), 0);
+
+    let (_, burned) = send(
+        &app,
+        post_json(
+            &format!("/api/v1/assets/{asset_id}/burns"),
+            json!({"amount": 15}),
+        ),
+    )
+    .await;
+    let burn_txid = burned["txid"].as_str().unwrap().to_owned();
+    let (status, decoded) = send(
+        &app,
+        Request::get(format!("/api/v1/transactions/{burn_txid}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(decoded["issuance"].is_null());
+    assert_eq!(decoded["burns"][0]["asset_id"], asset_id);
+    assert_eq!(decoded["burns"][0]["amount"], 15);
+
+    let (status, problem) = send(
+        &app,
+        Request::get(format!("/api/v1/transactions/{}", "ab".repeat(32)))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        problem["type"],
+        "https://cachetzec.com/problems/unknown-transaction"
+    );
+    let (status, _) = send(
+        &app,
+        Request::get("/api/v1/transactions/not-a-txid")
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}

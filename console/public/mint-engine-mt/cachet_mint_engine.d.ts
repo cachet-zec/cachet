@@ -9,6 +9,11 @@
  *
  * `first_issuance` and `target_height` come from the public chain API —
  * they are public facts, not secrets.
+ *
+ * `amount == 0` seals an existing asset without minting more: the issue
+ * action carries no note and sets `finalize`, which consensus accepts
+ * (an action with no note is refused only when it does not finalize).
+ * It must name an asset that already exists, and must finalize.
  */
 export function build_issuance_tx(seed_phrase: string, description: string, amount: bigint, finalize: boolean, first_issuance: boolean, target_height: number): any;
 

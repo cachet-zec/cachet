@@ -16,6 +16,18 @@ All notable changes to Cachet are documented here. The format follows
   Asset Digest once it is derived, with the value beside it to copy. The
   code is drawn as plain SVG from `uqr` (no dependencies of its own),
   dark on white so any scanner reads it.
+- Seal a supply without minting: on an asset whose supply is still open,
+  "Seal the supply" opens the mint page bound to that asset. Only the seed
+  that issued it can sign, and the transaction issues zero units with the
+  seal set: an issue action with no note that finalizes, which consensus
+  accepts. Sealing no longer costs one extra unit.
+- A supply ledger on asset pages: issued, burned, in circulation, and the
+  block the supply was sealed at, with the running supply after each event.
+- `GET /api/v1/transactions/{txid}` and the page `/tx/{txid}`: what a
+  transaction published about ZSAs, decoded from its bytes (issuer, assets,
+  units, seals, first-issuance reference notes, burns). Transfers stay
+  encrypted and show only their action count; issue-note recipients are
+  left out. Each event of an asset's history links to it.
 - `packages/registry-spec/vectors/zip227-identity.json`: issuer and
   description pairs with their description hash, Asset Digest and asset
   id, for other wallets and explorers to check against. The engine's tests

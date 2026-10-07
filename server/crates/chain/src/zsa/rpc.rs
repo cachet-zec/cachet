@@ -123,6 +123,25 @@ impl NodeRpc {
         self.call("getrawtransaction", json!([txid, 0])).await
     }
 
+    /// A transaction's hex with where it sits: the block height once mined
+    /// (`None` in the mempool) and its format version, as the node reports
+    /// them. Unknown to the node: `ChainError::UnknownTransaction`.
+    pub async fn raw_transaction_verbose(
+        &self,
+        txid: &cachet_domain::TxId,
+    ) -> Result<VerboseTransaction, ChainError> {
+        self.call("getrawtransaction", json!([txid.to_string(), 1]))
+            .await
+            .map_err(|error| match error {
+                // zcashd and Zebra both answer RPC_INVALID_ADDRESS_OR_KEY (-5)
+                // for a txid neither the chain nor the mempool holds.
+                ChainError::Rejected { reason } if reason.contains("-5") => {
+                    ChainError::UnknownTransaction(*txid)
+                }
+                other => other,
+            })
+    }
+
     /// Submit a block. Returns the node's textual verdict, if any.
     ///
     /// zcashd semantics say null = accepted, but the ZSA Zebra fork has been
@@ -137,4 +156,15 @@ impl NodeRpc {
             other => Some(other.to_string()),
         }))
     }
+}
+
+/// The fields of a verbose `getrawtransaction` answer this crate reads.
+#[derive(Debug, serde::Deserialize)]
+pub struct VerboseTransaction {
+    pub hex: String,
+    /// Absent (or negative on some nodes) while the transaction is unmined.
+    #[serde(default)]
+    pub height: Option<i64>,
+    #[serde(default)]
+    pub version: Option<u32>,
 }
