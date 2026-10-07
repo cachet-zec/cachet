@@ -1,14 +1,17 @@
 # Cachet registry — metadata format (v1)
 
-How Cachet binds rich off-chain metadata to a ZSA asset. The chain stores
-only a 512-byte description (as a hash inside the asset id derivation);
+How Cachet binds rich off-chain metadata to a ZSA asset. ZIP 227 derives
+the asset id from the issuer key and the hash of an asset description; the
+chain carries that hash, never the description itself, and wallets must
+look the description up out of band. The description is a short envelope;
 everything else lives in a **content-addressed bundle** whose hash is
 sealed into that description — so integrity is verifiable by anyone,
 forever, and no registry has to be trusted for more than availability.
 
-## On-chain description envelope
+## Asset description envelope
 
-Committed at issuance, immutable, participates in the asset id:
+Committed at issuance (as its hash), immutable, participates in the asset
+id:
 
 ```json
 { "v": 1, "name": "Zcon Ticket 2027", "sha256": "<hex sha-256 of the bundle bytes>" }
@@ -16,6 +19,9 @@ Committed at issuance, immutable, participates in the asset id:
 
 - `name`: display name, ≤ 120 bytes.
 - `sha256`: hash of the metadata bundle's exact stored bytes.
+- The whole description is 1 to 512 bytes. ZIP 227 sets no upper limit;
+  this cap is Cachet's, so the envelope stays small enough to type, scan
+  or paste.
 - Descriptions that don't parse as this envelope are treated as free text.
 
 ## Metadata bundle
@@ -54,7 +60,7 @@ window, so an upload that never reaches the chain is not storage — it is
 a staging slot.
 
 The sequence that survives is: upload the bundle → mint the asset with
-the returned chain description → resolve that description against the
+the returned description (`chain_description`) → resolve that description against the
 asset. Miss the last step and the bundle is dropped within the hour;
 re-uploading the identical bytes always restores the identical hash, so
 recovery is possible for whoever still holds them.
@@ -65,7 +71,7 @@ a content-addressed registry becomes free hosting.
 
 ## Verification rule
 
-For any asset: parse its chain description → if a v1 envelope, fetch the
+For any asset: parse its asset description → if a v1 envelope, fetch the
 bundle by `sha256` from any registry → re-hash the bytes → compare. Match
 ⇒ the metadata (name, image, links) is exactly what the issuer sealed at
 issuance. No match or no bundle ⇒ display the asset as unnamed; never
@@ -102,7 +108,7 @@ derivation against them.
 Some metadata conventions sign manifests with the issuance key because
 their metadata can be revised after issuance. Cachet's envelope needs no
 separate signature: the bundle hash
-is inside the chain description, the chain description hash is inside the
+is inside the asset description, the description hash is inside the
 asset id, and the asset id derivation is authenticated by the issuance
 bundle's own ZIP 227 signature. The chain's signature already covers
 every byte of the metadata, transitively. A second signature would only

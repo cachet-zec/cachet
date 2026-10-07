@@ -3,7 +3,7 @@
 //! # Why this exists
 //!
 //! An asset page can already re-hash a metadata bundle and compare it with
-//! the `sha256` carried in the on-chain description. That proves the bundle
+//! the `sha256` carried in the asset description. That proves the bundle
 //! matches the description - it does NOT prove the description is the one
 //! the chain committed to. A registry serving a fabricated description with
 //! a matching fabricated bundle would pass that check.

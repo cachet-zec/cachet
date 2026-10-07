@@ -286,7 +286,7 @@ pub struct BatchIssueResponse {
     pub asset_ids: Vec<String>,
 }
 
-/// Request body for resolving an asset's on-chain description.
+/// Request body for resolving an asset's description.
 ///
 /// Permissionless by design: the chain stores only the description hash
 /// (ZIP 227), so a preimage either matches the commitment or is rejected —
@@ -391,7 +391,7 @@ impl From<TxId> for TxResponse {
 pub struct KeptAssetResponse {
     /// Asset id (hex-encoded 32 bytes) the description was journaled under.
     pub asset_id: String,
-    /// The on-chain description as it was: for a Cachet asset, the v1
+    /// The asset description as it was: for a Cachet asset, the v1
     /// envelope naming the sealed bundle.
     pub description: String,
     pub display_name: String,
@@ -421,7 +421,7 @@ impl From<AssetSummaryResponse> for KeptAssetResponse {
 pub struct AssetSummaryResponse {
     /// Asset id (hex-encoded 32 bytes).
     pub asset_id: String,
-    /// Raw chain description, when known. The chain only stores the
+    /// Raw asset description, when known. The chain only stores the
     /// description hash, so this is present only for assets issued through
     /// this instance (local journal).
     pub description: Option<String>,
@@ -522,6 +522,6 @@ pub struct MetadataUploadRequest {
 pub struct MetadataUploadResponse {
     /// SHA-256 of the stored bundle bytes, hex-encoded.
     pub sha256: String,
-    /// Ready-to-use on-chain description (`{"v":1,"name":…,"sha256":…}`).
+    /// Ready-to-use asset description (`{"v":1,"name":…,"sha256":…}`).
     pub chain_description: String,
 }

@@ -34,7 +34,7 @@ export function BatchMintForm() {
   const mint = useMutation({
     mutationFn: async () => {
       // 1. Seal each item's metadata; the bundle hash becomes part of the
-      //    immutable on-chain description.
+      //    immutable asset description.
       setStage(`Sealing metadata (${rows.length} items)…`);
       const items = [];
       for (const row of rows) {

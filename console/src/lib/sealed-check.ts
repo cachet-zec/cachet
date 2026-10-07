@@ -4,7 +4,7 @@ import { apiBaseUrl } from "@/lib/api";
  * Before a seed signs anything: is the description the registry handed
  * back really a seal over what was typed?
  *
- * The registry composes the on-chain description, and an issuance signed
+ * The registry composes the asset description, and an issuance signed
  * over it is permanent. A registry that answered with another name, another
  * bundle, or the description of one of the minter's earlier assets would
  * get a signature for something the minter never wrote. So the bundle is

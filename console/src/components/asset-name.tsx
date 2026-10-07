@@ -33,7 +33,7 @@ export function AssetName({
     return (
       <span
         className="-mr-[0.1em] truncate pr-[0.25em] text-[17px] italic text-neutral-300"
-        title="Free-text on-chain description, not a verified name"
+        title="Free-text asset description, not a verified name"
       >
         {name}
       </span>

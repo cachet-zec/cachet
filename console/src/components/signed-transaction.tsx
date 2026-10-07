@@ -7,7 +7,7 @@ export interface SignedTx {
   tx_hex: string;
   txid: string;
   asset_id: string;
-  /** The on-chain description minted under: needed to name the asset later. */
+  /** The asset description minted under: needed to name the asset later. */
   description: string;
 }
 
