@@ -46,14 +46,19 @@ pub struct DefaultRoots {
     pub chain_history_root: String,
 }
 
-/// `getblock` at verbosity 1: the block's hash and transaction ids.
-#[derive(Debug, Deserialize)]
+/// `getblock` at verbosity 1: the block's hash, transaction ids and Orchard
+/// root.
+#[derive(Debug, Clone, Deserialize)]
 pub struct BlockSummary {
     /// Block hash (hex, display order) — used to detect chain resets when
     /// validating the index checkpoint.
     pub hash: String,
     #[serde(rename = "tx")]
     pub tx_ids: Vec<String>,
+    /// The Orchard root after this block, hex in the byte order of
+    /// `orchard::Anchor::to_bytes` (checked against the node's tree state).
+    #[serde(rename = "finalorchardroot", default)]
+    pub final_orchard_root: Option<String>,
 }
 
 impl NodeRpc {

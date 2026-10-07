@@ -88,6 +88,8 @@ export function SwapPanel({
   const [listing, setListing] = useState<{ id: string; token: string } | null>(null);
   const [boardStatus, setBoardStatus] = useState<string | null>(null);
   const answeredTake = useRef<number | null>(null);
+  // Posting the offer again on a newer root (the board said it went stale).
+  const reposting = useRef(false);
   // The parent passes a new callback on every render; the board's polling
   // must not restart (and never fire) because of it.
   const onChangeRef = useRef(onChange);
@@ -245,6 +247,48 @@ export function SwapPanel({
         stopped = true;
         setBoardStatus("Swapped: the taker relayed the transaction.");
         onChangeRef.current();
+        return;
+      }
+      // Takers' wallets build on the roots of their last 100 blocks: an
+      // offer older than that cannot be taken. The board takes it down a
+      // little before; this page puts the same units up again on the
+      // chain's current root, and withdraws the old listing.
+      if (board.data?.status === "stale") {
+        if (reposting.current) return;
+        reposting.current = true;
+        setBoardStatus(
+          "Your offer got too old for takers' wallets: posting it again on a recent block…",
+        );
+        try {
+          const trimmed = seed.trim();
+          await scanToTip(call, trimmed);
+          const asked = JSON.parse(madeOffer.json) as OfferSummary;
+          const json = await call<string>("swap_make_offer", {
+            seed: trimmed,
+            slot: madeOffer.slot,
+            want_asset: asked.want_asset,
+            want_amount: asked.want_amount,
+          });
+          const posted = await api.POST("/api/v1/swaps", { body: { offer: json } });
+          if (posted.error) throw new Error(problemMessage(posted.error));
+          await api
+            .DELETE("/api/v1/swaps/{id}", { params: { path }, headers })
+            .catch(() => undefined);
+          stopped = true;
+          answeredTake.current = null;
+          setMadeOffer({ slot: madeOffer.slot, json });
+          setListing({ id: posted.data.id, token: posted.data.maker_token });
+          setBoardStatus(
+            "Listed again on a recent block. Keep this page open: it answers takers with your keys.",
+          );
+        } catch (failure) {
+          stopped = true;
+          setBoardStatus(
+            `Your offer got too old for takers, and posting it again failed (${failure instanceof Error ? failure.message : String(failure)}). Withdraw the units and make a new offer.`,
+          );
+        } finally {
+          reposting.current = false;
+        }
         return;
       }
       const take = await api.GET("/api/v1/swaps/{id}/take", { params: { path }, headers });

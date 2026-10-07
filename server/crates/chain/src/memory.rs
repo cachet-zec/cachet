@@ -51,11 +51,21 @@ struct State {
 #[derive(Debug, Default)]
 pub struct InMemoryChain {
     state: Mutex<State>,
+    /// The fake chain has no Orchard tree; a test can say what it would be.
+    anchors: Mutex<Option<std::sync::Arc<crate::RecentAnchors>>>,
 }
 
 impl InMemoryChain {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Answer `recent_anchors` with these, as a node would (tests).
+    pub fn set_recent_anchors(&self, anchors: Option<crate::RecentAnchors>) {
+        *self
+            .anchors
+            .lock()
+            .expect("in-memory anchors lock poisoned") = anchors.map(std::sync::Arc::new);
     }
 
     /// Derive a stable pseudo asset id from the description. The real
@@ -207,6 +217,16 @@ impl ChainBackend for InMemoryChain {
             state.created.push((asset_id, description.to_owned()));
         }
         Ok(())
+    }
+
+    async fn recent_anchors(
+        &self,
+    ) -> Result<Option<std::sync::Arc<crate::RecentAnchors>>, ChainError> {
+        Ok(self
+            .anchors
+            .lock()
+            .expect("in-memory anchors lock poisoned")
+            .clone())
     }
 
     async fn asset_state(&self, asset_id: AssetId) -> Result<AssetSummary, ChainError> {

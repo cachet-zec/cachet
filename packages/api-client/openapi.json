@@ -2525,7 +2525,7 @@
           },
           "status": {
             "type": "string",
-            "description": "`open`, `taken` (held for the maker's signature), `countersigned`,\n`closed` or `expired`."
+            "description": "`open`, `taken` (held for the maker's signature), `countersigned`,\n`closed`, `expired`, or `stale` (its anchor is too old for takers'\nwallets: off the board until the maker posts it again)."
           },
           "want_amount": {
             "type": "integer",

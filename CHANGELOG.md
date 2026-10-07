@@ -8,6 +8,13 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Added
 
+- The swap board checks an offer's anchor against the chain: it takes an
+  offer only on the Orchard root of one of the last blocks (read from the
+  node, cached a few seconds), lists it while takers' wallets can still
+  build on that root with ten blocks to spare, then reports it `stale`.
+  The maker's open page posts it again on the current root by itself. A
+  take on an anchor no wallet can reach is refused before its proof is
+  checked. Closes the limit ADR 004 left open.
 - Swaps have their own page: `/swaps` shows the board, and under it the
   wallet and the make/take form, so taking an offer no longer jumps to the
   end of the mint page (old `/mint?take=` links forward there). The seed is

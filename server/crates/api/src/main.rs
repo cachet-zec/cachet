@@ -287,6 +287,18 @@ async fn main() -> anyhow::Result<()> {
         cachet_swap::prepare_verifying_key();
         tracing::info!(elapsed = ?started.elapsed(), "swap verifying key ready");
     });
+    // And read the chain's recent Orchard roots (a block each), so the
+    // first offer posted is checked without waiting for them.
+    {
+        let chain = chain.clone();
+        tokio::spawn(async move {
+            let started = std::time::Instant::now();
+            match chain.recent_anchors().await {
+                Ok(_) => tracing::info!(elapsed = ?started.elapsed(), "recent orchard roots read"),
+                Err(error) => tracing::warn!(%error, "recent orchard roots unavailable"),
+            }
+        });
+    }
 
     // Public read-only deployments: mutations disabled, browsing intact.
     // (read_only was resolved above, where the bind address is chosen.)

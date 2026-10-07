@@ -140,6 +140,17 @@ pub struct OrchardZsaBackend {
     /// the node exactly once per process. Cleared when the chain resets
     /// under us (tip below a cached height — routine on regtest).
     block_cache: tokio::sync::RwLock<BlockCache>,
+    /// Recent Orchard roots by height, with each block's hash, for
+    /// `recent_anchors`; refreshed at most every few seconds.
+    anchor_cache: tokio::sync::Mutex<AnchorCache>,
+}
+
+#[derive(Default)]
+struct AnchorCache {
+    checked_at: Option<std::time::Instant>,
+    /// height -> (block hash, final Orchard root; none before Orchard)
+    roots: std::collections::BTreeMap<u64, (String, Option<[u8; 32]>)>,
+    answer: Option<std::sync::Arc<crate::RecentAnchors>>,
 }
 
 /// Cached raw transactions by height, plus the highest height ever cached
@@ -188,6 +199,7 @@ impl OrchardZsaBackend {
             wallet_cache: tokio::sync::Mutex::new(None),
             relay_lock: tokio::sync::Mutex::new(()),
             block_cache: tokio::sync::RwLock::new(BlockCache::default()),
+            anchor_cache: tokio::sync::Mutex::new(AnchorCache::default()),
         })
     }
 
@@ -1216,6 +1228,67 @@ impl ChainBackend for OrchardZsaBackend {
             .map_err(|error| ChainError::Unavailable {
                 reason: format!("asset index: {error}"),
             })
+    }
+
+    async fn recent_anchors(
+        &self,
+    ) -> Result<Option<std::sync::Arc<crate::RecentAnchors>>, ChainError> {
+        // Blocks come minutes apart: every board read in a few seconds
+        // shares one answer, and a refresh asks only for the new blocks.
+        const FRESH_FOR: std::time::Duration = std::time::Duration::from_secs(10);
+        let mut cache = self.anchor_cache.lock().await;
+        if cache.checked_at.is_some_and(|at| at.elapsed() < FRESH_FOR) {
+            return Ok(cache.answer.clone());
+        }
+        let tip = self.chain_info_inner().await?.tip_height;
+        let low = tip.saturating_sub(crate::ANCHOR_WINDOW - 1);
+        let tip_block = self.rpc.block_summary(tip).await?;
+        // A different block at a height already read: a reorg or a reset.
+        // Read the window again rather than reason about where it forked.
+        if cache
+            .roots
+            .get(&tip)
+            .is_some_and(|(hash, _)| *hash != tip_block.hash)
+            || cache.roots.keys().next_back().is_some_and(|top| *top > tip)
+        {
+            cache.roots.clear();
+        }
+        cache.roots.retain(|height, _| *height >= low);
+        for height in low..=tip {
+            if cache.roots.contains_key(&height) {
+                continue;
+            }
+            let block = if height == tip {
+                tip_block.clone()
+            } else {
+                self.rpc.block_summary(height).await?
+            };
+            // Blocks before Orchard activates carry no root: nothing to
+            // build on there.
+            let root = block
+                .final_orchard_root
+                .as_deref()
+                .and_then(|hex_root| hex::decode(hex_root).ok())
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok());
+            cache.roots.insert(height, (block.hash, root));
+        }
+        // A node that reports no Orchard root at all (another version, or a
+        // chain before Orchard) says nothing to check offers against.
+        if cache.roots.values().all(|(_, root)| root.is_none()) {
+            cache.answer = None;
+            cache.checked_at = Some(std::time::Instant::now());
+            return Ok(None);
+        }
+        let answer = std::sync::Arc::new(crate::RecentAnchors::new(
+            tip,
+            cache
+                .roots
+                .iter()
+                .filter_map(|(height, (_, root))| root.map(|root| (*height, root))),
+        ));
+        cache.answer = Some(answer.clone());
+        cache.checked_at = Some(std::time::Instant::now());
+        Ok(Some(answer))
     }
 
     async fn kept_description(&self, asset_id: AssetId) -> Result<Option<String>, ChainError> {

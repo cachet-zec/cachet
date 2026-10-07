@@ -8,10 +8,17 @@
 //! whoever holds the token is the party. Nothing here can move funds: a
 //! take is useless without the maker's signature, and the maker checks the
 //! transaction against its own offer before signing.
+//!
+//! An offer is built on an Orchard root, and a taker's wallet can build on
+//! the roots of its last `ANCHOR_WINDOW` blocks only. So the board takes an
+//! offer only on a recent root of the chain it reads, lists it while a
+//! taker still has `ANCHOR_MARGIN` blocks to scan and prove in, and then
+//! reports it `stale`: the maker's page posts it again on a newer root.
 
 use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
+use cachet_chain::{ANCHOR_WINDOW, RecentAnchors};
 use cachet_index::{SWAP_TAKE_HOLD_SECS, SwapRow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -32,6 +39,9 @@ const MAX_TAKE_BYTES: usize = 192 * 1024;
 const MAX_SIGNATURE_BYTES: usize = 1024;
 /// Header carrying a capability token.
 const TOKEN_HEADER: &str = "x-swap-token";
+/// Blocks left to a taker between seeing an offer and its anchor leaving
+/// the wallets' reach: time to scan and prove, at minutes a block.
+const ANCHOR_MARGIN: u64 = 10;
 
 fn now() -> i64 {
     std::time::SystemTime::now()
@@ -42,6 +52,36 @@ fn now() -> i64 {
 
 fn invalid(reason: &'static str) -> ApiError {
     ApiError::Validation(cachet_domain::DomainError::InvalidMetadata { reason })
+}
+
+/// The anchor an offer message is built on.
+fn offer_anchor(offer: &str) -> Option<[u8; 32]> {
+    let offer: cachet_swap::Offer = serde_json::from_str(offer).ok()?;
+    hex::decode(offer.anchor).ok()?.try_into().ok()
+}
+
+/// Whether a wallet at the tip can still build on the offer's anchor, with
+/// `margin` blocks to spare. With nothing to check against, it can.
+fn anchor_fresh(anchors: Option<&RecentAnchors>, offer: &str, margin: u64) -> bool {
+    let Some(anchors) = anchors else {
+        return true;
+    };
+    offer_anchor(offer)
+        .and_then(|anchor| anchors.age(&anchor))
+        .is_some_and(|age| age + margin < ANCHOR_WINDOW)
+}
+
+/// The chain's recent roots for reads: a node that does not answer leaves
+/// offers as they are (a take is still checked in full) rather than
+/// emptying the board.
+async fn recent_anchors(state: &AppState) -> Option<std::sync::Arc<RecentAnchors>> {
+    match state.chain.recent_anchors().await {
+        Ok(anchors) => anchors,
+        Err(error) => {
+            tracing::warn!(%error, "swap board: recent anchors unavailable");
+            None
+        }
+    }
 }
 
 fn random_hex<const N: usize>() -> String {
@@ -63,13 +103,15 @@ fn token_hash(headers: &HeaderMap) -> Result<[u8; 32], ApiError> {
 }
 
 /// Where an offer stands.
-fn status(row: &SwapRow, now: i64) -> &'static str {
+fn status(row: &SwapRow, now: i64, stale: bool) -> &'static str {
     if row.closed {
         "closed"
     } else if now >= row.expires_at {
         "expired"
     } else if row.countersignature.is_some() {
         "countersigned"
+    } else if row.is_open(now) && stale {
+        "stale"
     } else if row.is_open(now) {
         "open"
     } else {
@@ -106,13 +148,14 @@ pub struct SwapOfferResponse {
     pub created_at: i64,
     pub expires_at: i64,
     /// `open`, `taken` (held for the maker's signature), `countersigned`,
-    /// `closed` or `expired`.
+    /// `closed`, `expired`, or `stale` (its anchor is too old for takers'
+    /// wallets: off the board until the maker posts it again).
     pub status: String,
     /// The offer message itself; only on the single-offer route.
     pub offer: Option<String>,
 }
 
-fn summary(row: &SwapRow, now: i64, with_offer: bool) -> SwapOfferResponse {
+fn summary(row: &SwapRow, now: i64, with_offer: bool, stale: bool) -> SwapOfferResponse {
     SwapOfferResponse {
         id: row.id.clone(),
         give_asset: hex::encode(row.give_asset),
@@ -121,7 +164,7 @@ fn summary(row: &SwapRow, now: i64, with_offer: bool) -> SwapOfferResponse {
         want_amount: row.want_amount,
         created_at: row.created_at,
         expires_at: row.expires_at,
-        status: status(row, now).to_owned(),
+        status: status(row, now, stale).to_owned(),
         offer: with_offer.then(|| row.offer.clone()),
     }
 }
@@ -197,6 +240,14 @@ pub(crate) async fn post_offer(
         tracing::debug!(%error, "swap board: offer refused");
         invalid("the offer does not hold together")
     })?;
+    // Built on a root this chain had in its last blocks, or no wallet could
+    // take it. Asked of the node now: an offer is not listed unchecked.
+    let anchors = state.chain.recent_anchors().await?;
+    if !anchor_fresh(anchors.as_deref(), &body.offer, ANCHOR_MARGIN) {
+        return Err(invalid(
+            "the offer is not built on a recent Orchard root of this chain",
+        ));
+    }
     let hours = body.hours.unwrap_or(DEFAULT_HOURS);
     if !(1..=MAX_HOURS).contains(&hours) {
         return Err(invalid("hours must be between 1 and 72"));
@@ -261,8 +312,12 @@ pub(crate) async fn list_offers(
         .swap_list_open(now, MAX_OPEN_OFFERS)
         .await
         .map_err(metadata_error)?;
+    let anchors = recent_anchors(&state).await;
     Ok(Json(
-        rows.iter().map(|row| summary(row, now, false)).collect(),
+        rows.iter()
+            .filter(|row| anchor_fresh(anchors.as_deref(), &row.offer, ANCHOR_MARGIN))
+            .map(|row| summary(row, now, false, false))
+            .collect(),
     ))
 }
 
@@ -287,7 +342,9 @@ pub(crate) async fn get_offer(
         .await
         .map_err(metadata_error)?
         .ok_or(ApiError::NotFound { what: "swap" })?;
-    Ok(Json(summary(&row, now(), true)))
+    let anchors = recent_anchors(&state).await;
+    let stale = !anchor_fresh(anchors.as_deref(), &row.offer, ANCHOR_MARGIN);
+    Ok(Json(summary(&row, now(), true, stale)))
 }
 
 /// Take an offer: hold it for the maker's countersignature.
@@ -327,6 +384,12 @@ pub(crate) async fn take_offer(
         .ok_or(ApiError::NotFound { what: "swap" })?;
     if !row.is_open(now()) {
         return Err(ApiError::SwapUnavailable);
+    }
+    // No margin here: a wallet that built on the anchor in time may hold it.
+    if !anchor_fresh(recent_anchors(&state).await.as_deref(), &row.offer, 0) {
+        return Err(invalid(
+            "this offer's anchor is too old for any wallet to build on; the maker posts it again",
+        ));
     }
     let offer: cachet_swap::Offer =
         serde_json::from_str(&row.offer).map_err(|_| invalid("the stored offer is unreadable"))?;

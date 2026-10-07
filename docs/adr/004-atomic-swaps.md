@@ -71,11 +71,15 @@ librustzcash's cached ZSA proving key is made public for the same build.
   spends are signed. A take that holds an offer therefore costs a real
   proof over real notes. The hold lasts two minutes, and the maker's page
   releases a take it refuses at once. A client may post six offers an hour.
-- Offers are checked for consistency, not against the chain: an offer
-  built on an invented anchor is listed, but no wallet can take it (the
-  taker's wallet only knows real roots). Checking the anchor against the
-  chain is left for later.
-- The offer's anchor must be within the taker's last 100 scanned blocks.
+- The offer's anchor must be within the taker's last 100 scanned blocks
+  (its wallet keeps checkpoints for that many). The board checks it
+  against the chain it reads (each block's final Orchard root, from the
+  node): an offer is accepted only on a root of those last blocks, and
+  listed while a taker still has ten blocks to scan and prove in. After
+  that the board reports it `stale` and drops it from the listing; the
+  maker's page, still open, posts the same units again on the current root
+  and withdraws the old listing. A take arriving once no wallet can build
+  on the anchor is refused before its proof is checked.
 - Zero fee, as every Cachet transaction on the testnet.
 - A maker cancels by withdrawing the slot (spending the note); a taker's
   swap built on it then fails, as a double spend.
