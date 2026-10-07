@@ -8,7 +8,7 @@ import { pageMetadata } from "@/lib/seo";
 export const metadata: Metadata = pageMetadata({
   title: "API reference · Cachet",
   description:
-    "Every route of the Cachet registry API: assets, sealed metadata, the relay, signed snapshots. No key, no account. Testnet.",
+    "Every route of the Cachet registry API: assets, sealed metadata, transactions, the relay, the swap board, signed snapshots. No key, no account. Testnet.",
   path: "/reference",
 });
 

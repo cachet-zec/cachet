@@ -144,6 +144,18 @@ ALTER TABLE metadata_bundles DROP COLUMN IF EXISTS has_image;
 DELETE FROM _sqlx_migrations WHERE version IN (9, 10, 11);
 ```
 
+Going back from 0.6.0 to 0.5.0 removes migrations 12 and 13: the swap
+board's table, whose open offers are lost (a maker posts again), and the
+activity column, recomputed from the events by migration 13 when it is
+applied again.
+
+```sql
+DROP TABLE IF EXISTS swap_offers;
+DROP INDEX IF EXISTS assets_by_activity;
+ALTER TABLE assets DROP COLUMN IF EXISTS last_height;
+DELETE FROM _sqlx_migrations WHERE version IN (12, 13);
+```
+
 ## After a deploy
 
 - `python scripts/verify-site.py --site https://your.site` checks that the

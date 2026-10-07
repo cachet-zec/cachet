@@ -200,15 +200,19 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
             assets, issuers, per-asset history, and permissionless description resolution \
             (accepted only when it hashes to the on-chain commitment)."),
         (name = "metadata", description = "Content-addressed metadata bundles. A bundle's \
-            SHA-256 travels inside the on-chain asset description, so what these endpoints \
-            serve can never be silently swapped."),
+            SHA-256 travels inside the asset description, whose hash the asset id commits \
+            to, so what these endpoints serve can never be silently swapped."),
         (name = "chain", description = "Raw chain access: network info, raw blocks for \
             local wallet scanning (identical bytes for every caller), and the relay that \
             forwards signed transactions without seeing a key."),
         (name = "issuance", description = "Server-wallet issuance for self-hosted \
             deployments. Disabled (403) on public read-only instances — mint from the \
             browser instead."),
-        (name = "swaps", description = "The public swap board: a mailbox for the three messages of an atomic swap. Holds messages, never keys; takes and countersignatures are read back with the token their author was handed."),
+        (name = "swaps", description = "The public swap board: a mailbox for the three \
+            messages of an atomic swap (one OrchardZSA transaction for both sides). Holds \
+            messages, never keys; takes and countersignatures are read back with the token \
+            their author was handed. Offers stand on a recent Orchard root of the chain, and \
+            a take holds an offer only once its proof verifies."),
         (name = "snapshot", description = "Deterministic registry export, sealed under the \
             operator's Ed25519 key. Any mirror can serve it; any client can verify it \
             (format in packages/registry-spec)."),

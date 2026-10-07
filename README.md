@@ -10,9 +10,10 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-dc9a76.svg)](LICENSE)
 
 Cachet is where ZSAs are born and verified: mint an asset with metadata
-cryptographically sealed into its on-chain id, browse a registry that anyone
-can audit, and let every visitor re-verify the metadata in their own browser —
-while balances and transfers stay shielded, as Zcash intends.
+cryptographically sealed into its id, browse a registry that anyone can
+audit, let every visitor re-verify the metadata in their own browser, and
+trade one asset for another in a single shielded transaction — while
+balances and transfers stay shielded, as Zcash intends.
 
 **Live instance:** [cachetzec.com](https://cachetzec.com)
 (public ZSA testnet, read-only + browser minting)
@@ -23,7 +24,8 @@ while balances and transfers stay shielded, as Zcash intends.
 > **Honest scope.** ZSA (ZIPs 226/227) is not on Zcash mainnet: the v6
 > transaction format was deferred out of NU7, and the protocol lives on a
 > dedicated [public ZSA testnet](https://forum.zcashcommunity.com/t/zsa-testnet/56884)
-> (since August 2026, run by QEDIT, reset once on 10 September 2026) and on
+> (since August 2026, run by QEDIT; reset on 10 September 2026, then started
+> again on 25 September as a new network with a corrected Orchard circuit) and on
 > local regtest. Cachet is therefore **production-grade engineering around a
 > testnet-grade product**, built so the tooling exists if the protocol
 > ships. No mainnet claims are made.
@@ -36,15 +38,29 @@ while balances and transfers stay shielded, as Zcash intends.
   Batch minting (`POST /api/v1/assets/batch`) puts up to 16 assets in ONE
   issuance bundle — one transaction, one signature, all-or-nothing.
 - **Seal** — the metadata bundle is stored content-addressed, and its SHA-256
-  travels inside the on-chain asset description, which itself participates in
-  the asset id (ZIP 227). Nobody — including the registry operator — can swap
-  the name or image afterwards.
+  travels inside the asset description, whose hash participates in the asset
+  id (ZIP 227; the chain carries only that hash). Nobody — including the
+  registry operator — can swap the name or image afterwards. An issuer can
+  also seal an open supply later without minting a single unit
+  (`/mint?seal=<asset id>`): an issue action with no notes and the finalize
+  flag.
 - **Verify** — every asset page re-fetches the bundle, re-hashes it with
   SubtleCrypto and compares against the on-chain commitment, client-side.
   Trust the math, not the registry.
 - **Audit** — public per-asset history (mints, burns, finalization) with
-  txids. Transfers are shielded and never appear: the registry shows exactly
-  what the chain shows, nothing more.
+  txids, and a supply ledger. Transfers are shielded and never appear: the
+  registry shows exactly what the chain shows, nothing more. `/tx/<txid>`
+  (`GET /api/v1/transactions/{txid}`) decodes any transaction's public parts:
+  what it issues, burns or seals, and how many shielded actions it carries.
+- **Identify** — every asset page derives, in the browser, the asset id, the
+  64-byte Asset Digest and the description hash from the issuer key and the
+  description (ZIP 227), and shares the asset by link or QR code. Test
+  vectors for other wallets and explorers live in
+  [packages/registry-spec/vectors](packages/registry-spec/vectors/zip227-identity.json).
+- **Discover** — the registry lists every asset on the chain, as a list or a
+  gallery of sealed images, ordered by attested names, recent activity
+  (issuance, burn or seal; never transfers) or chain order. Issuer pages
+  group what one issuance key minted.
 - **Hold** — a wallet panel tracks the server accounts' spendable balances
   through trial decryption, incremental and cached.
 - **Mint in your browser** — `/mint` generates a seed that never leaves the
@@ -59,6 +75,16 @@ while balances and transfers stay shielded, as Zcash intends.
   and warms the key while the user fills the form — a mint proves and
   signs in a measured 5.6 s, vs 43.4 s for the original single-core
   pipeline (7.7x). Falls back silently to single-core anywhere else.
+- **Swap** — two browsers trade two assets in ONE OrchardZSA transaction:
+  both sides land together or not at all, and nobody holds anything in
+  between. The maker parks the offered units in a one-off swap slot of its
+  seed and publishes an offer; the taker builds, proves and signs the whole
+  swap; the maker's page checks it pays what was asked and countersigns its
+  own spend. The public board at `/swaps` carries the three messages and
+  holds no key: it checks a take's proof before holding an offer for it, and
+  lists offers only while they stand on a recent Orchard root of the chain.
+  Protocol, limits and alternatives in
+  [docs/adr/004](docs/adr/004-atomic-swaps.md).
 - **Transfer & burn in your browser** — the same page scans the chain
   _locally_: raw blocks are public data identical for every caller
   (`GET /api/v1/chain/transactions`), and trial decryption, nullifier
@@ -106,7 +132,9 @@ chain, while sealed bundles stay served for a re-mint under the same key.
 
 Cachet is **neutral issuance and verification infrastructure** for every
 kind of ZSA — fungible tokens, tickets, editions, one-of-ones. It is
-deliberately not a marketplace, and some lines are structural:
+deliberately not a marketplace: the swap board is a mailbox between two
+browsers, with no order matching, no fee, no custody and no escrow. Some
+lines are structural:
 
 - **No custody, ever.** Cachet never holds a user's assets or funds, has no
   hosted-wallet phase and no escrow phase. The server wallet spends only
@@ -126,19 +154,21 @@ deliberately not a marketplace, and some lines are structural:
 ## Architecture
 
 ```
-console/                 Next.js console: landing, mint studio, registry, asset pages
+console/                 Next.js console: landing, mint studio, registry, asset pages, swaps
 server/crates/domain     Pure business types — no chain, no I/O
 server/crates/notes      Shared Orchard note tracking (server wallet + browser wallet)
 server/crates/chain      The ONLY crate that touches the QEDIT protocol forks
 server/crates/index      Postgres: the chain-derived cache, plus what the chain cannot rebuild
 server/crates/api        axum HTTP API, OpenAPI generated from code
+server/crates/swap       Atomic two-party swaps in one OrchardZSA bundle (pure logic, also in the wasm)
 server/crates/mint-engine  The browser engine: the ZSA stack compiled to WASM
-server/crates/verify-engine  Asset-id derivation alone (no circuit): 247 KB wasm, loaded per asset page
+server/crates/verify-engine  Asset-id derivation alone (no circuit): 250 KB wasm, loaded per asset page
 packages/api-client      TypeScript client generated from the OpenAPI document
-packages/registry-spec   The metadata format: on-chain envelope + content-addressed bundle
+packages/registry-spec   The metadata format: description envelope + content-addressed bundle, ZIP 227 vectors
 scripts/mirror.py        Mirror any registry, re-hashing every byte (no dependencies)
 scripts/restore.py       Rebuild an instance's content from a mirror, over its public API
 scripts/verify-site.py   Check that a live site serves the engine bytes this repo commits
+server/vendor            Patched orchard and zcash_primitives, each change listed in its README
 infra/                   docker-compose (regtest + Postgres), wasm engine build, prod deploy
 docs/whitepaper          The working paper (generated PDF, measured claims only)
 ```
