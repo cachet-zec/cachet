@@ -8,10 +8,19 @@ import { expect, test, type Page } from "@playwright/test";
  * transaction moves both assets, and each side's local scan sees exactly
  * what the offer said.
  */
-async function mint(page: Page, name: string, amount: number): Promise<string> {
+async function mintWithPhrase(
+  page: Page,
+  name: string,
+  amount: number,
+): Promise<{ assetId: string; phrase: string }> {
   await page.goto("/mint");
   await page.getByRole("button", { name: "Generate a new seed" }).click();
   await expect(page.getByTestId("mint-seed-grid").locator("li")).toHaveCount(24);
+  await page.getByTestId("mint-seed-reveal").click();
+  await expect(page.getByTestId("mint-seed-reveal")).toHaveText("hide words");
+  const phrase = (await page.getByTestId("mint-seed-grid").locator("li").allTextContents())
+    .map((word) => word.replace(/^\s*\d+\s*/, "").trim())
+    .join(" ");
   await page.getByTestId("mint-seed-saved").check();
   await page.getByTestId("mint-name").fill(name);
   await page.getByTestId("mint-amount").fill(String(amount));
@@ -20,7 +29,11 @@ async function mint(page: Page, name: string, amount: number): Promise<string> {
   await expect(minted).toBeVisible({ timeout: 300_000 });
   const assetId = ((await minted.textContent()) ?? "").trim();
   expect(assetId).toMatch(/^[0-9a-f]{64}$/);
-  return assetId;
+  return { assetId, phrase };
+}
+
+async function mint(page: Page, name: string, amount: number): Promise<string> {
+  return (await mintWithPhrase(page, name, amount)).assetId;
 }
 
 async function holding(page: Page, assetId: string) {
@@ -47,6 +60,7 @@ test("two browsers swap two assets in one transaction", async ({ browser }) => {
   await makerSwap.getByTestId("swap-give-amount").fill("4");
   await makerSwap.getByTestId("swap-want-asset").fill(silver);
   await makerSwap.getByTestId("swap-want-amount").fill("7");
+  await makerSwap.getByTestId("swap-list-on-board").uncheck(); // by hand this time
   await makerSwap.getByTestId("swap-prepare").click();
   const offerOut = makerSwap.getByTestId("swap-offer-out");
   await expect(offerOut, "move to the slot, block, offer").toBeVisible({ timeout: 420_000 });
@@ -88,4 +102,67 @@ test("two browsers swap two assets in one transaction", async ({ browser }) => {
     timeout: 30_000,
   });
   await expect(taker.getByText("This transaction burns nothing.")).toBeVisible();
+});
+
+test("a swap through the public board, with nothing passed by hand", async ({ browser }) => {
+  test.setTimeout(2_400_000);
+  const tag = Date.now().toString(16);
+  const maker = await (await browser.newContext()).newPage();
+  const taker = await (await browser.newContext()).newPage();
+
+  const gold = await mint(maker, `Board Gold ${tag}`, 9);
+  const { assetId: silver, phrase } = await mintWithPhrase(taker, `Board Silver ${tag}`, 15);
+
+  // --- The maker lists 3 GOLD for 5 SILVER (listing is the default) ---
+  const makerSwap = maker.getByTestId("swap-panel");
+  await makerSwap.getByRole("button", { name: "Scan my holdings" }).click();
+  await expect(makerSwap.getByTestId("swap-give-asset").locator("option")).toHaveCount(2, {
+    timeout: 120_000,
+  });
+  await makerSwap.getByTestId("swap-give-asset").selectOption(gold);
+  await makerSwap.getByTestId("swap-give-amount").fill("3");
+  await makerSwap.getByTestId("swap-want-asset").fill(silver);
+  await makerSwap.getByTestId("swap-want-amount").fill("5");
+  await makerSwap.getByTestId("swap-prepare").click();
+  await expect(makerSwap.getByTestId("swap-board-status")).toContainText("Listed", {
+    timeout: 420_000,
+  });
+
+  // --- The taker finds it on the board ---
+  await taker.goto("/swaps");
+  const listed = taker.getByTestId("swap-board").locator("li", { hasText: `Board Gold ${tag}` });
+  await expect(listed).toBeVisible({ timeout: 30_000 });
+  await expect(listed).toContainText("3");
+  await expect(listed).toContainText("5");
+  await listed.getByTestId("swap-take-link").click();
+  await expect(taker).toHaveURL(/\/mint\?take=[0-9a-f]{32}/);
+
+  // The page forgot the seed on navigation: the taker enters it again.
+  await taker.getByRole("button", { name: "I already have one" }).click();
+  await taker.getByTestId("mint-seed").fill(phrase);
+  await taker.getByTestId("mint-seed-saved").check();
+  const takerSwap = taker.getByTestId("swap-panel");
+  await expect(takerSwap.getByTestId("swap-offer-summary")).toContainText("3", {
+    timeout: 30_000,
+  });
+  await takerSwap.getByTestId("swap-take").click();
+  await expect(takerSwap.getByTestId("swap-take-status")).toContainText("Sent to the maker", {
+    timeout: 420_000,
+  });
+
+  // --- The maker's page countersigns by itself; the taker's completes ---
+  await expect(takerSwap.getByTestId("swap-done")).toBeVisible({ timeout: 300_000 });
+  await expect(makerSwap.getByTestId("swap-board-status")).toContainText("Swapped", {
+    timeout: 120_000,
+  });
+
+  // --- Balances, from each side's own scan; the board is empty again ---
+  await expect(await holding(taker, gold)).toContainText("× 3", { timeout: 120_000 });
+  await expect(await holding(taker, silver)).toContainText("× 10", { timeout: 120_000 });
+  await expect(await holding(maker, silver)).toContainText("× 5", { timeout: 120_000 });
+  await expect(await holding(maker, gold)).toContainText("× 6", { timeout: 120_000 });
+  const board = await taker.request.get("http://localhost:8080/api/v1/swaps");
+  expect(((await board.json()) as { give_asset: string }[]).map((o) => o.give_asset)).not.toContain(
+    gold,
+  );
 });

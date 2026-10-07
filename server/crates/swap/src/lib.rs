@@ -35,6 +35,9 @@
 
 use std::ops::Deref;
 
+#[cfg(feature = "testing")]
+pub mod testing;
+
 use ff::PrimeField;
 use orchard::builder::{Builder, BundleType, InProgress, PartiallyAuthorized};
 use orchard::bundle::Authorized as OrchardAuthorized;
@@ -273,6 +276,28 @@ fn decode_offer(offer: &Offer) -> Result<OfferParts, SwapError> {
         return Err(SwapError::BadOffer("the path does not lead to the anchor"));
     }
     Ok(parts)
+}
+
+/// What an offer trades, once checked to hold together.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OfferTerms {
+    pub give_asset: [u8; 32],
+    pub give_amount: u64,
+    pub want_asset: [u8; 32],
+    pub want_amount: u64,
+}
+
+/// Check an offer the way a taker would before building on it (the note is
+/// the units it gives, the viewing key owns it, the path leads to the
+/// anchor) and say what it trades. A registry runs this before listing it.
+pub fn inspect_offer(offer: &Offer) -> Result<OfferTerms, SwapError> {
+    let parts = decode_offer(offer)?;
+    Ok(OfferTerms {
+        give_asset: parts.give.to_bytes(),
+        give_amount: offer.give_amount,
+        want_asset: parts.want.to_bytes(),
+        want_amount: offer.want_amount,
+    })
 }
 
 // --- message 1 --------------------------------------------------------------

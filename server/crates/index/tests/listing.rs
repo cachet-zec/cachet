@@ -255,6 +255,123 @@ async fn the_database_answers_what_the_reference_answers() {
         assert_eq!(visible.len(), 1);
     }
 
+    // The swap board: one take holds an offer; the hold lapses; an answer
+    // must name the take it answers; closing needs the right token.
+    {
+        use cachet_index::{MetadataStore, SWAP_MAKER_AWAY_SECS, SWAP_TAKE_HOLD_SECS, SwapRow};
+        let row = SwapRow {
+            id: "offer-1".to_owned(),
+            offer: "{}".to_owned(),
+            give_asset: [1; 32],
+            give_amount: 5,
+            want_asset: [2; 32],
+            want_amount: 30,
+            maker_token: [9; 32],
+            created_at: 1_000,
+            expires_at: 100_000,
+            maker_seen_at: 1_000,
+            take: None,
+            taker_token: None,
+            taken_at: None,
+            countersignature: None,
+            closed: false,
+        };
+        index.swap_insert(row).await.expect("insert");
+        assert_eq!(
+            index.swap_list_open(1_000, 10).await.expect("list").len(),
+            1
+        );
+        // Its maker gone quiet, it is off the board and cannot be taken,
+        // until the maker's page (and only it) checks in again.
+        let quiet = 1_000 + SWAP_MAKER_AWAY_SECS;
+        assert!(
+            index
+                .swap_list_open(quiet, 10)
+                .await
+                .expect("list")
+                .is_empty()
+        );
+        assert!(
+            !index
+                .swap_take("offer-1", "take-a", [7; 32], 2_000)
+                .await
+                .expect("take")
+        );
+        assert!(
+            !index
+                .swap_seen("offer-1", [7; 32], 2_000)
+                .await
+                .expect("seen")
+        );
+        assert!(
+            index
+                .swap_seen("offer-1", [9; 32], 2_000)
+                .await
+                .expect("seen")
+        );
+        assert!(
+            index
+                .swap_take("offer-1", "take-a", [7; 32], 2_000)
+                .await
+                .expect("take")
+        );
+        assert!(
+            !index
+                .swap_take("offer-1", "take-b", [8; 32], 2_001)
+                .await
+                .expect("take")
+        );
+        assert!(
+            index
+                .swap_list_open(2_001, 10)
+                .await
+                .expect("list")
+                .is_empty()
+        );
+        // Unanswered past the hold, it reopens and a new take replaces the old.
+        let later = 2_000 + SWAP_TAKE_HOLD_SECS;
+        assert!(
+            index
+                .swap_seen("offer-1", [9; 32], later)
+                .await
+                .expect("seen")
+        );
+        assert_eq!(
+            index.swap_list_open(later, 10).await.expect("list").len(),
+            1
+        );
+        assert!(
+            index
+                .swap_take("offer-1", "take-b", [8; 32], later)
+                .await
+                .expect("take")
+        );
+        assert!(
+            !index
+                .swap_countersign("offer-1", [9; 32], 2_000, "sig-a")
+                .await
+                .expect("sign")
+        );
+        assert!(
+            !index
+                .swap_countersign("offer-1", [8; 32], later, "sig-b")
+                .await
+                .expect("sign")
+        );
+        assert!(
+            index
+                .swap_countersign("offer-1", [9; 32], later, "sig-b")
+                .await
+                .expect("sign")
+        );
+        let row = index.swap_get("offer-1").await.expect("get").expect("row");
+        assert_eq!(row.take.as_deref(), Some("take-b"));
+        assert_eq!(row.countersignature.as_deref(), Some("sig-b"));
+        assert!(!index.swap_close("offer-1", [7; 32]).await.expect("close"));
+        assert!(index.swap_close("offer-1", [8; 32]).await.expect("close"));
+        assert_eq!(index.swap_sweep(100_000 + 86_401).await.expect("sweep"), 1);
+    }
+
     // The journal outlives the chain: a description whose asset is no
     // longer indexed is "kept", one still on chain is not, a withheld one
     // is left out.

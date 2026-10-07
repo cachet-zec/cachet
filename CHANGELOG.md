@@ -8,6 +8,16 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Added
 
+- A public swap board (`/swaps`, `/api/v1/swaps`): makers list offers,
+  takers take them, and the three messages of a swap pass through the
+  registry instead of by hand. The registry holds messages, never keys: a
+  take is read back only by the maker and a countersignature only by the
+  taker, each with the capability token its author was handed. The
+  maker's page answers takes by itself (its engine checks each one against
+  the offer before signing), so an offer stays on the board only while
+  that page is open. Offers expire (24 h by default, 72 h at most), at most
+  200 are open at once, and old ones are swept. New table `swap_offers`
+  (migration 0012).
 - Atomic swaps between two browsers: one OrchardZSA transaction carries
   both sides' spends and outputs, so a trade lands whole or not at all.
   The mint page's Swap section makes an offer (the units wait in a

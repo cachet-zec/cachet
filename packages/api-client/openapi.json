@@ -1286,6 +1286,325 @@
         }
       }
     },
+    "/api/v1/swaps": {
+      "get": {
+        "tags": ["swaps"],
+        "summary": "Offers open to takers, newest first.",
+        "operationId": "list_offers",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SwapOfferResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["swaps"],
+        "summary": "Post an offer to the swap board. The offer is checked the way a taker\nwould check it before it is listed.",
+        "operationId": "post_offer",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostOfferRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostOfferResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/swaps/{id}": {
+      "get": {
+        "tags": ["swaps"],
+        "summary": "One offer, with the offer message itself.",
+        "operationId": "get_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Offer id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SwapOfferResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["swaps"],
+        "summary": "Close an offer: the maker withdrawing it (maker token), or the taker\nreporting it complete once countersigned (taker token).",
+        "operationId": "close_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Offer id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Closed"
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/swaps/{id}/countersignature": {
+      "get": {
+        "tags": ["swaps"],
+        "summary": "The countersignature, once the maker posted it (taker token).",
+        "operationId": "read_countersignature",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Offer id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CountersignatureEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["swaps"],
+        "summary": "Post the maker's countersignature (maker token).",
+        "operationId": "post_countersignature",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Offer id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CountersignRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Stored for the taker"
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/swaps/{id}/take": {
+      "get": {
+        "tags": ["swaps"],
+        "summary": "The take waiting for the maker (maker token).",
+        "operationId": "read_take",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Offer id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeEnvelope"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["swaps"],
+        "summary": "Take an offer: hold it for the maker's countersignature.",
+        "operationId": "take_offer",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "Offer id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TakeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TakeResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Not open: taken, closed or expired",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/transactions/{txid}": {
       "get": {
         "tags": ["registry"],
@@ -1599,6 +1918,30 @@
             "format": "int64",
             "description": "Sum of the circulating supplies of the issuer's assets.",
             "minimum": 0
+          }
+        }
+      },
+      "CountersignRequest": {
+        "type": "object",
+        "description": "The maker's answer.",
+        "required": ["countersignature", "taken_at"],
+        "properties": {
+          "countersignature": {
+            "type": "string"
+          },
+          "taken_at": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The `taken_at` of the take it signs."
+          }
+        }
+      },
+      "CountersignatureEnvelope": {
+        "type": "object",
+        "description": "The countersignature, for the taker.",
+        "properties": {
+          "countersignature": {
+            "type": ["string", "null"]
           }
         }
       },
@@ -1948,6 +2291,41 @@
           }
         }
       },
+      "PostOfferRequest": {
+        "type": "object",
+        "description": "Post an offer.",
+        "required": ["offer"],
+        "properties": {
+          "hours": {
+            "type": ["integer", "null"],
+            "format": "int32",
+            "description": "Hours it stays up: 1 to 72, 24 by default.",
+            "minimum": 0
+          },
+          "offer": {
+            "type": "string",
+            "description": "The offer message, as the mint engine wrote it (JSON text)."
+          }
+        }
+      },
+      "PostOfferResponse": {
+        "type": "object",
+        "description": "A posted offer, and the token that manages it.",
+        "required": ["id", "maker_token", "expires_at"],
+        "properties": {
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "id": {
+            "type": "string"
+          },
+          "maker_token": {
+            "type": "string",
+            "description": "Shown once. Reads the take, posts the countersignature, withdraws."
+          }
+        }
+      },
       "ProblemDetails": {
         "type": "object",
         "description": "RFC 9457 problem document. Every non-2xx response uses this shape.",
@@ -2071,6 +2449,97 @@
           }
         }
       },
+      "SwapOfferResponse": {
+        "type": "object",
+        "description": "An offer on the board.",
+        "required": [
+          "id",
+          "give_asset",
+          "give_amount",
+          "want_asset",
+          "want_amount",
+          "created_at",
+          "expires_at",
+          "status"
+        ],
+        "properties": {
+          "created_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "expires_at": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "give_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "give_asset": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "offer": {
+            "type": ["string", "null"],
+            "description": "The offer message itself; only on the single-offer route."
+          },
+          "status": {
+            "type": "string",
+            "description": "`open`, `taken` (held for the maker's signature), `countersigned`,\n`closed` or `expired`."
+          },
+          "want_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "want_asset": {
+            "type": "string"
+          }
+        }
+      },
+      "TakeEnvelope": {
+        "type": "object",
+        "description": "The take, for the maker.",
+        "properties": {
+          "take": {
+            "type": ["string", "null"]
+          },
+          "taken_at": {
+            "type": ["integer", "null"],
+            "format": "int64",
+            "description": "Identifies the take a countersignature answers."
+          }
+        }
+      },
+      "TakeRequest": {
+        "type": "object",
+        "description": "Take an offer.",
+        "required": ["take"],
+        "properties": {
+          "take": {
+            "type": "string",
+            "description": "The taker's message (JSON text): the transaction awaiting the maker."
+          }
+        }
+      },
+      "TakeResponse": {
+        "type": "object",
+        "required": ["taker_token", "hold_secs"],
+        "properties": {
+          "hold_secs": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The take holds the offer this long for the maker, in seconds."
+          },
+          "taker_token": {
+            "type": "string",
+            "description": "Shown once. Reads the countersignature, reports the swap done."
+          }
+        }
+      },
       "TransferAssetRequest": {
         "type": "object",
         "description": "Request body for transferring units of an asset from the wallet.",
@@ -2119,6 +2588,10 @@
     {
       "name": "issuance",
       "description": "Server-wallet issuance for self-hosted deployments. Disabled (403) on public read-only instances — mint from the browser instead."
+    },
+    {
+      "name": "swaps",
+      "description": "The public swap board: a mailbox for the three messages of an atomic swap. Holds messages, never keys; takes and countersignatures are read back with the token their author was handed."
     },
     {
       "name": "snapshot",

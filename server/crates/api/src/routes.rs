@@ -38,6 +38,22 @@ pub(crate) fn router() -> Router<AppState> {
         )
         .route("/api/v1/assets/{asset_id}/events", get(asset_events))
         .route("/api/v1/transactions/{txid}", get(decode_transaction))
+        .route(
+            "/api/v1/swaps",
+            get(crate::swaps::list_offers).post(crate::swaps::post_offer),
+        )
+        .route(
+            "/api/v1/swaps/{id}",
+            get(crate::swaps::get_offer).delete(crate::swaps::close_offer),
+        )
+        .route(
+            "/api/v1/swaps/{id}/take",
+            get(crate::swaps::read_take).post(crate::swaps::take_offer),
+        )
+        .route(
+            "/api/v1/swaps/{id}/countersignature",
+            get(crate::swaps::read_countersignature).post(crate::swaps::post_countersignature),
+        )
         .route("/api/v1/wallet", get(wallet_balances))
         .route("/api/v1/assets/{asset_id}/transfers", post(transfer_asset))
         .route("/api/v1/assets/{asset_id}/burns", post(burn_asset))

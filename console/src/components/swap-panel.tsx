@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { CopyButton } from "@/components/copy-button";
 import { api, problemMessage } from "@/lib/api";
@@ -42,7 +42,8 @@ async function relayAndConfirm(
  * sides: it lands whole or not at all. The maker parks the units it offers
  * in a one-off slot account and hands out an offer; the taker builds,
  * proves and signs the whole swap; the maker checks it and countersigns
- * its own spend. Messages travel as text between the two pages.
+ * its own spend. The messages travel through the registry's public board
+ * (polled by both pages), or by hand between the two pages.
  */
 export function SwapPanel({
   call,
@@ -71,6 +72,21 @@ export function SwapPanel({
   const [answer, setAnswer] = useState("");
   const [countersignature, setCountersignature] = useState<string | null>(null);
 
+  // The public board: the maker's listing and the take it last answered;
+  // the board offer a taker came from, and the token to read the answer.
+  const [listOnBoard, setListOnBoard] = useState(true);
+  const [listing, setListing] = useState<{ id: string; token: string } | null>(null);
+  const [boardStatus, setBoardStatus] = useState<string | null>(null);
+  const answeredTake = useRef<number | null>(null);
+  // The parent passes a new callback on every render; the board's polling
+  // must not restart (and never fire) because of it.
+  const onChangeRef = useRef(onChange);
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+  const [takeFrom, setTakeFrom] = useState<string | null>(null);
+  const [takerToken, setTakerToken] = useState<string | null>(null);
+
   // Taker
   const [offerText, setOfferText] = useState("");
   const [takeJson, setTakeJson] = useState<string | null>(null);
@@ -83,7 +99,34 @@ export function SwapPanel({
     setCountersignature(null);
     setTakeJson(null);
     setSwapped(null);
+    setListing(null);
+    setBoardStatus(null);
+    setTakerToken(null);
   }, [seed]);
+
+  // Arriving from the board (/mint?take=<id>): load that offer to take.
+  useEffect(() => {
+    if (!enabled) return;
+    const id = new URLSearchParams(window.location.search).get("take");
+    if (!id || !/^[0-9a-f]{32}$/.test(id)) return;
+    let cancelled = false;
+    api.GET("/api/v1/swaps/{id}", { params: { path: { id } } }).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error || !data?.offer) {
+        setError("That offer is not on the board any more.");
+        return;
+      }
+      if (data.status !== "open") {
+        setError("That offer is not open right now: someone may be taking it.");
+      }
+      setRole("take");
+      setOfferText(data.offer);
+      setTakeFrom(id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled]);
 
   // Names from the whole registry listing (one request identical for every
   // caller), never per asset: a lookup per id would tell the operator what
@@ -156,7 +199,69 @@ export function SwapPanel({
         want_amount: Number(wantAmount),
       });
       setMadeOffer({ slot, json });
+      if (listOnBoard) {
+        setStage("Listing it on the board…");
+        const posted = await api.POST("/api/v1/swaps", { body: { offer: json } });
+        if (posted.error) throw new Error(problemMessage(posted.error));
+        answeredTake.current = null;
+        setListing({ id: posted.data.id, token: posted.data.maker_token });
+        setBoardStatus(
+          "Listed on the board. Keep this page open: it answers takers with your keys, and the offer leaves the board a minute after it closes.",
+        );
+      }
     });
+
+  // The maker's page answers takes as they arrive: the engine checks each
+  // against the offer before signing, so answering is safe unattended.
+  useEffect(() => {
+    if (!listing || !madeOffer) return;
+    const headers = { "x-swap-token": listing.token };
+    const path = { id: listing.id };
+    let stopped = false;
+    const tick = async () => {
+      const board = await api.GET("/api/v1/swaps/{id}", { params: { path } });
+      if (board.data?.status === "closed") {
+        stopped = true;
+        setBoardStatus("Swapped: the taker relayed the transaction.");
+        onChangeRef.current();
+        return;
+      }
+      const take = await api.GET("/api/v1/swaps/{id}/take", { params: { path }, headers });
+      const takenAt = take.data?.taken_at;
+      if (!take.data?.take || takenAt === null || takenAt === undefined) return;
+      if (answeredTake.current === takenAt) return;
+      answeredTake.current = takenAt;
+      setBoardStatus("A taker answered: checking their transaction against your offer…");
+      try {
+        const signed = await call<string>("swap_countersign", {
+          seed: seed.trim(),
+          slot: madeOffer.slot,
+          offer: madeOffer.json,
+          take: take.data.take,
+        });
+        const posted = await api.POST("/api/v1/swaps/{id}/countersignature", {
+          params: { path },
+          headers,
+          body: { countersignature: signed, taken_at: takenAt },
+        });
+        if (posted.error) throw new Error(problemMessage(posted.error));
+        setBoardStatus("Countersigned. Waiting for the taker to relay the swap…");
+      } catch (refusal) {
+        setBoardStatus(
+          `Refused a take: ${refusal instanceof Error ? refusal.message : String(refusal)}. Still listed.`,
+        );
+      }
+    };
+    const timer = setInterval(() => {
+      if (!stopped)
+        void tick().catch((failure: unknown) =>
+          setBoardStatus(
+            `Listed, but the board is unreachable right now (${failure instanceof Error ? failure.message : String(failure)}). Retrying…`,
+          ),
+        );
+    }, 4_000);
+    return () => clearInterval(timer);
+  }, [listing, madeOffer, call, seed]);
 
   const countersign = () =>
     step("Checking the swap against your offer…", async () => {
@@ -174,6 +279,14 @@ export function SwapPanel({
   const withdraw = (slot: number, assetId: string, amount: string) =>
     step("Proving the withdrawal in your browser…", async () => {
       const trimmed = seed.trim();
+      if (listing && madeOffer?.slot === slot) {
+        await api.DELETE("/api/v1/swaps/{id}", {
+          params: { path: { id: listing.id } },
+          headers: { "x-swap-token": listing.token },
+        });
+        setListing(null);
+        setBoardStatus(null);
+      }
       const state = await scanToTip(call, trimmed);
       const chain = await api.GET("/api/v1/chain");
       if (chain.error) throw new Error(problemMessage(chain.error));
@@ -214,20 +327,59 @@ export function SwapPanel({
       const chain = await api.GET("/api/v1/chain");
       if (chain.error) throw new Error(problemMessage(chain.error));
       setStage("Proving the whole swap in your browser…");
-      setTakeJson(
-        await call<string>("swap_take", {
-          seed: trimmed,
-          offer: offerText.trim(),
-          target_height: chain.data.tip_height + 1,
-        }),
-      );
+      const take = await call<string>("swap_take", {
+        seed: trimmed,
+        offer: offerText.trim(),
+        target_height: chain.data.tip_height + 1,
+      });
+      setTakeJson(take);
+      if (takeFrom) {
+        setStage("Sending it to the maker through the board…");
+        const posted = await api.POST("/api/v1/swaps/{id}/take", {
+          params: { path: { id: takeFrom } },
+          body: { take },
+        });
+        if (posted.error) {
+          throw new Error(
+            posted.response.status === 409
+              ? "Someone else is taking this offer right now. Try again in a few minutes."
+              : problemMessage(posted.error),
+          );
+        }
+        setTakerToken(posted.data.taker_token);
+      }
     });
 
-  const finishSwap = () =>
+  // The taker's page waits for the maker's answer, then completes the swap.
+  useEffect(() => {
+    if (!takeFrom || !takerToken || swapped) return;
+    let done = false;
+    const timer = setInterval(() => {
+      if (done) return;
+      void api
+        .GET("/api/v1/swaps/{id}/countersignature", {
+          params: { path: { id: takeFrom } },
+          headers: { "x-swap-token": takerToken },
+        })
+        .then(({ data }) => {
+          if (done || !data?.countersignature) return;
+          done = true;
+          setSignatureText(data.countersignature);
+          void finishSwap(data.countersignature);
+        })
+        .catch(() => undefined);
+    }, 4_000);
+    return () => clearInterval(timer);
+    // finishSwap is a plain function of this render; the effect only needs
+    // to restart when the take or its token change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takeFrom, takerToken, swapped]);
+
+  const finishSwap = (signature?: string) =>
     step("Adding the maker's signature…", async () => {
       const trimmed = seed.trim();
       const finished = await call<{ tx_hex: string; txid: string }>("swap_finish", {
-        countersignature: signatureText.trim(),
+        countersignature: (signature ?? signatureText).trim(),
       });
       setStage("Relaying, then waiting for the block…");
       const before = wallet?.scanned_height ?? 0;
@@ -235,6 +387,13 @@ export function SwapPanel({
         await relayAndConfirm(call, trimmed, finished.tx_hex, (s) => s.scanned_height > before),
       );
       setSwapped(finished.txid);
+      if (takeFrom && takerToken) {
+        // Tell the board, and through it the maker's page, that it landed.
+        await api.DELETE("/api/v1/swaps/{id}", {
+          params: { path: { id: takeFrom } },
+          headers: { "x-swap-token": takerToken },
+        });
+      }
       onChange();
     });
 
@@ -243,12 +402,16 @@ export function SwapPanel({
   const busy = stage !== null;
 
   return (
-    <section className={`${card} rise`} data-testid="swap-panel">
+    <section id="swap" className={`${card} rise scroll-mt-8`} data-testid="swap-panel">
       <h2 className={`${cardTitle} mb-3`}>Swap · one transaction, both sides</h2>
       <p className="max-w-prose text-[13px] leading-relaxed text-neutral-500">
         Both payments travel in one shielded transaction: it lands whole or not at all. Nobody holds
-        anything in between. The messages below are passed by hand between the two pages; keys stay
-        in each browser.
+        anything in between. Offers go on the public{" "}
+        <Link href="/swaps" className="underline decoration-white/20 hover:text-accent">
+          swap board
+        </Link>
+        , or pass between two pages by hand; keys stay in each browser. Testnet only: these assets
+        have no value and the chain can be reset at any time.
       </p>
 
       <div role="radiogroup" aria-label="Your side" className="mt-4 flex flex-wrap gap-2">
@@ -351,6 +514,16 @@ export function SwapPanel({
               />
             </div>
           </div>
+          <label className="flex cursor-pointer items-center gap-2.5 text-sm text-neutral-300">
+            <input
+              type="checkbox"
+              data-testid="swap-list-on-board"
+              className="accent-[var(--color-accent)]"
+              checked={listOnBoard}
+              onChange={(event) => setListOnBoard(event.target.checked)}
+            />
+            List it on the public swap board (otherwise, pass the messages by hand)
+          </label>
           <button
             type="button"
             data-testid="swap-prepare"
@@ -365,7 +538,17 @@ export function SwapPanel({
             slot, never your main holdings. Withdraw them any time to cancel.
           </p>
 
-          {madeOffer && (
+          {boardStatus && (
+            <p
+              role="status"
+              data-testid="swap-board-status"
+              className="rounded-[3px] border border-accent/40 px-3.5 py-2.5 text-sm text-accent"
+            >
+              {boardStatus}
+            </p>
+          )}
+
+          {madeOffer && !listing && (
             <div className="flex flex-col gap-2">
               <span className={label}>1 · Send this offer to the taker</span>
               <div className="flex items-start gap-2">
@@ -466,7 +649,18 @@ export function SwapPanel({
           >
             Build and sign my side
           </button>
-          {takeJson && (
+          {takeJson && takeFrom && !swapped && (
+            <p
+              role="status"
+              data-testid="swap-take-status"
+              className="rounded-[3px] border border-accent/40 px-3.5 py-2.5 text-sm text-accent"
+            >
+              {takerToken
+                ? "Sent to the maker through the board. The swap completes here as soon as they countersign."
+                : "Building your side…"}
+            </p>
+          )}
+          {takeJson && !takeFrom && (
             <>
               <span className={label}>2 · Send this answer to the maker</span>
               <div className="flex items-start gap-2">
@@ -493,7 +687,7 @@ export function SwapPanel({
                 data-testid="swap-finish"
                 className={`${primaryButton} self-start`}
                 disabled={busy || signatureText.trim() === ""}
-                onClick={finishSwap}
+                onClick={() => finishSwap()}
               >
                 Complete the swap
               </button>

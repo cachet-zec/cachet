@@ -12,7 +12,10 @@ use async_trait::async_trait;
 use sha2::{Digest, Sha256};
 use sqlx::Row;
 
-use crate::{AssetIndex, HiddenEntry, IndexError, ModerationKind};
+use crate::{
+    AssetIndex, HiddenEntry, IndexError, ModerationKind, SWAP_MAKER_AWAY_SECS, SWAP_TAKE_HOLD_SECS,
+    SwapRow,
+};
 
 #[async_trait]
 pub trait MetadataStore: Send + Sync {
@@ -86,6 +89,69 @@ pub trait MetadataStore: Send + Sync {
         ))
     }
 
+    /// Post an offer to the swap board.
+    async fn swap_insert(&self, _row: SwapRow) -> Result<(), IndexError> {
+        Err(IndexError::OutOfRange(
+            "this metadata store does not keep a swap board".into(),
+        ))
+    }
+
+    /// One offer, whatever its state.
+    async fn swap_get(&self, _id: &str) -> Result<Option<SwapRow>, IndexError> {
+        Ok(None)
+    }
+
+    /// Offers a taker can take at `now`, newest first.
+    async fn swap_list_open(&self, _now: i64, _limit: u32) -> Result<Vec<SwapRow>, IndexError> {
+        Ok(Vec::new())
+    }
+
+    /// The maker's page checked in at `now`; false if the token does not
+    /// match an offer still up.
+    async fn swap_seen(
+        &self,
+        _id: &str,
+        _maker_token: [u8; 32],
+        _now: i64,
+    ) -> Result<bool, IndexError> {
+        Ok(false)
+    }
+
+    /// Record a take if the offer is open at `now`; false otherwise.
+    async fn swap_take(
+        &self,
+        _id: &str,
+        _take: &str,
+        _taker_token: [u8; 32],
+        _now: i64,
+    ) -> Result<bool, IndexError> {
+        Ok(false)
+    }
+
+    /// Record the maker's countersignature of the take recorded at
+    /// `taken_at` (so a signature for an expired take never lands on a
+    /// newer one); false if the token, the take or the state do not match.
+    async fn swap_countersign(
+        &self,
+        _id: &str,
+        _maker_token: [u8; 32],
+        _taken_at: i64,
+        _countersignature: &str,
+    ) -> Result<bool, IndexError> {
+        Ok(false)
+    }
+
+    /// Close an offer: the maker withdrawing it, or the taker reporting it
+    /// complete once countersigned. False if the token does not allow it.
+    async fn swap_close(&self, _id: &str, _token: [u8; 32]) -> Result<bool, IndexError> {
+        Ok(false)
+    }
+
+    /// Delete offers closed or expired more than a day before `now`.
+    async fn swap_sweep(&self, _now: i64) -> Result<u64, IndexError> {
+        Ok(0)
+    }
+
     /// The subset of `hashes` that are stored, not hidden, and embed an
     /// image — the one question the registry listing asks. Backends
     /// should answer it in a bounded number of round trips; the default
@@ -116,6 +182,39 @@ pub trait MetadataStore: Send + Sync {
 pub(crate) fn has_embedded_image(bytes: &[u8]) -> bool {
     let needle = br#""image_data_uri":"data:"#;
     bytes.windows(needle.len()).any(|window| window == needle)
+}
+
+fn out_of_range(what: &str) -> IndexError {
+    IndexError::OutOfRange(format!("{what} out of range"))
+}
+
+fn bytes32(value: Vec<u8>, what: &str) -> Result<[u8; 32], IndexError> {
+    value.try_into().map_err(|_| out_of_range(what))
+}
+
+fn swap_row(row: sqlx::postgres::PgRow) -> Result<SwapRow, IndexError> {
+    Ok(SwapRow {
+        id: row.get("id"),
+        offer: row.get("offer"),
+        give_asset: bytes32(row.get("give_asset"), "give asset")?,
+        give_amount: u64::try_from(row.get::<i64, _>("give_amount"))
+            .map_err(|_| out_of_range("give amount"))?,
+        want_asset: bytes32(row.get("want_asset"), "want asset")?,
+        want_amount: u64::try_from(row.get::<i64, _>("want_amount"))
+            .map_err(|_| out_of_range("want amount"))?,
+        maker_token: bytes32(row.get("maker_token"), "maker token")?,
+        created_at: row.get("created_at"),
+        expires_at: row.get("expires_at"),
+        maker_seen_at: row.get("maker_seen_at"),
+        take: row.get("take"),
+        taker_token: row
+            .get::<Option<Vec<u8>>, _>("taker_token")
+            .map(|token| bytes32(token, "taker token"))
+            .transpose()?,
+        taken_at: row.get("taken_at"),
+        countersignature: row.get("countersignature"),
+        closed: row.get("closed"),
+    })
 }
 
 pub fn hash_bytes(bytes: &[u8]) -> [u8; 32] {
@@ -208,6 +307,138 @@ impl MetadataStore for AssetIndex {
         Ok(())
     }
 
+    async fn swap_insert(&self, row: SwapRow) -> Result<(), IndexError> {
+        sqlx::query(
+            "INSERT INTO swap_offers (id, offer, give_asset, give_amount, want_asset, want_amount,
+                 maker_token, created_at, expires_at, maker_seen_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        )
+        .bind(&row.id)
+        .bind(&row.offer)
+        .bind(row.give_asset.as_slice())
+        .bind(i64::try_from(row.give_amount).map_err(|_| out_of_range("give amount"))?)
+        .bind(row.want_asset.as_slice())
+        .bind(i64::try_from(row.want_amount).map_err(|_| out_of_range("want amount"))?)
+        .bind(row.maker_token.as_slice())
+        .bind(row.created_at)
+        .bind(row.expires_at)
+        .bind(row.maker_seen_at)
+        .execute(self.pool())
+        .await?;
+        Ok(())
+    }
+
+    async fn swap_seen(
+        &self,
+        id: &str,
+        maker_token: [u8; 32],
+        now: i64,
+    ) -> Result<bool, IndexError> {
+        let result = sqlx::query(
+            "UPDATE swap_offers SET maker_seen_at = $3
+             WHERE id = $1 AND maker_token = $2 AND NOT closed",
+        )
+        .bind(id)
+        .bind(maker_token.as_slice())
+        .bind(now)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn swap_get(&self, id: &str) -> Result<Option<SwapRow>, IndexError> {
+        let row = sqlx::query("SELECT * FROM swap_offers WHERE id = $1")
+            .bind(id)
+            .fetch_optional(self.pool())
+            .await?;
+        row.map(swap_row).transpose()
+    }
+
+    async fn swap_list_open(&self, now: i64, limit: u32) -> Result<Vec<SwapRow>, IndexError> {
+        let rows = sqlx::query(
+            "SELECT * FROM swap_offers
+             WHERE NOT closed AND expires_at > $1 AND maker_seen_at + $4 > $1
+               AND (take IS NULL OR (countersignature IS NULL AND taken_at + $2 <= $1))
+             ORDER BY created_at DESC LIMIT $3",
+        )
+        .bind(now)
+        .bind(SWAP_TAKE_HOLD_SECS)
+        .bind(i64::from(limit))
+        .bind(SWAP_MAKER_AWAY_SECS)
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter().map(swap_row).collect()
+    }
+
+    async fn swap_take(
+        &self,
+        id: &str,
+        take: &str,
+        taker_token: [u8; 32],
+        now: i64,
+    ) -> Result<bool, IndexError> {
+        // One statement: two takers racing for the same offer cannot both win.
+        let result = sqlx::query(
+            "UPDATE swap_offers SET take = $2, taker_token = $3, taken_at = $4, countersignature = NULL
+             WHERE id = $1 AND NOT closed AND expires_at > $4 AND maker_seen_at + $6 > $4
+               AND (take IS NULL OR (countersignature IS NULL AND taken_at + $5 <= $4))",
+        )
+        .bind(id)
+        .bind(take)
+        .bind(taker_token.as_slice())
+        .bind(now)
+        .bind(SWAP_TAKE_HOLD_SECS)
+        .bind(SWAP_MAKER_AWAY_SECS)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn swap_countersign(
+        &self,
+        id: &str,
+        maker_token: [u8; 32],
+        taken_at: i64,
+        countersignature: &str,
+    ) -> Result<bool, IndexError> {
+        let result = sqlx::query(
+            "UPDATE swap_offers SET countersignature = $4
+             WHERE id = $1 AND maker_token = $2 AND taken_at = $3
+               AND take IS NOT NULL AND countersignature IS NULL AND NOT closed",
+        )
+        .bind(id)
+        .bind(maker_token.as_slice())
+        .bind(taken_at)
+        .bind(countersignature)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn swap_close(&self, id: &str, token: [u8; 32]) -> Result<bool, IndexError> {
+        let result = sqlx::query(
+            "UPDATE swap_offers SET closed = true
+             WHERE id = $1 AND NOT closed
+               AND (maker_token = $2 OR (taker_token = $2 AND countersignature IS NOT NULL))",
+        )
+        .bind(id)
+        .bind(token.as_slice())
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected() == 1)
+    }
+
+    async fn swap_sweep(&self, now: i64) -> Result<u64, IndexError> {
+        let result = sqlx::query(
+            "DELETE FROM swap_offers
+             WHERE expires_at < $1 - 86400 OR (closed AND created_at < $1 - 86400)",
+        )
+        .bind(now)
+        .execute(self.pool())
+        .await?;
+        Ok(result.rows_affected())
+    }
+
     /// Two round trips regardless of registry size (image flag + hidden
     /// filter), instead of the default's two per asset. The flag is set
     /// when a bundle is stored (`has_embedded_image`, the same byte test),
@@ -257,6 +488,7 @@ pub struct MemoryMetadataStore {
     hidden: Mutex<HashSet<[u8; 32]>>,
     moderation: Mutex<ModerationMap>,
     settings: Mutex<HashMap<String, String>>,
+    swaps: Mutex<Vec<SwapRow>>,
 }
 
 impl MemoryMetadataStore {
@@ -386,6 +618,129 @@ impl MetadataStore for MemoryMetadataStore {
             .expect("metadata store lock poisoned")
             .insert(key.to_owned(), value.to_owned());
         Ok(())
+    }
+
+    async fn swap_insert(&self, row: SwapRow) -> Result<(), IndexError> {
+        self.swaps
+            .lock()
+            .expect("metadata store lock poisoned")
+            .push(row);
+        Ok(())
+    }
+
+    async fn swap_get(&self, id: &str) -> Result<Option<SwapRow>, IndexError> {
+        Ok(self
+            .swaps
+            .lock()
+            .expect("metadata store lock poisoned")
+            .iter()
+            .find(|row| row.id == id)
+            .cloned())
+    }
+
+    async fn swap_list_open(&self, now: i64, limit: u32) -> Result<Vec<SwapRow>, IndexError> {
+        let mut open: Vec<SwapRow> = self
+            .swaps
+            .lock()
+            .expect("metadata store lock poisoned")
+            .iter()
+            .filter(|row| row.is_open(now))
+            .cloned()
+            .collect();
+        open.sort_by_key(|row| std::cmp::Reverse(row.created_at));
+        open.truncate(limit as usize);
+        Ok(open)
+    }
+
+    async fn swap_seen(
+        &self,
+        id: &str,
+        maker_token: [u8; 32],
+        now: i64,
+    ) -> Result<bool, IndexError> {
+        let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        match swaps
+            .iter_mut()
+            .find(|row| row.id == id && row.maker_token == maker_token && !row.closed)
+        {
+            Some(row) => {
+                row.maker_seen_at = now;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    async fn swap_take(
+        &self,
+        id: &str,
+        take: &str,
+        taker_token: [u8; 32],
+        now: i64,
+    ) -> Result<bool, IndexError> {
+        let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        match swaps
+            .iter_mut()
+            .find(|row| row.id == id && row.is_open(now))
+        {
+            Some(row) => {
+                row.take = Some(take.to_owned());
+                row.taker_token = Some(taker_token);
+                row.taken_at = Some(now);
+                row.countersignature = None;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    async fn swap_countersign(
+        &self,
+        id: &str,
+        maker_token: [u8; 32],
+        taken_at: i64,
+        countersignature: &str,
+    ) -> Result<bool, IndexError> {
+        let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        match swaps.iter_mut().find(|row| {
+            row.id == id
+                && row.maker_token == maker_token
+                && row.taken_at == Some(taken_at)
+                && row.take.is_some()
+                && row.countersignature.is_none()
+                && !row.closed
+        }) {
+            Some(row) => {
+                row.countersignature = Some(countersignature.to_owned());
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    async fn swap_close(&self, id: &str, token: [u8; 32]) -> Result<bool, IndexError> {
+        let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        match swaps.iter_mut().find(|row| {
+            row.id == id
+                && !row.closed
+                && (row.maker_token == token
+                    || (row.taker_token == Some(token) && row.countersignature.is_some()))
+        }) {
+            Some(row) => {
+                row.closed = true;
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
+    async fn swap_sweep(&self, now: i64) -> Result<u64, IndexError> {
+        let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        let before = swaps.len();
+        swaps.retain(|row| {
+            !(row.expires_at < now - 86_400 || (row.closed && row.created_at < now - 86_400))
+        });
+        Ok((before - swaps.len()) as u64)
     }
 }
 

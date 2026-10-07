@@ -21,6 +21,7 @@ pub fn with_health(router: axum::Router) -> axum::Router {
 pub mod breaker;
 pub mod chain_watch;
 pub mod snapshot;
+mod swaps;
 
 use std::sync::Arc;
 
@@ -207,6 +208,7 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         (name = "issuance", description = "Server-wallet issuance for self-hosted \
             deployments. Disabled (403) on public read-only instances — mint from the \
             browser instead."),
+        (name = "swaps", description = "The public swap board: a mailbox for the three messages of an atomic swap. Holds messages, never keys; takes and countersignatures are read back with the token their author was handed."),
         (name = "snapshot", description = "Deterministic registry export, sealed under the \
             operator's Ed25519 key. Any mirror can serve it; any client can verify it \
             (format in packages/registry-spec)."),
@@ -233,6 +235,14 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         routes::wallet_balances,
         routes::asset_events,
         routes::decode_transaction,
+        swaps::post_offer,
+        swaps::list_offers,
+        swaps::get_offer,
+        swaps::take_offer,
+        swaps::read_take,
+        swaps::post_countersignature,
+        swaps::read_countersignature,
+        swaps::close_offer,
         routes::list_kept,
         routes::get_kept,
         admin::hide,
@@ -264,6 +274,14 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         dto::HoldingResponse,
         dto::AssetEventResponse,
         dto::DecodedTransactionResponse,
+        swaps::PostOfferRequest,
+        swaps::PostOfferResponse,
+        swaps::SwapOfferResponse,
+        swaps::TakeRequest,
+        swaps::TakeResponse,
+        swaps::TakeEnvelope,
+        swaps::CountersignRequest,
+        swaps::CountersignatureEnvelope,
         dto::DecodedIssuanceResponse,
         dto::DecodedIssueActionResponse,
         dto::DecodedBurnResponse,
