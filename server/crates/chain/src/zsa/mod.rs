@@ -1300,6 +1300,16 @@ impl ChainBackend for OrchardZsaBackend {
         Ok(Some(answer))
     }
 
+    async fn orchard_tree_state(&self) -> Result<Option<crate::OrchardTreeState>, ChainError> {
+        let tip = self.chain_info_inner().await?.tip_height;
+        let state = self.rpc.tree_state(tip).await?;
+        Ok(Some(crate::OrchardTreeState {
+            height: state.height,
+            final_state: state.orchard.commitments.final_state,
+            final_root: state.orchard.commitments.final_root,
+        }))
+    }
+
     async fn refresh_anchors(&self) {
         self.anchors_stale
             .store(true, std::sync::atomic::Ordering::SeqCst);

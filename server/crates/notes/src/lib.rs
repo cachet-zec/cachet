@@ -116,6 +116,39 @@ impl HotWallet {
         }
     }
 
+    /// Start after block `height` instead of before the first block: the
+    /// note commitment tree is the one a node reports after that block
+    /// (`tree_state`, zcashd's `CommitmentTree` encoding), so a wallet that
+    /// can own nothing earlier, a seed created now, reads only later blocks.
+    /// `expected_root`, when the node gave one, must be that tree's root.
+    pub fn starting_after(
+        mut self,
+        height: u32,
+        tree_state: &[u8],
+        expected_root: Option<[u8; 32]>,
+    ) -> Result<Self, NotesError> {
+        let tree = zcash_primitives::merkle_tree::read_commitment_tree::<
+            MerkleHashOrchard,
+            _,
+            TREE_DEPTH,
+        >(tree_state)
+        .map_err(|error| NotesError::Tree(format!("unreadable tree state: {error}")))?;
+        self.tree = match tree.to_frontier().take() {
+            Some(frontier) => BridgeTree::from_frontier(MAX_CHECKPOINTS, frontier),
+            None => BridgeTree::new(MAX_CHECKPOINTS),
+        };
+        self.notes.clear();
+        self.tree.checkpoint(height);
+        if let Some(expected) = expected_root
+            && self.anchor()?.to_bytes() != expected
+        {
+            return Err(NotesError::Tree(
+                "the tree state does not lead to the root the node reported".to_owned(),
+            ));
+        }
+        Ok(self)
+    }
+
     /// Say which accounts receive only what this wallet sends them itself,
     /// such as one-off swap slots funded from the main account. A scan then
     /// tries their keys only on transactions that spend one of our notes,

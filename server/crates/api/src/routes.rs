@@ -24,6 +24,7 @@ pub(crate) fn router() -> Router<AppState> {
     // liveness probe (see main.rs).
     Router::new()
         .route("/api/v1/chain", get(chain_info))
+        .route("/api/v1/chain/orchard-tree", get(orchard_tree))
         .route("/api/v1/chain/transactions", get(raw_transactions))
         .route("/api/v1/snapshot", get(registry_snapshot))
         .route("/api/v1/assets", get(list_assets).post(issue_asset))
@@ -103,6 +104,38 @@ async fn refuse_hidden_issuer(state: &AppState, issuer: Option<&str>) -> Result<
 #[utoipa::path(get, path = "/healthz", tag = "ops", responses((status = 200, description = "Process is alive")))]
 pub async fn health() -> StatusCode {
     StatusCode::OK
+}
+
+/// The Orchard note commitment tree after the current tip.
+///
+/// A browser wallet created now has no note in any earlier block, so it
+/// starts from this tree instead of reading the chain from its first block.
+/// Every caller asking at the same tip gets the same answer.
+#[utoipa::path(
+    get,
+    path = "/api/v1/chain/orchard-tree",
+    tag = "chain",
+    responses(
+        (status = 200, body = crate::dto::OrchardTreeResponse),
+        (status = 404, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This backend keeps no Orchard tree"),
+        (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
+    )
+)]
+pub(crate) async fn orchard_tree(
+    State(state): State<AppState>,
+) -> Result<Json<crate::dto::OrchardTreeResponse>, ApiError> {
+    let tree = state
+        .chain
+        .orchard_tree_state()
+        .await?
+        .ok_or(ApiError::NotFound {
+            what: "orchard tree",
+        })?;
+    Ok(Json(crate::dto::OrchardTreeResponse {
+        height: tree.height,
+        final_state: tree.final_state,
+        final_root: tree.final_root,
+    }))
 }
 
 /// Identify the connected network and chain tip.

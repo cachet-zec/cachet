@@ -12,6 +12,7 @@ export const swap_slot_address: (a: number, b: number, c: number) => [number, nu
 export const swap_take: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
 export const wallet_reset: (a: number, b: number) => [number, number, number];
 export const wallet_scan: (a: number, b: number, c: any) => [number, number, number];
+export const wallet_start_after: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
 export const prepare_proving: () => void;
 export const rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;
 export const rustsecp256k1_v0_10_0_default_illegal_callback_fn: (a: number, b: number) => void;

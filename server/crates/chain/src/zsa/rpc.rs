@@ -46,6 +46,27 @@ pub struct DefaultRoots {
     pub chain_history_root: String,
 }
 
+/// `z_gettreestate`: the trees after a block, as the node serializes them.
+#[derive(Debug, Deserialize)]
+pub struct TreeState {
+    pub height: u64,
+    pub orchard: TreeStatePool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TreeStatePool {
+    pub commitments: TreeStateCommitments,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TreeStateCommitments {
+    /// The tree's frontier, in zcashd's `CommitmentTree` encoding (hex).
+    #[serde(rename = "finalState")]
+    pub final_state: String,
+    #[serde(rename = "finalRoot", default)]
+    pub final_root: Option<String>,
+}
+
 /// `getblock` at verbosity 1: the block's hash, transaction ids and Orchard
 /// root.
 #[derive(Debug, Clone, Deserialize)]
@@ -117,6 +138,12 @@ impl NodeRpc {
 
     pub async fn block_template(&self) -> Result<BlockTemplate, ChainError> {
         self.call("getblocktemplate", json!([])).await
+    }
+
+    /// The note commitment trees after a block (`z_gettreestate`).
+    pub async fn tree_state(&self, height: u64) -> Result<TreeState, ChainError> {
+        self.call("z_gettreestate", json!([height.to_string()]))
+            .await
     }
 
     pub async fn block_summary(&self, height: u64) -> Result<BlockSummary, ChainError> {

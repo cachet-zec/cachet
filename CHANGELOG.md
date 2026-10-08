@@ -15,6 +15,13 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Changed
 
+- A seed generated in the page starts its wallet at the current block:
+  it can own nothing earlier, so its first scan reads only the blocks
+  that follow instead of the whole chain. The page asks the registry for
+  the Orchard tree after the tip (`GET /api/v1/chain/orchard-tree`, the
+  same answer for every caller at that tip) and the engine checks it
+  against the root the node reports. A seed pasted in still reads the
+  chain from its first block.
 - A browser wallet reads the chain about three times faster: on the first
   1,000 blocks of the public testnet, the wasm engine's work drops from
   26.8 s to 8.1 s (5.7 s to 1.3 s natively). Its viewing keys are derived once per scan instead of

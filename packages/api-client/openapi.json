@@ -800,6 +800,46 @@
         }
       }
     },
+    "/api/v1/chain/orchard-tree": {
+      "get": {
+        "tags": ["chain"],
+        "summary": "The Orchard note commitment tree after the current tip.",
+        "description": "A browser wallet created now has no note in any earlier block, so it\nstarts from this tree instead of reading the chain from its first block.\nEvery caller asking at the same tip gets the same answer.",
+        "operationId": "orchard_tree",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrchardTreeResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "This backend keeps no Orchard tree",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/chain/transactions": {
       "get": {
         "tags": ["chain"],
@@ -2285,6 +2325,27 @@
           "reason": {
             "type": ["string", "null"],
             "description": "Optional operator note, stored with the entry (audit trail)."
+          }
+        }
+      },
+      "OrchardTreeResponse": {
+        "type": "object",
+        "description": "The Orchard note commitment tree after a block: where a wallet created\nat that block starts reading the chain.",
+        "required": ["height", "final_state"],
+        "properties": {
+          "final_root": {
+            "type": ["string", "null"],
+            "description": "The tree's root, hex, when the node reports it."
+          },
+          "final_state": {
+            "type": "string",
+            "description": "The tree's frontier, hex, in zcashd's `CommitmentTree` encoding\n(as `z_gettreestate` reports it)."
+          },
+          "height": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The block the tree stands after (the current tip when asked).",
+            "minimum": 0
           }
         }
       },

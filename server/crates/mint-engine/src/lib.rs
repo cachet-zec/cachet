@@ -483,6 +483,52 @@ fn wallet_state(entry: &BrowserWallet, address: Address) -> Result<JsValue, JsEr
     })?)
 }
 
+/// Start this seed's wallet after block `height`, from the Orchard tree the
+/// registry reports there (`GET /api/v1/chain/orchard-tree`, zcashd's
+/// `CommitmentTree` encoding in hex), checked against `final_root` when
+/// given. For a seed created now, which can own nothing in an earlier
+/// block: its first scan reads only the blocks that follow. A wallet this
+/// seed already scanned further is left as it is.
+#[wasm_bindgen]
+pub fn wallet_start_after(
+    seed_phrase: &str,
+    height: u32,
+    tree_state: &str,
+    final_root: Option<String>,
+) -> Result<JsValue, JsError> {
+    let keys = Keys::from_phrase(seed_phrase)?;
+    let address = keys.default_address();
+    let mut guard = wallet_guard();
+    if let Some(entry) = guard.as_ref()
+        && entry.owner == address.to_raw_address_bytes()
+        && entry.scanned_height > 0
+    {
+        return wallet_state(entry, address);
+    }
+    let tree_state =
+        hex::decode(tree_state).map_err(|_| JsError::new("the tree state is not hex"))?;
+    let final_root = final_root
+        .map(|root| {
+            hex::decode(root)
+                .ok()
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+                .ok_or_else(|| JsError::new("the tree root is not 32 bytes of hex"))
+        })
+        .transpose()?;
+    let wallet = keys
+        .hot_wallet()
+        .starting_after(height, &tree_state, final_root)
+        .map_err(|error| JsError::new(&format!("{error}")))?;
+    let entry = BrowserWallet {
+        owner: address.to_raw_address_bytes(),
+        wallet,
+        scanned_height: u64::from(height),
+    };
+    let state = wallet_state(&entry, address)?;
+    *guard = Some(entry);
+    Ok(state)
+}
+
 /// Reset the in-module wallet to a fresh state for this seed. Returns the
 /// wallet state (empty, scanned_height 0).
 #[wasm_bindgen]

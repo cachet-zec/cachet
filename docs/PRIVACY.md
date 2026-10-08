@@ -120,6 +120,12 @@ nobody has to discover it:
   as it is to any relay on any chain. Users who want to remove even that
   can reach the instance over Tor, or run their own (see P3's endgame:
   this instance is a convenience, not a chokepoint).
+- **New seed ↔ IP, transiently.** A seed generated in the page asks the
+  registry for the Orchard tree after the current tip, so its wallet can
+  skip the blocks before it. The answer is the same for every caller at
+  that tip and says nothing about the seed, but the request itself tells
+  the operator that a page just created a wallet. A seed pasted in never
+  asks: it reads the chain from its first block.
 - **Search ↔ IP, transiently.** The console asks the registry for the
   page of assets it shows, so what a visitor types in the registry filter
   reaches the operator with the request, as on any search box. It is not

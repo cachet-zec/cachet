@@ -222,6 +222,7 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
     paths(
         routes::health,
         routes::chain_info,
+        routes::orchard_tree,
         routes::raw_transactions,
         routes::registry_snapshot,
         routes::list_assets,
@@ -258,6 +259,7 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
     ),
     components(schemas(
         dto::ChainInfoResponse,
+        dto::OrchardTreeResponse,
         snapshot::SnapshotResponse,
         dto::RawBlocksResponse,
         dto::RawBlockResponse,

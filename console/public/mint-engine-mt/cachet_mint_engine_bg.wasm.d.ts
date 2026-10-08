@@ -11,6 +11,7 @@ export const swap_slot_address: (a: number, b: number, c: number) => [number, nu
 export const swap_take: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
 export const wallet_reset: (a: number, b: number) => [number, number, number];
 export const wallet_scan: (a: number, b: number, c: any) => [number, number, number];
+export const wallet_start_after: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
 export const prepare_proving: () => void;
 export const __wbg_wbg_rayon_poolbuilder_free: (a: number, b: number) => void;
 export const initThreadPool: (a: number) => any;

@@ -2,6 +2,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 
+import { api } from "@/lib/api";
+
 export type Call = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
 type BrowserWallet = {
@@ -91,6 +93,23 @@ export function BrowserWalletProvider({ children }: { children: React.ReactNode 
 
   const generateSeed = useCallback(async () => {
     const generated = await call<{ seed: string }>("generate_seed");
+    // A seed created now owns nothing in any earlier block: its wallet
+    // starts from the Orchard tree after the current tip, so its first
+    // scan reads only the blocks that follow. A registry that cannot say
+    // (an older one) costs a full scan instead, nothing more.
+    try {
+      const { data } = await api.GET("/api/v1/chain/orchard-tree");
+      if (data) {
+        await call("wallet_start_after", {
+          seed: generated.seed,
+          height: data.height,
+          tree_state: data.final_state,
+          final_root: data.final_root ?? undefined,
+        });
+      }
+    } catch {
+      // The wallet will be read from the first block.
+    }
     setSeed(generated.seed);
     setSeedSaved(false);
   }, [call]);
