@@ -23,6 +23,18 @@ pub struct RecentAnchors {
     latest: std::collections::HashMap<[u8; 32], u64>,
 }
 
+/// The Orchard note commitment tree after a block, as a node serializes
+/// it: what a wallet born at that block starts from instead of reading the
+/// chain from its first block.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OrchardTreeState {
+    pub height: u64,
+    /// zcashd's `CommitmentTree` encoding of the tree's frontier, hex.
+    pub final_state: String,
+    /// The tree's root, hex, as the node reports it.
+    pub final_root: Option<String>,
+}
+
 /// How many blocks back an anchor stays usable: a wallet keeps checkpoints
 /// for that many (`MAX_CHECKPOINTS` in cachet-notes, which the browser's
 /// mint engine compiles; kept equal here rather than exported from there,
@@ -185,6 +197,12 @@ pub trait ChainBackend: Send + Sync {
     /// swap offer's anchor against. `None` when this backend keeps no
     /// Orchard tree to read.
     async fn recent_anchors(&self) -> Result<Option<std::sync::Arc<RecentAnchors>>, ChainError> {
+        Ok(None)
+    }
+
+    /// The Orchard tree after the current tip, for a wallet born now.
+    /// `None` when this backend keeps no Orchard tree to read.
+    async fn orchard_tree_state(&self) -> Result<Option<OrchardTreeState>, ChainError> {
         Ok(None)
     }
 

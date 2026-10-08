@@ -16,7 +16,7 @@ let engineThreads = 1;
 // files' hashes, and checked by CI: /mint-engine*/ is cached for an hour
 // (see next.config.ts), and this query is what busts that cache so a
 // rebuilt engine reaches returning browsers at once.
-const ENGINE_VERSION = "1a5bc03979ef";
+const ENGINE_VERSION = "cc9a8201d022";
 
 async function load(variant) {
   const base = `/mint-engine${variant}`;
@@ -68,6 +68,10 @@ self.onmessage = async (event) => {
       result = mod.issuer_info(args.seed, args.description);
     } else if (cmd === "wallet_reset") {
       result = mod.wallet_reset(args.seed);
+    } else if (cmd === "wallet_start_after") {
+      // A seed created in this page owns nothing in earlier blocks: its
+      // wallet starts from the tree after the current tip.
+      result = mod.wallet_start_after(args.seed, args.height, args.tree_state, args.final_root);
     } else if (cmd === "wallet_scan") {
       // Feeds a page of raw blocks (public chain data) into the local
       // wallet: trial decryption and witnesses happen HERE, so the server

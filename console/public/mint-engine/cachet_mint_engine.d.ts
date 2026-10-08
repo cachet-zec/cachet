@@ -102,6 +102,16 @@ export function wallet_reset(seed_phrase: string): any;
  */
 export function wallet_scan(seed_phrase: string, blocks: any): any;
 
+/**
+ * Start this seed's wallet after block `height`, from the Orchard tree the
+ * registry reports there (`GET /api/v1/chain/orchard-tree`, zcashd's
+ * `CommitmentTree` encoding in hex), checked against `final_root` when
+ * given. For a seed created now, which can own nothing in an earlier
+ * block: its first scan reads only the blocks that follow. A wallet this
+ * seed already scanned further is left as it is.
+ */
+export function wallet_start_after(seed_phrase: string, height: number, tree_state: string, final_root?: string | null): any;
+
 export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
 
 export interface InitOutput {
@@ -117,6 +127,7 @@ export interface InitOutput {
     readonly swap_take: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
     readonly wallet_reset: (a: number, b: number) => [number, number, number];
     readonly wallet_scan: (a: number, b: number, c: any) => [number, number, number];
+    readonly wallet_start_after: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];
     readonly prepare_proving: () => void;
     readonly rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;
     readonly rustsecp256k1_v0_10_0_default_illegal_callback_fn: (a: number, b: number) => void;

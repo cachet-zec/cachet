@@ -9,6 +9,19 @@ use cachet_domain::{DomainError, IssuanceReceipt, IssuanceRequest, Recipient, Tx
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 
+/// The Orchard note commitment tree after a block: where a wallet created
+/// at that block starts reading the chain.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct OrchardTreeResponse {
+    /// The block the tree stands after (the current tip when asked).
+    pub height: u64,
+    /// The tree's frontier, hex, in zcashd's `CommitmentTree` encoding
+    /// (as `z_gettreestate` reports it).
+    pub final_state: String,
+    /// The tree's root, hex, when the node reports it.
+    pub final_root: Option<String>,
+}
+
 /// Connected network, chain tip, and deployment mode.
 #[derive(Debug, Serialize, ToSchema)]
 pub struct ChainInfoResponse {

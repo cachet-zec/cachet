@@ -307,6 +307,33 @@ export function wallet_scan(seed_phrase, blocks) {
     return takeFromExternrefTable0(ret[0]);
 }
 
+/**
+ * Start this seed's wallet after block `height`, from the Orchard tree the
+ * registry reports there (`GET /api/v1/chain/orchard-tree`, zcashd's
+ * `CommitmentTree` encoding in hex), checked against `final_root` when
+ * given. For a seed created now, which can own nothing in an earlier
+ * block: its first scan reads only the blocks that follow. A wallet this
+ * seed already scanned further is left as it is.
+ * @param {string} seed_phrase
+ * @param {number} height
+ * @param {string} tree_state
+ * @param {string | null} [final_root]
+ * @returns {any}
+ */
+export function wallet_start_after(seed_phrase, height, tree_state, final_root) {
+    const ptr0 = passStringToWasm0(seed_phrase, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(tree_state, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    var ptr2 = isLikeNone(final_root) ? 0 : passStringToWasm0(final_root, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    var len2 = WASM_VECTOR_LEN;
+    const ret = wasm.wallet_start_after(ptr0, len0, height, ptr1, len1, ptr2, len2);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
 export class wbg_rayon_PoolBuilder {
     static __wrap(ptr) {
         const obj = Object.create(wbg_rayon_PoolBuilder.prototype);
