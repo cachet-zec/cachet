@@ -156,6 +156,17 @@ ALTER TABLE assets DROP COLUMN IF EXISTS last_height;
 DELETE FROM _sqlx_migrations WHERE version IN (12, 13);
 ```
 
+Going back to 0.6.0 from a version with migration 14 drops the record of
+which transaction filled which board offer (transaction pages stop naming
+the offer; the swaps themselves are on chain and untouched):
+
+```sql
+DROP TABLE IF EXISTS swap_fills;
+DROP INDEX IF EXISTS swap_offers_txid;
+ALTER TABLE swap_offers DROP COLUMN IF EXISTS txid;
+DELETE FROM _sqlx_migrations WHERE version = 14;
+```
+
 ## After a deploy
 
 - `python scripts/verify-site.py --site https://your.site` checks that the

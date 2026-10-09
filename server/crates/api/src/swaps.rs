@@ -19,7 +19,7 @@ use axum::Json;
 use axum::extract::{Path, State};
 use axum::http::{HeaderMap, StatusCode};
 use cachet_chain::{ANCHOR_WINDOW, RecentAnchors};
-use cachet_index::{SWAP_TAKE_HOLD_SECS, SwapRow};
+use cachet_index::{MetadataStore, SWAP_TAKE_HOLD_SECS, SwapFill, SwapRow};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use utoipa::ToSchema;
@@ -288,6 +288,7 @@ pub(crate) async fn post_offer(
             taker_token: None,
             taken_at: None,
             countersignature: None,
+            txid: None,
             closed: false,
         })
         .await
@@ -522,14 +523,87 @@ pub(crate) async fn post_countersignature(
     }
     serde_json::from_str::<cachet_swap::Countersignature>(&body.countersignature)
         .map_err(|_| invalid("that is not a swap countersignature"))?;
+    // The transaction this signature completes, read from the take it
+    // answers: the fill is recorded when the chain shows that very id.
+    let take = store
+        .swap_get(&id)
+        .await
+        .map_err(metadata_error)?
+        .filter(|row| row.taken_at == Some(body.taken_at))
+        .and_then(|row| row.take)
+        .ok_or(ApiError::SwapUnavailable)?;
+    let txid = serde_json::from_str::<cachet_swap::Take>(&take)
+        .ok()
+        .and_then(|take| cachet_swap::take_txid(&take).ok())
+        .ok_or(ApiError::SwapUnavailable)?;
     if !store
-        .swap_countersign(&id, hash, body.taken_at, &body.countersignature)
+        .swap_countersign(&id, hash, body.taken_at, &body.countersignature, &txid)
         .await
         .map_err(metadata_error)?
     {
         return Err(ApiError::SwapUnavailable);
     }
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Record `row`'s fill if its transaction is in a block. The chain is the
+/// only witness: a transaction still in the mempool, or unknown, is left
+/// for a later pass.
+async fn confirm_fill(
+    store: &dyn MetadataStore,
+    chain: &dyn cachet_chain::ChainBackend,
+    row: &SwapRow,
+) -> Option<SwapFill> {
+    let txid = row.txid.as_ref()?;
+    let decoded = chain.decode_transaction(txid.parse().ok()?).await.ok()?;
+    let fill = SwapFill {
+        txid: txid.clone(),
+        offer_id: row.id.clone(),
+        give_asset: row.give_asset,
+        give_amount: row.give_amount,
+        want_asset: row.want_asset,
+        want_amount: row.want_amount,
+        height: decoded.height?,
+    };
+    match store.swap_record_fill(&fill).await {
+        Ok(()) => Some(fill),
+        Err(error) => {
+            tracing::warn!(%error, "swap board: could not record a fill");
+            None
+        }
+    }
+}
+
+/// One pass over the countersigned offers: those whose transaction landed
+/// are recorded as filled and closed. Runs beside the registry sync.
+pub async fn confirm_fills(store: &dyn MetadataStore, chain: &dyn cachet_chain::ChainBackend) {
+    let awaiting = match store.swap_awaiting_fill().await {
+        Ok(rows) => rows,
+        Err(error) => {
+            tracing::warn!(%error, "swap board: could not list offers awaiting a fill");
+            return;
+        }
+    };
+    for row in &awaiting {
+        if confirm_fill(store, chain, row).await.is_some() {
+            tracing::info!("swap board: an offer was filled on chain");
+        }
+    }
+}
+
+/// The board offer transaction `txid` filled, recording the fill on the
+/// spot if the chain already holds it (the page of a swap just relayed
+/// need not wait for the next pass).
+pub(crate) async fn fill_for(
+    store: &dyn MetadataStore,
+    chain: &dyn cachet_chain::ChainBackend,
+    txid: &str,
+) -> Option<SwapFill> {
+    if let Ok(Some(fill)) = store.swap_fill(txid).await {
+        return Some(fill);
+    }
+    let row = store.swap_for_txid(txid).await.ok()??;
+    confirm_fill(store, chain, &row).await
 }
 
 /// The countersignature, once the maker posted it (taker token).

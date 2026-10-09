@@ -64,10 +64,16 @@ test("a kept asset comes back under the same id", async ({ page }) => {
   // been reset many times, so ours may be pages away: ask the registry).
   await page.goto("/continuity");
   await expect(page.getByTestId("kept-list")).toBeVisible({ timeout: 30_000 });
-  const listed = await page.request.get("http://localhost:8080/api/v1/kept?limit=100");
-  expect(((await listed.json()) as { asset_id: string }[]).map((row) => row.asset_id)).toContain(
-    assetId,
-  );
+  const keptIds: string[] = [];
+  for (let offset = 0; !keptIds.includes(assetId); offset += 100) {
+    const chunk = await page.request.get(
+      `http://localhost:8080/api/v1/kept?limit=100&offset=${offset}`,
+    );
+    const rows = (await chunk.json()) as { asset_id: string }[];
+    if (rows.length === 0) break;
+    keptIds.push(...rows.map((row) => row.asset_id));
+  }
+  expect(keptIds).toContain(assetId);
 
   await page.goto(`/assets/${assetId}`);
   await page.getByTestId("kept-remint").click();

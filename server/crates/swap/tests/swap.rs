@@ -6,7 +6,7 @@
 use std::ops::Deref;
 
 use cachet_swap::testing::{address, key, note, setup};
-use cachet_swap::{Countersignature, Offer, SwapError, countersign, finish, take};
+use cachet_swap::{Countersignature, Offer, SwapError, countersign, finish, take, take_txid};
 use orchard::circuit::VerifyingKey;
 use orchard::flavor::OrchardZSA;
 use orchard::keys::{FullViewingKey, Scope};
@@ -36,6 +36,11 @@ fn a_swap_completes_and_verifies_like_a_node_would_check_it() {
     let signature =
         countersign(&offer, &s.maker_swap_key, &maker_ivk, &take_message, OsRng).unwrap();
     let tx = finish(pending, &signature).unwrap();
+
+    // The id was known from the take, before the maker signed.
+    let mut txid = *tx.txid().as_ref();
+    txid.reverse();
+    assert_eq!(take_txid(&take_message).unwrap(), hex::encode(txid));
 
     // Checked as a node would: one sighash for everything.
     let data = tx.deref();

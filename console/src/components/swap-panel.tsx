@@ -90,6 +90,8 @@ export function SwapPanel({
     status: boardStatus,
     setStatus: setBoardStatus,
     done: makerDone,
+    txid: makerTxid,
+    height: makerHeight,
     clear: clearOffer,
     fundsVersion,
     unseen,
@@ -670,7 +672,26 @@ export function SwapPanel({
               className={makerDone ? doneStrip : statusStrip}
             >
               {makerDone ? <span aria-hidden>✓</span> : pulse}
-              <span>{boardStatus}</span>
+              <span>
+                {boardStatus}
+                {makerTxid && (
+                  <>
+                    {" "}
+                    <Link
+                      href={`/tx/${makerTxid}`}
+                      data-testid="swap-maker-tx"
+                      className={`font-data underline underline-offset-2 ${makerDone ? "decoration-emerald-300/40" : "decoration-white/20"}`}
+                    >
+                      {makerTxid.slice(0, 16)}…
+                    </Link>
+                    {makerDone && makerHeight !== null && (
+                      <span className="font-data">
+                        {` · block ${makerHeight.toLocaleString("en-US")}`}
+                      </span>
+                    )}
+                  </>
+                )}
+              </span>
             </div>
           )}
           {makerDone && (

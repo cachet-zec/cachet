@@ -19,6 +19,18 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Added
 
+- The maker sees the transaction it countersigned, and the block it
+  landed in. Its engine reads the id from the taker's transaction (a v6
+  txid leaves proofs and signatures out, so countersigning does not
+  change it): nobody has to tell the maker which transaction to look at.
+- A swap's transaction page names the board offer it filled, both sides
+  with their images and amounts. The registry reads the id the swap will
+  have when the maker countersigns, and links the two only once the chain
+  holds that very transaction; the offer then closes on the chain's word.
+  A maker taking the units back is never mistaken for a fill. The terms
+  shown are the offer's, public on the board; the two parties stay
+  encrypted. Migration 14 adds the fills table.
+
 - A listed offer is answered from any Cachet page of the tab, not only
   the swaps page: the maker can go on minting or browsing, a mark on the
   Swaps link says the offer is live (and when it was filled), and the

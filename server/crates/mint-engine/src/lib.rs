@@ -963,6 +963,17 @@ pub fn swap_countersign(
     serde_json::to_string(&signature).map_err(|error| JsError::new(&error.to_string()))
 }
 
+/// The id the swap will have once the taker relays it, read from the take
+/// the maker countersigns: a v6 txid commits to the effecting data, never
+/// to proofs or signatures. The maker's page shows the transaction it
+/// signed for without asking anyone. Hex, display order.
+#[wasm_bindgen]
+pub fn swap_take_txid(take_json: &str) -> Result<String, JsError> {
+    let take: cachet_swap::Take =
+        serde_json::from_str(take_json).map_err(|_| JsError::new("that is not a swap answer"))?;
+    cachet_swap::take_txid(&take).map_err(swap_error)
+}
+
 #[derive(Serialize)]
 struct FinishedSwap {
     tx_hex: String,

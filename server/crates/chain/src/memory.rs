@@ -55,6 +55,8 @@ pub struct InMemoryChain {
     anchors: Mutex<Option<std::sync::Arc<crate::RecentAnchors>>>,
     /// What a node would answer once asked again (`refresh_anchors`).
     anchors_on_refresh: Mutex<Option<crate::RecentAnchors>>,
+    /// Shielded-only transactions a test says were mined, by height.
+    shielded: Mutex<HashMap<TxId, u64>>,
 }
 
 impl InMemoryChain {
@@ -69,6 +71,15 @@ impl InMemoryChain {
             .anchors_on_refresh
             .lock()
             .expect("in-memory anchors lock poisoned") = Some(anchors);
+    }
+
+    /// Say a transaction with only Orchard actions (a swap) was mined at
+    /// `height`, as a node would show it (tests).
+    pub fn mine_shielded(&self, txid: TxId, height: u64) {
+        self.shielded
+            .lock()
+            .expect("in-memory shielded lock poisoned")
+            .insert(txid, height);
     }
 
     /// Answer `recent_anchors` with these, as a node would (tests).
@@ -414,6 +425,25 @@ impl ChainBackend for InMemoryChain {
     /// The fake chain keeps no transactions, only the events they caused:
     /// a decode is rebuilt from those, which is all the HTTP contract needs.
     async fn decode_transaction(&self, txid: TxId) -> Result<DecodedTransaction, ChainError> {
+        if let Some(&height) = self
+            .shielded
+            .lock()
+            .expect("in-memory shielded lock poisoned")
+            .get(&txid)
+        {
+            return Ok(DecodedTransaction {
+                txid,
+                height: Some(height),
+                version: 6,
+                issuance: None,
+                burns: Vec::new(),
+                orchard_actions: 3,
+                transparent_inputs: 0,
+                transparent_outputs: 0,
+                sapling_spends: 0,
+                sapling_outputs: 0,
+            });
+        }
         let state = self.state.lock().expect("in-memory chain lock poisoned");
         let events: Vec<&AssetEvent> = state.events.iter().filter(|e| e.txid == txid).collect();
         let Some(first) = events.first() else {

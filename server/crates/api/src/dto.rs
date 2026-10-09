@@ -190,6 +190,33 @@ pub struct DecodedTransactionResponse {
     pub transparent_outputs: u32,
     pub sapling_spends: u32,
     pub sapling_outputs: u32,
+    /// The swap board offer this transaction filled, when it filled one on
+    /// this registry: the offer's terms were public on the board, and the
+    /// link is recorded only once the chain holds the very transaction the
+    /// maker countersigned.
+    pub swap: Option<SwapFillResponse>,
+}
+
+/// A board offer a transaction filled.
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SwapFillResponse {
+    pub offer_id: String,
+    pub give_asset: String,
+    pub give_amount: u64,
+    pub want_asset: String,
+    pub want_amount: u64,
+}
+
+impl From<cachet_index::SwapFill> for SwapFillResponse {
+    fn from(fill: cachet_index::SwapFill) -> Self {
+        Self {
+            offer_id: fill.offer_id,
+            give_asset: hex::encode(fill.give_asset),
+            give_amount: fill.give_amount,
+            want_asset: hex::encode(fill.want_asset),
+            want_amount: fill.want_amount,
+        }
+    }
 }
 
 impl From<cachet_domain::DecodedTransaction> for DecodedTransactionResponse {
@@ -226,6 +253,7 @@ impl From<cachet_domain::DecodedTransaction> for DecodedTransactionResponse {
             transparent_outputs: tx.transparent_outputs,
             sapling_spends: tx.sapling_spends,
             sapling_outputs: tx.sapling_outputs,
+            swap: None,
         }
     }
 }

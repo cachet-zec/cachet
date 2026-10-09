@@ -1863,6 +1863,108 @@ async fn the_swap_board_carries_a_swap_between_two_parties() {
     assert_eq!(one["status"], "closed");
 }
 
+/// A countersigned offer is linked to its transaction only once the chain
+/// holds that very transaction: the registry reads the id from the take,
+/// and the transaction's page then names the offer it filled.
+#[tokio::test]
+async fn a_swap_that_lands_is_linked_to_the_offer_it_filled() {
+    let chain = Arc::new(InMemoryChain::new());
+    let store = Arc::new(cachet_index::MemoryMetadataStore::new());
+    let app = cachet_api::router(chain.clone(), Some(store.clone()), false, None);
+    let fixture = cachet_swap::testing::setup();
+    let offer = serde_json::to_string(&fixture.offer).unwrap();
+    let (real_take, _) = cachet_swap::take(
+        &fixture.offer,
+        &fixture.taker_inputs,
+        cachet_swap::testing::address(&fixture.taker_key),
+        orchard::keys::FullViewingKey::from(&fixture.taker_key)
+            .to_ovk(orchard::keys::Scope::External),
+        zcash_protocol::consensus::BlockHeight::from_u32(100),
+        rand::rngs::OsRng,
+    )
+    .unwrap();
+    let txid = cachet_swap::take_txid(&real_take).unwrap();
+
+    let (_, posted) = send(&app, post_json("/api/v1/swaps", json!({"offer": offer}))).await;
+    let id = posted["id"].as_str().unwrap().to_owned();
+    let maker = posted["maker_token"].as_str().unwrap().to_owned();
+    let take = serde_json::to_string(&real_take).unwrap();
+    let (status, _) = send(
+        &app,
+        post_json(&format!("/api/v1/swaps/{id}/take"), json!({"take": take})),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (_, envelope) = send(
+        &app,
+        Request::get(format!("/api/v1/swaps/{id}/take"))
+            .header("x-swap-token", maker.clone())
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    let taken_at = envelope["taken_at"].as_i64().unwrap();
+    let signature = json!({"version": 1, "signature": "00"}).to_string();
+    let (status, _) = send(
+        &app,
+        Request::post(format!("/api/v1/swaps/{id}/countersignature"))
+            .header("x-swap-token", maker.clone())
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                json!({"countersignature": signature, "taken_at": taken_at}).to_string(),
+            ))
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    // Countersigned but not on chain: nothing is claimed yet.
+    cachet_api::swaps::confirm_fills(store.as_ref(), chain.as_ref()).await;
+    let (_, one) = send(
+        &app,
+        Request::get(format!("/api/v1/swaps/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(one["status"], "countersigned");
+
+    // Another transaction landing proves nothing about this offer.
+    let other: cachet_domain::TxId = "ab".repeat(32).parse().unwrap();
+    chain.mine_shielded(other, 7);
+    let (_, unrelated) = send(
+        &app,
+        Request::get(format!("/api/v1/transactions/{}", "ab".repeat(32)))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert!(unrelated["swap"].is_null());
+
+    // The very transaction the maker countersigned lands: its page names
+    // the offer, and the offer is closed on the chain's word.
+    chain.mine_shielded(txid.parse().unwrap(), 8);
+    let (status, tx) = send(
+        &app,
+        Request::get(format!("/api/v1/transactions/{txid}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(tx["swap"]["offer_id"], id);
+    assert_eq!(tx["swap"]["give_amount"], 5);
+    assert_eq!(tx["swap"]["want_amount"], 30);
+    let (_, one) = send(
+        &app,
+        Request::get(format!("/api/v1/swaps/{id}"))
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(one["status"], "closed");
+}
+
 /// The board lists an offer only on a recent root of the chain, takes it off
 /// before takers' wallets lose that root, and refuses a take once they have.
 #[tokio::test]

@@ -262,6 +262,35 @@ export function swap_take(seed_phrase, offer_json, target_height) {
 }
 
 /**
+ * The id the swap will have once the taker relays it, read from the take
+ * the maker countersigns: a v6 txid commits to the effecting data, never
+ * to proofs or signatures. The maker's page shows the transaction it
+ * signed for without asking anyone. Hex, display order.
+ * @param {string} take_json
+ * @returns {string}
+ */
+export function swap_take_txid(take_json) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(take_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.swap_take_txid(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * Reset the in-module wallet to a fresh state for this seed. Returns the
  * wallet state (empty, scanned_height 0).
  * @param {string} seed_phrase

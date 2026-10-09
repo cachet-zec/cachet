@@ -21,7 +21,7 @@ pub fn with_health(router: axum::Router) -> axum::Router {
 pub mod breaker;
 pub mod chain_watch;
 pub mod snapshot;
-mod swaps;
+pub mod swaps;
 
 use std::sync::Arc;
 
@@ -281,6 +281,7 @@ pub static ORPHAN_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomi
         dto::HoldingResponse,
         dto::AssetEventResponse,
         dto::DecodedTransactionResponse,
+        dto::SwapFillResponse,
         swaps::PostOfferRequest,
         swaps::PostOfferResponse,
         swaps::SwapOfferResponse,

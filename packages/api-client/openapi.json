@@ -2139,6 +2139,17 @@
             "format": "int32",
             "minimum": 0
           },
+          "swap": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SwapFillResponse",
+                "description": "The swap board offer this transaction filled, when it filled one on\nthis registry: the offer's terms were public on the board, and the\nlink is recorded only once the chain holds the very transaction the\nmaker countersigned."
+              }
+            ]
+          },
           "transparent_inputs": {
             "type": "integer",
             "format": "int32",
@@ -2544,6 +2555,32 @@
             "format": "int64",
             "description": "Convenience mirrors of payload facts (unsigned; trust the payload).",
             "minimum": 0
+          }
+        }
+      },
+      "SwapFillResponse": {
+        "type": "object",
+        "description": "A board offer a transaction filled.",
+        "required": ["offer_id", "give_asset", "give_amount", "want_asset", "want_amount"],
+        "properties": {
+          "give_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "give_asset": {
+            "type": "string"
+          },
+          "offer_id": {
+            "type": "string"
+          },
+          "want_amount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "want_asset": {
+            "type": "string"
           }
         }
       },
