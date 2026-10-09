@@ -2,55 +2,22 @@
 
 import { useId, useRef, useState } from "react";
 
-import { apiBaseUrl } from "@/lib/api";
+import { AssetThumb, AssetTitle, type ListedAsset, shortId } from "@/components/asset-chip";
 import { input } from "@/lib/ui";
 
 /** What the picker knows of an asset, from the registry's listing. */
-export type PickableAsset = {
-  asset_id: string;
-  display_name?: string | null;
-  name_source?: string | null;
-  image_path?: string | null;
-  finalized?: boolean;
-};
+export type PickableAsset = ListedAsset;
 
 const MAX_SHOWN = 8;
 const isAssetId = (text: string) => /^[0-9a-f]{64}$/.test(text);
-const shortId = (id: string) => `${id.slice(0, 8)}…${id.slice(-6)}`;
 
-function Thumb({ asset, id }: { asset?: PickableAsset; id: string }) {
-  return asset?.image_path ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={apiBaseUrl + asset.image_path}
-      alt=""
-      loading="lazy"
-      decoding="async"
-      className="h-8 w-8 shrink-0 rounded-sm object-cover"
-    />
-  ) : (
-    <span className="font-data flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-white/10 text-[13px] text-neutral-600">
-      {id.slice(0, 2)}
-    </span>
-  );
-}
-
-function Name({ asset }: { asset?: PickableAsset }) {
-  if (!asset?.display_name) return <span className="italic text-neutral-500">unnamed asset</span>;
-  return (
-    <span
-      className={asset.name_source === "envelope" ? "text-neutral-100" : "italic text-neutral-300"}
-      title={asset.name_source === "envelope" ? undefined : "Free-text label, not a sealed name"}
-    >
-      {asset.display_name}
-    </span>
-  );
-}
+/** Same height as the plain inputs beside it, so a row lines up. */
+export const FIELD_HEIGHT = "h-12";
 
 /**
- * Choose an asset by name from the registry's listing, or paste its id.
- * The listing is the one the page already holds (the same request for
- * every visitor), so searching tells the registry nothing.
+ * Choose an asset by name from a list, or paste its id. The registry's
+ * listing is the one the page already holds (the same request for every
+ * visitor), so searching tells the registry nothing.
  */
 export function AssetPicker({
   id,
@@ -60,6 +27,10 @@ export function AssetPicker({
   assets,
   exclude,
   loading = false,
+  detail,
+  placeholder = "search a name, or paste an asset id",
+  showAll = false,
+  empty = "No asset by that name here. Paste its 64-character id instead.",
 }: {
   id: string;
   testId: string;
@@ -71,12 +42,21 @@ export function AssetPicker({
   exclude?: string;
   /** The listing has not arrived yet. */
   loading?: boolean;
+  /** The second line under a name; the asset id by default. */
+  detail?: (asset: PickableAsset) => string;
+  placeholder?: string;
+  /** Before anything is typed, list every asset instead of sealed names only. */
+  showAll?: boolean;
+  /** Said when a search finds nothing. */
+  empty?: string;
 }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const second = (asset: PickableAsset) =>
+    detail ? detail(asset) : `${shortId(asset.asset_id)}${asset.finalized ? " · sealed" : ""}`;
 
   const chosen = value.trim().toLowerCase();
   if (isAssetId(chosen)) {
@@ -84,20 +64,20 @@ export function AssetPicker({
     return (
       <div
         data-testid={`${testId}-chosen`}
-        className="flex min-h-[2.75rem] items-center gap-3 rounded-md border border-white/10 bg-black/30 px-3 py-1.5"
+        className={`${FIELD_HEIGHT} flex items-center gap-3 rounded-md border border-white/10 bg-black/30 px-2.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)]`}
       >
-        <Thumb asset={asset} id={chosen} />
+        <AssetThumb asset={asset} id={chosen} />
         <span className="flex min-w-0 flex-1 flex-col leading-tight">
           <span className="truncate text-sm">
-            <Name asset={asset} />
+            <AssetTitle asset={asset} />
           </span>
-          <span className="font-data truncate text-[13px] text-neutral-500" title={chosen}>
-            {shortId(chosen)}
+          <span className="font-data truncate text-[12px] text-neutral-500" title={chosen}>
+            {asset ? second(asset) : shortId(chosen)}
           </span>
         </span>
         <button
           type="button"
-          className="shrink-0 text-[13px] text-neutral-400 underline decoration-white/20 underline-offset-2 transition hover:text-accent"
+          className="shrink-0 rounded-sm px-1.5 py-1 text-[13px] text-neutral-400 transition hover:text-accent"
           onClick={() => {
             onChange("");
             setQuery("");
@@ -116,7 +96,7 @@ export function AssetPicker({
     .filter((asset) => asset.asset_id !== exclude)
     .filter((asset) =>
       needle === ""
-        ? asset.name_source === "envelope"
+        ? showAll || asset.name_source === "envelope"
         : asset.display_name?.toLowerCase().includes(needle) || asset.asset_id.startsWith(needle),
     )
     // Sealed names first, then labels, then the rest; listing order inside.
@@ -138,14 +118,14 @@ export function AssetPicker({
         ref={inputRef}
         id={id}
         data-testid={testId}
-        className={`${input} font-data`}
+        className={`${input} ${FIELD_HEIGHT} font-data`}
         role="combobox"
         aria-expanded={shown}
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={shown ? `${listId}-${active}` : undefined}
         value={query}
-        placeholder="search a name, or paste an asset id"
+        placeholder={placeholder}
         spellCheck={false}
         autoComplete="off"
         onFocus={() => setOpen(true)}
@@ -191,7 +171,7 @@ export function AssetPicker({
               role="option"
               aria-selected={index === active}
               data-testid={`${testId}-option`}
-              className={`flex cursor-pointer items-center gap-3 px-3 py-1.5 ${
+              className={`flex cursor-pointer items-center gap-3 px-2.5 py-1.5 ${
                 index === active ? "bg-accent/[0.08]" : "hover:bg-white/[0.03]"
               }`}
               onMouseEnter={() => setActive(index)}
@@ -201,14 +181,13 @@ export function AssetPicker({
                 choose(asset.asset_id);
               }}
             >
-              <Thumb asset={asset} id={asset.asset_id} />
+              <AssetThumb asset={asset} id={asset.asset_id} />
               <span className="flex min-w-0 flex-1 flex-col leading-tight">
                 <span className="truncate text-sm">
-                  <Name asset={asset} />
+                  <AssetTitle asset={asset} />
                 </span>
-                <span className="font-data truncate text-[13px] text-neutral-500">
-                  {shortId(asset.asset_id)}
-                  {asset.finalized ? " · sealed supply" : ""}
+                <span className="font-data truncate text-[12px] text-neutral-500">
+                  {second(asset)}
                 </span>
               </span>
             </li>
@@ -217,9 +196,7 @@ export function AssetPicker({
       )}
       {open && needle !== "" && matches.length === 0 && (
         <p className="mt-1.5 text-[13px] text-neutral-500">
-          {loading
-            ? "Loading the registry's names…"
-            : "No asset by that name here. Paste its 64-character id instead."}
+          {loading ? "Loading the registry's names…" : empty}
         </p>
       )}
     </div>

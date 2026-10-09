@@ -39,7 +39,11 @@ async function mint(page: Page, name: string, amount: number): Promise<string> {
 /** Move between the pages that use keys the way a visitor does: through
  * the header, so the seed held in memory comes along. */
 async function open(page: Page, name: "Mint" | "Swaps") {
-  await page.locator("header").getByRole("link", { name, exact: true }).click();
+  // The Swaps link also says when an offer is live or filled.
+  await page
+    .locator("header")
+    .getByRole("link", { name: new RegExp(`^${name}\\b`) })
+    .click();
   await expect(page).toHaveURL(name === "Mint" ? /\/mint/ : /\/swaps/);
 }
 
@@ -63,10 +67,9 @@ test("two browsers swap two assets in one transaction", async ({ browser }) => {
   await open(taker, "Swaps");
   const makerSwap = maker.getByTestId("swap-panel");
   await makerSwap.getByRole("button", { name: "Scan my holdings" }).click();
-  await expect(makerSwap.getByTestId("swap-give-asset").locator("option")).toHaveCount(2, {
-    timeout: 120_000,
-  });
-  await makerSwap.getByTestId("swap-give-asset").selectOption(gold);
+  // Once the holdings are scanned, "you give" searches them.
+  await expect(makerSwap.getByTestId("swap-give-asset")).toBeVisible({ timeout: 120_000 });
+  await makerSwap.getByTestId("swap-give-asset").fill(gold);
   await makerSwap.getByTestId("swap-give-amount").fill("4");
   await makerSwap.getByTestId("swap-want-asset").fill(silver);
   await makerSwap.getByTestId("swap-want-amount").fill("7");
@@ -127,10 +130,9 @@ test("a swap through the public board, with nothing passed by hand", async ({ br
   await open(maker, "Swaps");
   const makerSwap = maker.getByTestId("swap-panel");
   await makerSwap.getByRole("button", { name: "Scan my holdings" }).click();
-  await expect(makerSwap.getByTestId("swap-give-asset").locator("option")).toHaveCount(2, {
-    timeout: 120_000,
-  });
-  await makerSwap.getByTestId("swap-give-asset").selectOption(gold);
+  // Once the holdings are scanned, "you give" searches them.
+  await expect(makerSwap.getByTestId("swap-give-asset")).toBeVisible({ timeout: 120_000 });
+  await makerSwap.getByTestId("swap-give-asset").fill(gold);
   await makerSwap.getByTestId("swap-give-amount").fill("3");
   await makerSwap.getByTestId("swap-want-asset").fill(silver);
   await makerSwap.getByTestId("swap-want-amount").fill("5");
@@ -138,6 +140,9 @@ test("a swap through the public board, with nothing passed by hand", async ({ br
   await expect(makerSwap.getByTestId("swap-board-status")).toContainText("Listed", {
     timeout: 420_000,
   });
+  // The maker moves on to another page of the same tab: it keeps answering.
+  await open(maker, "Mint");
+  await expect(maker.getByTestId("nav-offer-live")).toBeVisible();
 
   // --- The taker finds it on the board ---
   await taker.goto("/swaps");
@@ -162,8 +167,12 @@ test("a swap through the public board, with nothing passed by hand", async ({ br
     timeout: 420_000,
   });
 
-  // --- The maker's page countersigns by itself; the taker's completes ---
+  // --- The maker's tab countersigns from the mint page; the taker's completes ---
   await expect(takerSwap.getByTestId("swap-done")).toBeVisible({ timeout: 300_000 });
+  await expect(maker.getByTestId("nav-offer-live")).toHaveAttribute("class", /emerald/, {
+    timeout: 120_000,
+  });
+  await open(maker, "Swaps");
   await expect(makerSwap.getByTestId("swap-board-status")).toContainText("Swapped", {
     timeout: 120_000,
   });

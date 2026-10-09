@@ -63,8 +63,9 @@ librustzcash's cached ZSA proving key is made public for the same build.
 - Messages pass through the registry's swap board (`/api/v1/swaps`), or by
   hand. The board holds messages, never keys; capability tokens (stored
   hashed) decide who reads a take and who reads a countersignature. The
-  maker's page answers takes, so an offer is listed only while that page
-  checks in (every few seconds; off the board after a minute of silence).
+  maker's tab answers takes (from any Cachet page of it: the listing lives
+  above the pages, keys still in the browser wallet's memory), so an offer
+  is listed only while that tab checks in (every few seconds; off the board after a minute of silence).
   Before a take holds an offer, the registry checks it with no key
   (`cachet_swap::check_take`): it spends the offered note on the offer's
   anchor, the proof and the binding signature verify, and the taker's
@@ -80,6 +81,12 @@ librustzcash's cached ZSA proving key is made public for the same build.
   maker's page, still open, posts the same units again on the current root
   and withdraws the old listing. A take arriving once no wallet can build
   on the anchor is refused before its proof is checked.
+- The maker must be online when a taker answers: every Orchard signature
+  in a v6 transaction covers the whole transaction, which exists only once
+  the taker built it. The alternative, the registry holding the slot's
+  spending key, would be custody and is refused. ZIP 228 (Swap Orders,
+  one signature per action group) removes the constraint without custody;
+  QEDIT's implementation is not on the public testnet yet.
 - Zero fee, as every Cachet transaction on the testnet.
 - A swap slot is funded only by its own seed's moves, so a wallet scan
   tries the slots' keys only on transactions that spend one of the
