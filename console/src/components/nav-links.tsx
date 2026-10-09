@@ -3,8 +3,14 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { useSwapMaker } from "@/lib/swap-maker";
+
 export function NavLinks() {
   const pathname = usePathname();
+  // An offer of this tab is live, or was just filled: say so on every page.
+  const { listing, done, unseen } = useSwapMaker();
+  const offerLive = listing !== null && !done;
+  const offerFilled = done && unseen > 0;
   // Asset detail pages belong to the console/registry world; issuer pages
   // have their own tab.
   const consoleActive = pathname.startsWith("/console") || pathname.startsWith("/assets");
@@ -35,11 +41,28 @@ export function NavLinks() {
         Mint
       </Link>
       <Link
-        href="/swaps"
+        href={offerLive || offerFilled ? "/swaps#trade" : "/swaps"}
         aria-current={swapsActive ? "page" : undefined}
-        className={linkClass(swapsActive)}
+        className={`${linkClass(swapsActive)} relative`}
+        title={
+          offerLive
+            ? "Your offer is live: this tab answers takers"
+            : offerFilled
+              ? "Your offer was filled"
+              : undefined
+        }
       >
         Swaps
+        {(offerLive || offerFilled) && (
+          <span
+            data-testid="nav-offer-live"
+            className={`absolute -right-2.5 top-2 h-2 w-2 rounded-full ${
+              offerLive ? "bg-accent motion-safe:animate-pulse" : "bg-emerald-300"
+            }`}
+          >
+            <span className="sr-only">{offerLive ? " (offer live)" : " (offer filled)"}</span>
+          </span>
+        )}
       </Link>
       <Link
         href="/issuers"

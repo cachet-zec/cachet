@@ -6,7 +6,27 @@ All notable changes to Cachet are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The swaps page, redrawn. The board reads like an order book: each side
+  of an offer with its sealed image, amount, name and supply state, the
+  rate between them, the time left. The form picks "you give" among what
+  the wallet holds and "you want" among the registry's names, both with
+  images, and its fields line up. A posted offer shows as such, with its
+  status, until it is filled or cancelled ("Cancel offer" brings the units
+  back to the wallet). A taker sees what it holds of what the offer asks
+  before proving anything, and cannot start a swap it cannot pay.
+
 ### Added
+
+- A listed offer is answered from any Cachet page of the tab, not only
+  the swaps page: the maker can go on minting or browsing, a mark on the
+  Swaps link says the offer is live (and when it was filled), and the
+  browser warns before a reload takes it down. With the permission asked
+  when posting, a system notification says when a taker answers and when
+  the swap landed, so the tab can stay in the background.
+- Units left in a swap slot (a reload, a closed tab) can be put back on
+  the board in one step, with new terms, without moving them again.
 
 - "Look up an asset" suggests assets as you type: a name, part of a
   description, or the start of an asset id or issuer key, eight at most,

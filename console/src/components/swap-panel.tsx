@@ -1,22 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
-import { AssetPicker, type PickableAsset } from "@/components/asset-picker";
+import { AssetThumb, AssetTitle } from "@/components/asset-chip";
+import { AssetPicker, FIELD_HEIGHT, type PickableAsset } from "@/components/asset-picker";
 import { CopyButton } from "@/components/copy-button";
+import { OfferSide } from "@/components/swap-board";
 import { api, problemMessage } from "@/lib/api";
 import { type Call, useBrowserWallet } from "@/lib/browser-wallet";
-import {
-  card,
-  cardTitle,
-  ghostButton,
-  input,
-  label,
-  primaryButton,
-  selectInput,
-  stamp,
-} from "@/lib/ui";
+import { askToNotify, useSwapMaker } from "@/lib/swap-maker";
+import { card, cardTitle, ghostButton, input, label, primaryButton } from "@/lib/ui";
 import { scanToTip, type WalletState } from "@/lib/wallet-scan";
 
 /** The parts of an offer a person decides on (the rest is for the engine). */
@@ -26,6 +20,10 @@ type OfferSummary = {
   want_asset: string;
   want_amount: number;
 };
+
+/** What a listed offer's status says first. */
+const LISTED =
+  "Listed on the board. Takers are answered from any Cachet page of this tab while it stays open; close it and the offer comes down within a minute.";
 
 const textarea = `${input} min-h-[96px] resize-y font-data text-[13px]`;
 
@@ -71,9 +69,6 @@ export function SwapPanel({
   const [role, setRole] = useState<"make" | "take">("make");
   const [wallet, setWallet] = useState<WalletState | null>(null);
   const [assets, setAssets] = useState<PickableAsset[] | null>(null);
-  const names: Record<string, string> = Object.fromEntries(
-    (assets ?? []).map((asset) => [asset.asset_id, asset.display_name ?? ""]),
-  );
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -82,24 +77,29 @@ export function SwapPanel({
   const [giveAmount, setGiveAmount] = useState("1");
   const [wantAsset, setWantAsset] = useState("");
   const [wantAmount, setWantAmount] = useState("1");
-  const [madeOffer, setMadeOffer] = useState<{ slot: number; json: string } | null>(null);
   const [answer, setAnswer] = useState("");
   const [countersignature, setCountersignature] = useState<string | null>(null);
 
-  // The public board: the maker's listing and the take it last answered;
-  // the board offer a taker came from, and the token to read the answer.
+  // The maker's listed offer lives above the pages, so takes are answered
+  // from any page of this tab (lib/swap-maker.tsx).
+  const {
+    madeOffer,
+    setMadeOffer,
+    listing,
+    setListing,
+    status: boardStatus,
+    setStatus: setBoardStatus,
+    done: makerDone,
+    clear: clearOffer,
+    fundsVersion,
+    unseen,
+    markSeen,
+  } = useSwapMaker();
   const [listOnBoard, setListOnBoard] = useState(true);
-  const [listing, setListing] = useState<{ id: string; token: string } | null>(null);
-  const [boardStatus, setBoardStatus] = useState<string | null>(null);
-  const answeredTake = useRef<number | null>(null);
-  // Posting the offer again on a newer root (the board said it went stale).
-  const reposting = useRef(false);
-  // The parent passes a new callback on every render; the board's polling
-  // must not restart (and never fire) because of it.
-  const onChangeRef = useRef(onChange);
-  useEffect(() => {
-    onChangeRef.current = onChange;
-  }, [onChange]);
+  // Putting units already in a slot back on the board (after a reload).
+  const [relistSlot, setRelistSlot] = useState<number | null>(null);
+  const [relistWant, setRelistWant] = useState("");
+  const [relistAmount, setRelistAmount] = useState("1");
   const [takeFrom, setTakeFrom] = useState<string | null>(null);
   const [takerToken, setTakerToken] = useState<string | null>(null);
 
@@ -111,14 +111,29 @@ export function SwapPanel({
 
   useEffect(() => {
     setWallet(null);
-    setMadeOffer(null);
     setCountersignature(null);
     setTakeJson(null);
     setSwapped(null);
-    setListing(null);
-    setBoardStatus(null);
     setTakerToken(null);
+    setRelistSlot(null);
   }, [seed]);
+
+  // The offer being answered elsewhere moved funds: read the wallet again.
+  useEffect(() => {
+    if (fundsVersion === 0 || !enabled) return;
+    void scanToTip(call, seed.trim())
+      .then(setWallet)
+      .catch(() => undefined);
+    onChange();
+    // onChange is the parent's callback of this render; only a new
+    // version of the funds should trigger a read.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fundsVersion]);
+
+  // What happened to the offer is on screen here: nothing left unseen.
+  useEffect(() => {
+    if (unseen > 0) markSeen();
+  }, [unseen, markSeen]);
 
   // An offer taken from the board: load it on the taker's side.
   useEffect(() => {
@@ -170,8 +185,6 @@ export function SwapPanel({
     };
   }, [enabled]);
 
-  const nameOf = (assetId: string) => names[assetId] || `${assetId.slice(0, 12)}…`;
-
   async function step(label: string, work: () => Promise<void>) {
     setError(null);
     setStage(label);
@@ -199,10 +212,21 @@ export function SwapPanel({
       setWallet(await scan(seed.trim()));
     });
 
+  // An offer to take: read the wallet now, so the page can say before
+  // anything is proved whether it holds what the offer asks.
+  useEffect(() => {
+    if (!enabled || role !== "take" || wallet || offerText.trim() === "") return;
+    void refresh();
+    // refresh is a plain function of this render; the scan only needs to
+    // start when an offer arrives and the wallet is still unread.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabled, role, offerText, wallet]);
+
   // --- maker ----------------------------------------------------------------
 
-  const prepareOffer = () =>
-    step("Parking the units in a swap slot…", async () => {
+  const prepareOffer = () => {
+    if (listOnBoard) askToNotify();
+    return step("Parking the units in a swap slot…", async () => {
       const trimmed = seed.trim();
       let state = await scan(trimmed);
       const used = new Set(state.swap_slots.map((s) => s.slot));
@@ -240,112 +264,37 @@ export function SwapPanel({
         setStage("Listing it on the board…");
         const posted = await api.POST("/api/v1/swaps", { body: { offer: json } });
         if (posted.error) throw new Error(problemMessage(posted.error));
-        answeredTake.current = null;
         setListing({ id: posted.data.id, token: posted.data.maker_token });
-        setBoardStatus(
-          "Listed on the board. Keep this page open: it answers takers with your keys, and the offer leaves the board a minute after it closes.",
-        );
+        setBoardStatus(LISTED);
       }
     });
+  };
 
-  // The maker's page answers takes as they arrive: the engine checks each
-  // against the offer before signing, so answering is safe unattended.
-  useEffect(() => {
-    if (!listing || !madeOffer) return;
-    const headers = { "x-swap-token": listing.token };
-    const path = { id: listing.id };
-    let stopped = false;
-    const tick = async () => {
-      const board = await api.GET("/api/v1/swaps/{id}", { params: { path } });
-      if (board.data?.status === "closed") {
-        stopped = true;
-        setBoardStatus("Swapped: the taker relayed the transaction.");
-        onChangeRef.current();
-        return;
+  // Units still in a slot, from an offer this tab no longer holds: write a
+  // new offer on them and list it, without moving them again.
+  const relist = (slot: number) => {
+    askToNotify();
+    return step("Writing the offer…", async () => {
+      const trimmed = seed.trim();
+      if (!/^[0-9a-f]{64}$/.test(relistWant.trim().toLowerCase())) {
+        throw new Error("Choose the asset you want in exchange.");
       }
-      // Takers' wallets build on the roots of their last 100 blocks: an
-      // offer older than that cannot be taken. The board takes it down a
-      // little before; this page puts the same units up again on the
-      // chain's current root, and withdraws the old listing.
-      if (board.data?.status === "stale") {
-        if (reposting.current) return;
-        reposting.current = true;
-        setBoardStatus(
-          "Your offer got too old for takers' wallets: posting it again on a recent block…",
-        );
-        try {
-          const trimmed = seed.trim();
-          await scanToTip(call, trimmed);
-          const asked = JSON.parse(madeOffer.json) as OfferSummary;
-          const json = await call<string>("swap_make_offer", {
-            seed: trimmed,
-            slot: madeOffer.slot,
-            want_asset: asked.want_asset,
-            want_amount: asked.want_amount,
-          });
-          const posted = await api.POST("/api/v1/swaps", { body: { offer: json } });
-          if (posted.error) throw new Error(problemMessage(posted.error));
-          await api
-            .DELETE("/api/v1/swaps/{id}", { params: { path }, headers })
-            .catch(() => undefined);
-          stopped = true;
-          answeredTake.current = null;
-          setMadeOffer({ slot: madeOffer.slot, json });
-          setListing({ id: posted.data.id, token: posted.data.maker_token });
-          setBoardStatus(
-            "Listed again on a recent block. Keep this page open: it answers takers with your keys.",
-          );
-        } catch (failure) {
-          stopped = true;
-          setBoardStatus(
-            `Your offer got too old for takers, and posting it again failed (${failure instanceof Error ? failure.message : String(failure)}). Withdraw the units and make a new offer.`,
-          );
-        } finally {
-          reposting.current = false;
-        }
-        return;
-      }
-      const take = await api.GET("/api/v1/swaps/{id}/take", { params: { path }, headers });
-      const takenAt = take.data?.taken_at;
-      if (!take.data?.take || takenAt === null || takenAt === undefined) return;
-      if (answeredTake.current === takenAt) return;
-      answeredTake.current = takenAt;
-      setBoardStatus("A taker answered: checking their transaction against your offer…");
-      try {
-        const signed = await call<string>("swap_countersign", {
-          seed: seed.trim(),
-          slot: madeOffer.slot,
-          offer: madeOffer.json,
-          take: take.data.take,
-        });
-        const posted = await api.POST("/api/v1/swaps/{id}/countersignature", {
-          params: { path },
-          headers,
-          body: { countersignature: signed, taken_at: takenAt },
-        });
-        if (posted.error) throw new Error(problemMessage(posted.error));
-        setBoardStatus("Countersigned. Waiting for the taker to relay the swap…");
-      } catch (refusal) {
-        // Refused: release it, so the offer reopens now rather than after
-        // the hold, for a taker whose swap does pay.
-        await api
-          .DELETE("/api/v1/swaps/{id}/take", { params: { path }, headers })
-          .catch(() => undefined);
-        setBoardStatus(
-          `Refused a take: ${refusal instanceof Error ? refusal.message : String(refusal)}. Still listed.`,
-        );
-      }
-    };
-    const timer = setInterval(() => {
-      if (!stopped)
-        void tick().catch((failure: unknown) =>
-          setBoardStatus(
-            `Listed, but the board is unreachable right now (${failure instanceof Error ? failure.message : String(failure)}). Retrying…`,
-          ),
-        );
-    }, 4_000);
-    return () => clearInterval(timer);
-  }, [listing, madeOffer, call, seed]);
+      setWallet(await scan(trimmed));
+      const json = await call<string>("swap_make_offer", {
+        seed: trimmed,
+        slot,
+        want_asset: relistWant.trim().toLowerCase(),
+        want_amount: Number(relistAmount),
+      });
+      setStage("Listing it on the board…");
+      const posted = await api.POST("/api/v1/swaps", { body: { offer: json } });
+      if (posted.error) throw new Error(problemMessage(posted.error));
+      setMadeOffer({ slot, json });
+      setListing({ id: posted.data.id, token: posted.data.maker_token });
+      setBoardStatus(LISTED);
+      setRelistSlot(null);
+    });
+  };
 
   const countersign = () =>
     step("Checking the swap against your offer…", async () => {
@@ -486,23 +435,88 @@ export function SwapPanel({
   const busy = stage !== null;
   const heldRow = wallet?.holdings.find((holding) => holding.asset_id === giveAsset);
   const held = heldRow ? Number(heldRow.amount) : null;
+  const byId = new Map((assets ?? []).map((asset) => [asset.asset_id, asset]));
+  const holdings: PickableAsset[] = (wallet?.holdings ?? []).map((holding) => ({
+    ...(byId.get(holding.asset_id) ?? {}),
+    asset_id: holding.asset_id,
+  }));
+  const heldOf = (assetId: string) =>
+    Number(wallet?.holdings.find((holding) => holding.asset_id === assetId)?.amount ?? "0");
+  const wantChosen = wantAsset.trim().toLowerCase();
+  const offerReady =
+    giveAsset !== "" &&
+    /^[0-9a-f]{64}$/.test(wantChosen) &&
+    Number(giveAmount) > 0 &&
+    Number(wantAmount) > 0 &&
+    (held === null || Number(giveAmount) <= held);
+  const inFlight = madeOffer !== null || listing !== null;
+  let made: OfferSummary | null = null;
+  try {
+    made = madeOffer ? (JSON.parse(madeOffer.json) as OfferSummary) : null;
+  } catch {
+    made = null;
+  }
+  // What the taker holds of what the offer asks, once the wallet is read.
+  const canPay = offer && wallet ? heldOf(offer.want_asset) >= offer.want_amount : null;
+  const fieldRow = "grid grid-cols-[minmax(0,1fr)_8.5rem] gap-x-3 gap-y-1.5";
+  const hint = "min-h-5 text-[13px] text-neutral-500";
+  const caption = "font-data text-[12px] uppercase tracking-[0.14em] text-neutral-500";
+  const statusStrip =
+    "flex items-start gap-3 rounded-md border border-accent/30 bg-accent/[0.04] px-4 py-3 text-sm leading-relaxed text-neutral-200";
+  const doneStrip =
+    "flex items-start gap-3 rounded-md border border-emerald-300/30 bg-emerald-300/[0.05] px-4 py-3 text-sm leading-relaxed text-emerald-200";
+  const pulse = (
+    <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full bg-accent motion-safe:animate-pulse" />
+  );
+  const offerCard = (title: string, give: OfferSummary) => (
+    <div className="rounded-md border border-line bg-black/20 px-4 py-3.5">
+      <p className={caption}>{title}</p>
+      <div className="mt-2.5 grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+        <OfferSide
+          compact
+          amount={give.give_amount}
+          id={give.give_asset}
+          asset={byId.get(give.give_asset)}
+        />
+        <span aria-hidden className="text-lg text-accent">
+          →
+        </span>
+        <OfferSide
+          compact
+          amount={give.want_amount}
+          id={give.want_asset}
+          asset={byId.get(give.want_asset)}
+        />
+      </div>
+    </div>
+  );
 
   return (
     <section id="swap" className={`${card} rise scroll-mt-8`} data-testid="swap-panel">
-      <h2 className={`${cardTitle} mb-3`}>2 · Make or take an offer</h2>
-      <p className="max-w-prose text-[13px] leading-relaxed text-neutral-500">
-        Both payments travel in one shielded transaction: it lands whole or not at all, and nobody
-        holds anything in between. Offers go on the board above, or pass between two pages by hand.
-        Keys stay in each browser.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        <h2 className={cardTitle}>2 · Make or take an offer</h2>
+        <button
+          type="button"
+          className="font-data text-[13px] text-neutral-500 transition hover:text-accent disabled:opacity-40"
+          onClick={refresh}
+          disabled={busy}
+          title={wallet ? `Scanned to block ${wallet.scanned_height}` : undefined}
+        >
+          {wallet ? "Rescan" : "Scan my holdings"}
+        </button>
+      </div>
 
-      <div role="radiogroup" aria-label="Your side" className="mt-4 flex flex-wrap gap-2">
+      <div
+        role="radiogroup"
+        aria-label="Your side"
+        className="mt-4 inline-flex overflow-hidden rounded-md border border-white/10 bg-black/30"
+      >
         {(
           [
             ["make", "Make an offer"],
             ["take", "Take an offer"],
           ] as const
-        ).map(([value, text]) => (
+        ).map(([value, text], index) => (
           <button
             key={value}
             type="button"
@@ -510,156 +524,168 @@ export function SwapPanel({
             aria-checked={role === value}
             data-testid={`swap-role-${value}`}
             onClick={() => setRole(value)}
-            className={
+            className={`px-4 py-2 text-sm transition ${index > 0 ? "border-l border-white/[0.07]" : ""} ${
               role === value
-                ? "rounded-[3px] border border-accent/60 bg-accent/[0.07] px-3.5 py-2 text-sm text-accent"
-                : "rounded-[3px] border border-line px-3.5 py-2 text-sm text-neutral-300 hover:border-line-strong"
-            }
+                ? "bg-accent/[0.09] text-accent"
+                : "text-neutral-400 hover:bg-white/[0.03] hover:text-neutral-200"
+            }`}
           >
             {text}
           </button>
         ))}
-        <button
-          type="button"
-          className={`${ghostButton} !px-3.5 !py-2 !text-sm sm:ml-auto`}
-          onClick={refresh}
-          disabled={busy}
-        >
-          {wallet ? "Rescan" : "Scan my holdings"}
-        </button>
       </div>
 
       {role === "make" && (
-        <div className="mt-5 flex flex-col gap-3.5">
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
-            <div className="flex flex-col gap-1.5">
-              <label className={label} htmlFor="swap-give-asset">
-                You give
-              </label>
-              {wallet ? (
-                <select
-                  id="swap-give-asset"
-                  data-testid="swap-give-asset"
-                  className={selectInput}
-                  value={giveAsset}
-                  onChange={(event) => setGiveAsset(event.target.value)}
-                >
-                  <option value="">
-                    {wallet.holdings.length > 0 ? "choose a holding" : "nothing held yet"}
-                  </option>
-                  {wallet.holdings.map((holding) => (
-                    <option key={holding.asset_id} value={holding.asset_id}>
-                      {nameOf(holding.asset_id)} · {holding.amount} held
-                    </option>
-                  ))}
-                </select>
-              ) : (
+        <div className="mt-6 flex flex-col gap-4">
+          {inFlight && made && offerCard(makerDone ? "Your offer, filled" : "Your offer", made)}
+
+          {!inFlight && (
+            <>
+              <div className={fieldRow}>
+                <label className={label} htmlFor="swap-give-asset">
+                  You give
+                </label>
+                <label className={label} htmlFor="swap-give-amount">
+                  Units
+                </label>
+                {wallet ? (
+                  <AssetPicker
+                    id="swap-give-asset"
+                    testId="swap-give-asset"
+                    value={giveAsset}
+                    onChange={setGiveAsset}
+                    assets={holdings}
+                    showAll
+                    detail={(asset) => `${heldOf(asset.asset_id).toLocaleString("en-US")} held`}
+                    placeholder={holdings.length > 0 ? "choose what you give" : "nothing held yet"}
+                    empty="You hold nothing by that name."
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    id="swap-give-asset"
+                    className={`${FIELD_HEIGHT} rounded-md border border-dashed border-line-strong px-3.5 text-left text-sm text-neutral-400 transition hover:border-accent/60 hover:text-accent disabled:opacity-40`}
+                    onClick={refresh}
+                    disabled={busy}
+                  >
+                    Scan to choose from what you hold
+                  </button>
+                )}
+                <input
+                  id="swap-give-amount"
+                  data-testid="swap-give-amount"
+                  className={`${input} ${FIELD_HEIGHT} tabular-nums`}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={held ?? undefined}
+                  value={giveAmount}
+                  onChange={(event) => setGiveAmount(event.target.value)}
+                />
+                <span className={hint} />
+                <span className={hint}>
+                  {held !== null && (
+                    <button
+                      type="button"
+                      className="transition hover:text-accent"
+                      onClick={() => setGiveAmount(String(held))}
+                    >
+                      of {held.toLocaleString("en-US")} · <span className="underline">all</span>
+                    </button>
+                  )}
+                </span>
+              </div>
+
+              <div className={fieldRow}>
+                <label className={label} htmlFor="swap-want-asset">
+                  You want
+                </label>
+                <label className={label} htmlFor="swap-want-amount">
+                  Units
+                </label>
+                <AssetPicker
+                  id="swap-want-asset"
+                  testId="swap-want-asset"
+                  value={wantAsset}
+                  onChange={setWantAsset}
+                  assets={assets ?? []}
+                  loading={assets === null}
+                  exclude={giveAsset}
+                />
+                <input
+                  id="swap-want-amount"
+                  data-testid="swap-want-amount"
+                  className={`${input} ${FIELD_HEIGHT} tabular-nums`}
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  value={wantAmount}
+                  onChange={(event) => setWantAmount(event.target.value)}
+                />
+              </div>
+
+              {offerReady &&
+                offerCard("Your offer", {
+                  give_asset: giveAsset,
+                  give_amount: Number(giveAmount),
+                  want_asset: wantChosen,
+                  want_amount: Number(wantAmount),
+                })}
+
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
                 <button
                   type="button"
-                  id="swap-give-asset"
-                  className="rounded-md border border-dashed border-line-strong px-3.5 py-2.5 text-left text-sm text-neutral-400 transition hover:border-accent/60 hover:text-accent disabled:opacity-40"
-                  onClick={refresh}
-                  disabled={busy}
+                  data-testid="swap-prepare"
+                  className={primaryButton}
+                  disabled={busy || !offerReady}
+                  onClick={prepareOffer}
                 >
-                  Scan to choose from what you hold
+                  {listOnBoard ? "Post the offer" : "Prepare the offer"}
                 </button>
-              )}
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className={label} htmlFor="swap-give-amount">
-                Units
-              </label>
-              <input
-                id="swap-give-amount"
-                data-testid="swap-give-amount"
-                className={`${input} tabular-nums`}
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={held ?? undefined}
-                value={giveAmount}
-                onChange={(event) => setGiveAmount(event.target.value)}
-              />
-              {held !== null && (
-                <button
-                  type="button"
-                  className="self-start text-[13px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-accent"
-                  onClick={() => setGiveAmount(String(held))}
-                >
-                  of {held.toLocaleString("en-US")} · all
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
-            <div className="flex flex-col gap-1.5">
-              <label className={label} htmlFor="swap-want-asset">
-                You want
-              </label>
-              <AssetPicker
-                id="swap-want-asset"
-                testId="swap-want-asset"
-                value={wantAsset}
-                onChange={setWantAsset}
-                assets={assets ?? []}
-                loading={assets === null}
-                exclude={giveAsset}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className={label} htmlFor="swap-want-amount">
-                Units
-              </label>
-              <input
-                id="swap-want-amount"
-                data-testid="swap-want-amount"
-                className={`${input} tabular-nums`}
-                type="number"
-                inputMode="numeric"
-                min={1}
-                value={wantAmount}
-                onChange={(event) => setWantAmount(event.target.value)}
-              />
-            </div>
-          </div>
-          <label className="flex cursor-pointer items-center gap-2.5 text-sm text-neutral-300">
-            <input
-              type="checkbox"
-              data-testid="swap-list-on-board"
-              className="accent-[var(--color-accent)]"
-              checked={listOnBoard}
-              onChange={(event) => setListOnBoard(event.target.checked)}
-            />
-            List it on the public swap board (otherwise, pass the messages by hand)
-          </label>
-          <button
-            type="button"
-            data-testid="swap-prepare"
-            className={`${primaryButton} self-start`}
-            disabled={
-              busy ||
-              !giveAsset ||
-              Number(giveAmount) <= 0 ||
-              (held !== null && Number(giveAmount) > held) ||
-              Number(wantAmount) <= 0
-            }
-            onClick={prepareOffer}
-          >
-            Prepare the offer
-          </button>
-          <p className="text-[13px] leading-relaxed text-neutral-500">
-            The units move to a one-off swap slot of your seed first: the offer shows the taker that
-            slot, never your main holdings. Withdraw them any time to cancel.
-          </p>
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm text-neutral-300">
+                  <input
+                    type="checkbox"
+                    data-testid="swap-list-on-board"
+                    className="h-4 w-4 accent-accent"
+                    checked={listOnBoard}
+                    onChange={(event) => setListOnBoard(event.target.checked)}
+                  />
+                  List it on the board
+                </label>
+              </div>
+              <p className="text-[13px] leading-relaxed text-neutral-500">
+                Your units wait in a one-off slot of your seed until someone takes the offer; the
+                offer shows that slot, never your main holdings. Cancel any time: the units come
+                back to your wallet.
+                {!listOnBoard &&
+                  " Unlisted, the offer and its answers pass between the two of you by hand."}
+              </p>
+            </>
+          )}
 
           {boardStatus && (
-            <p
+            <div
               role="status"
               data-testid="swap-board-status"
-              className="rounded-[3px] border border-accent/40 px-3.5 py-2.5 text-sm text-accent"
+              className={makerDone ? doneStrip : statusStrip}
             >
-              {boardStatus}
-            </p>
+              {makerDone ? <span aria-hidden>✓</span> : pulse}
+              <span>{boardStatus}</span>
+            </div>
+          )}
+          {makerDone && (
+            <button
+              type="button"
+              className={`${ghostButton} self-start !px-5 !py-2.5 !text-sm`}
+              onClick={() => {
+                clearOffer();
+                setCountersignature(null);
+                setAnswer("");
+                setGiveAsset("");
+              }}
+            >
+              Make another offer
+            </button>
           )}
 
           {madeOffer && !listing && (
@@ -711,68 +737,182 @@ export function SwapPanel({
           )}
 
           {wallet && wallet.swap_slots.length > 0 && (
-            <ul className="flex flex-col gap-2">
-              {wallet.swap_slots.flatMap((parked) =>
-                parked.holdings.map((holding) => (
-                  <li
-                    key={`${parked.slot}-${holding.asset_id}`}
-                    className="flex flex-wrap items-center gap-3 text-sm text-neutral-300"
-                  >
-                    <span className={stamp}>slot {parked.slot + 1}</span>
-                    {nameOf(holding.asset_id)} × {holding.amount}
-                    <button
-                      type="button"
-                      className={ghostButton}
-                      disabled={busy}
-                      onClick={() => withdraw(parked.slot, holding.asset_id, holding.amount)}
-                    >
-                      Withdraw
-                    </button>
-                  </li>
-                )),
-              )}
-            </ul>
+            <div>
+              <p className={caption}>Waiting in swap slots</p>
+              <ul className="mt-2 divide-y divide-line rounded-md border border-line">
+                {wallet.swap_slots.flatMap((parked) =>
+                  parked.holdings.map((holding) => {
+                    const offered = madeOffer?.slot === parked.slot;
+                    return (
+                      <li key={`${parked.slot}-${holding.asset_id}`} className="px-3 py-2.5">
+                        <div className="flex items-center gap-3">
+                          <AssetThumb asset={byId.get(holding.asset_id)} id={holding.asset_id} />
+                          <span className="min-w-0 flex-1 truncate text-sm text-neutral-200">
+                            <span className="font-display text-lg tabular-nums text-neutral-50">
+                              {Number(holding.amount).toLocaleString("en-US")}
+                            </span>{" "}
+                            <AssetTitle asset={byId.get(holding.asset_id)} />
+                            <span className="font-data ml-2 text-[12px] text-neutral-500">
+                              {offered ? "on offer" : "no offer"} · slot {parked.slot + 1}
+                            </span>
+                          </span>
+                          {!offered && listing === null && (
+                            <button
+                              type="button"
+                              data-testid="swap-relist"
+                              className="shrink-0 rounded-sm px-2 py-1 text-[13px] text-accent transition hover:text-accent-hover disabled:opacity-40"
+                              disabled={busy}
+                              onClick={() =>
+                                setRelistSlot(relistSlot === parked.slot ? null : parked.slot)
+                              }
+                            >
+                              Post again
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            className="shrink-0 rounded-sm px-2 py-1 text-[13px] text-neutral-400 transition hover:text-accent disabled:opacity-40"
+                            disabled={busy}
+                            title="Moves the units back to your wallet; an offer on them is taken down."
+                            onClick={() => withdraw(parked.slot, holding.asset_id, holding.amount)}
+                          >
+                            {offered ? "Cancel offer" : "Return to wallet"}
+                          </button>
+                        </div>
+                        {relistSlot === parked.slot && !offered && (
+                          <div className="mt-3 flex flex-col gap-3 border-t border-line pt-3">
+                            <div className={fieldRow}>
+                              <label className={label} htmlFor="swap-relist-want">
+                                In exchange, you want
+                              </label>
+                              <label className={label} htmlFor="swap-relist-amount">
+                                Units
+                              </label>
+                              <AssetPicker
+                                id="swap-relist-want"
+                                testId="swap-relist-want"
+                                value={relistWant}
+                                onChange={setRelistWant}
+                                assets={assets ?? []}
+                                loading={assets === null}
+                                exclude={holding.asset_id}
+                              />
+                              <input
+                                id="swap-relist-amount"
+                                className={`${input} ${FIELD_HEIGHT} tabular-nums`}
+                                type="number"
+                                inputMode="numeric"
+                                min={1}
+                                value={relistAmount}
+                                onChange={(event) => setRelistAmount(event.target.value)}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              className={`${primaryButton} self-start !px-5 !py-2.5 !text-sm`}
+                              disabled={
+                                busy ||
+                                !/^[0-9a-f]{64}$/.test(relistWant.trim().toLowerCase()) ||
+                                Number(relistAmount) <= 0
+                              }
+                              onClick={() => relist(parked.slot)}
+                            >
+                              Post these {Number(holding.amount).toLocaleString("en-US")} units
+                            </button>
+                          </div>
+                        )}
+                      </li>
+                    );
+                  }),
+                )}
+              </ul>
+            </div>
           )}
         </div>
       )}
 
       {role === "take" && (
-        <div className="mt-5 flex flex-col gap-3.5">
-          <label className={label} htmlFor="swap-offer-in">
-            1 · Paste the offer
-          </label>
-          <textarea
-            id="swap-offer-in"
-            data-testid="swap-offer-in"
-            className={textarea}
-            value={offerText}
-            onChange={(event) => setOfferText(event.target.value)}
-          />
-          {offer && (
-            <p data-testid="swap-offer-summary" className="text-base text-neutral-200">
-              You get <strong>{offer.give_amount}</strong> {nameOf(offer.give_asset)} for{" "}
-              <strong>{offer.want_amount}</strong> {nameOf(offer.want_asset)}.
+        <div className="mt-6 flex flex-col gap-4">
+          {!takeFrom && (
+            <>
+              <label className={label} htmlFor="swap-offer-in">
+                Paste an offer
+              </label>
+              <textarea
+                id="swap-offer-in"
+                data-testid="swap-offer-in"
+                className={textarea}
+                value={offerText}
+                onChange={(event) => setOfferText(event.target.value)}
+                placeholder="the offer message the maker sent you"
+              />
+            </>
+          )}
+          {!takeFrom && !offer && (
+            <p className="text-[13px] text-neutral-500">
+              Or pick one on the board above: it loads here.
             </p>
           )}
-          <button
-            type="button"
-            data-testid="swap-take"
-            className={`${primaryButton} self-start`}
-            disabled={busy || offer === null}
-            onClick={takeOffer}
-          >
-            Build and sign my side
-          </button>
-          {takeJson && takeFrom && !swapped && (
-            <p
-              role="status"
-              data-testid="swap-take-status"
-              className="rounded-[3px] border border-accent/40 px-3.5 py-2.5 text-sm text-accent"
+          {offer && (
+            <div
+              data-testid="swap-offer-summary"
+              className="grid gap-4 rounded-md border border-line bg-black/20 px-4 py-3.5 sm:grid-cols-2"
             >
-              {takerToken
-                ? "Sent to the maker through the board. The swap completes here as soon as they countersign."
-                : "Building your side…"}
-            </p>
+              <div>
+                <p className={caption}>You get</p>
+                <div className="mt-2">
+                  <OfferSide
+                    compact
+                    amount={offer.give_amount}
+                    id={offer.give_asset}
+                    asset={byId.get(offer.give_asset)}
+                  />
+                </div>
+              </div>
+              <div>
+                <p className={caption}>You pay</p>
+                <div className="mt-2">
+                  <OfferSide
+                    compact
+                    amount={offer.want_amount}
+                    id={offer.want_asset}
+                    asset={byId.get(offer.want_asset)}
+                  />
+                </div>
+                {wallet && (
+                  <p
+                    data-testid="swap-pay-held"
+                    className={`mt-2 text-[13px] ${canPay ? "text-neutral-500" : "text-red-300"}`}
+                  >
+                    You hold {heldOf(offer.want_asset).toLocaleString("en-US")}
+                    {canPay
+                      ? "."
+                      : `: not enough to pay ${offer.want_amount.toLocaleString("en-US")}.`}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          {!swapped && (
+            <button
+              type="button"
+              data-testid="swap-take"
+              className={`${primaryButton} self-start`}
+              disabled={busy || offer === null || canPay === false}
+              onClick={takeOffer}
+            >
+              Take it: build and sign
+            </button>
+          )}
+          {takeJson && takeFrom && !swapped && (
+            <div role="status" data-testid="swap-take-status" className={statusStrip}>
+              {pulse}
+              <span>
+                {takerToken
+                  ? "Sent to the maker through the board. The swap completes here as soon as their page countersigns."
+                  : "Building your side…"}
+              </span>
+            </div>
           )}
           {takeJson && !takeFrom && (
             <>
@@ -808,22 +948,25 @@ export function SwapPanel({
             </>
           )}
           {swapped && (
-            <p data-testid="swap-done" className="text-sm text-emerald-300">
-              Swapped in one transaction:{" "}
-              <Link
-                href={`/tx/${swapped}`}
-                className="font-data underline decoration-emerald-300/40"
-              >
-                {swapped.slice(0, 16)}…
-              </Link>
-            </p>
+            <div data-testid="swap-done" className={doneStrip}>
+              <span aria-hidden>✓</span>
+              <span>
+                Swapped in one transaction:{" "}
+                <Link
+                  href={`/tx/${swapped}`}
+                  className="font-data underline decoration-emerald-300/40 underline-offset-2"
+                >
+                  {swapped.slice(0, 16)}…
+                </Link>
+              </span>
+            </div>
           )}
         </div>
       )}
 
       {stage && (
-        <p role="status" className="mt-4 flex items-center gap-2 text-[13px] text-accent/90">
-          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+        <p role="status" className="mt-5 flex items-center gap-2.5 text-[13px] text-accent/90">
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent motion-safe:animate-pulse" />
           {stage}
         </p>
       )}
