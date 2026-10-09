@@ -3,16 +3,18 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 
+import type { ListedAsset } from "@/components/asset-chip";
 import { CopyButton } from "@/components/copy-button";
+import { OfferSide, rate } from "@/components/swap-board";
 import { api, problemMessage } from "@/lib/api";
 import { explorerTxUrl } from "@/lib/site";
 import { stamp } from "@/lib/ui";
 
 const sectionTitle = "font-display text-2xl font-medium text-neutral-100";
 
-/** An asset id, labelled with its name when this registry knows one. */
-function AssetLabel({ assetId }: { assetId: string }) {
-  const asset = useQuery({
+/** What this registry knows of one asset. */
+function useAsset(assetId: string) {
+  return useQuery({
     queryKey: ["asset", assetId],
     queryFn: async () => {
       const { data } = await api.GET("/api/v1/assets/{asset_id}", {
@@ -22,6 +24,11 @@ function AssetLabel({ assetId }: { assetId: string }) {
     },
     staleTime: 60_000,
   });
+}
+
+/** An asset id, labelled with its name when this registry knows one. */
+function AssetLabel({ assetId }: { assetId: string }) {
+  const asset = useAsset(assetId);
   const name = asset.data?.display_name;
   return (
     <Link
@@ -30,6 +37,59 @@ function AssetLabel({ assetId }: { assetId: string }) {
     >
       {name ?? <span className="font-data break-all text-sm">{assetId}</span>}
     </Link>
+  );
+}
+
+/**
+ * The board offer this transaction filled: its terms were public on the
+ * board, and the registry links the two only once the chain holds the very
+ * transaction the maker countersigned.
+ */
+function SwapFill({
+  swap,
+}: {
+  swap: {
+    give_asset: string;
+    give_amount: number;
+    want_asset: string;
+    want_amount: number;
+  };
+}) {
+  const give = useAsset(swap.give_asset);
+  const want = useAsset(swap.want_asset);
+  return (
+    <section data-testid="tx-swap">
+      <h2 className={sectionTitle}>Swap</h2>
+      <p className="mt-3 max-w-prose text-base leading-relaxed text-neutral-300">
+        This transaction filled an offer from the swap board: both payments, in one transaction.
+      </p>
+      <div className="mt-5 grid gap-5 rounded-md border border-line bg-white/[0.02] p-5 sm:grid-cols-2">
+        <div className="flex min-w-0 flex-col gap-3">
+          <span className="font-data text-[12px] uppercase tracking-[0.14em] text-neutral-500">
+            The maker gave
+          </span>
+          <OfferSide
+            amount={swap.give_amount}
+            id={swap.give_asset}
+            asset={(give.data ?? undefined) as ListedAsset | undefined}
+          />
+        </div>
+        <div className="flex min-w-0 flex-col gap-3">
+          <span className="font-data text-[12px] uppercase tracking-[0.14em] text-neutral-500">
+            The taker gave
+          </span>
+          <OfferSide
+            amount={swap.want_amount}
+            id={swap.want_asset}
+            asset={(want.data ?? undefined) as ListedAsset | undefined}
+          />
+        </div>
+      </div>
+      <p className="font-data mt-3 text-[13px] text-neutral-500">
+        rate 1 : {rate(swap.give_amount, swap.want_amount)} · who the two parties are stays
+        encrypted
+      </p>
+    </section>
   );
 }
 
@@ -100,6 +160,8 @@ export function TxDetail({ txid }: { txid: string }) {
 
       {tx.data && (
         <>
+          {tx.data.swap && <SwapFill swap={tx.data.swap} />}
+
           <section>
             <h2 className={sectionTitle}>Issuance</h2>
             {tx.data.issuance ? (
@@ -168,7 +230,9 @@ export function TxDetail({ txid }: { txid: string }) {
             <h2 className={sectionTitle}>Shielded</h2>
             <p className="mt-3 max-w-prose text-base leading-relaxed text-neutral-300">
               {tx.data.orchard_actions > 0
-                ? `${tx.data.orchard_actions} Orchard action${tx.data.orchard_actions === 1 ? "" : "s"}. Which asset moved, how much and to whom is encrypted: nothing here can tell.`
+                ? tx.data.swap
+                  ? `${tx.data.orchard_actions} Orchard actions. The terms above come from the public offer; the actions themselves stay encrypted, and so do the two parties.`
+                  : `${tx.data.orchard_actions} Orchard action${tx.data.orchard_actions === 1 ? "" : "s"}. Which asset moved, how much and to whom is encrypted: nothing here can tell.`
                 : "No Orchard actions."}
             </p>
             {(tx.data.transparent_inputs > 0 ||

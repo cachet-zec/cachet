@@ -613,6 +613,23 @@ pub fn prepare_verifying_key() {
     let _ = verifying_key();
 }
 
+/// The id the finished swap will have, read from the take: a v6 txid
+/// commits to the effecting data only, never to proofs or signatures, so
+/// the maker's countersignature does not change it. The maker and the
+/// registry both know which transaction to look for before it is relayed.
+/// Hex, display byte order.
+pub fn take_txid(take: &Take) -> Result<String, SwapError> {
+    if take.version != VERSION {
+        return Err(SwapError::Version(take.version));
+    }
+    let raw = hex::decode(&take.tx).map_err(|_| SwapError::Malformed("transaction hex"))?;
+    let tx = Transaction::read(raw.as_slice(), BranchId::Nu7)
+        .map_err(|_| SwapError::Malformed("transaction"))?;
+    let mut txid = *tx.txid().as_ref();
+    txid.reverse();
+    Ok(hex::encode(txid))
+}
+
 /// What a registry checks before holding an offer for a take, with no key:
 /// everything the maker will check except the payment (only the maker can
 /// decrypt it), plus what makes a take expensive to fake. The proof must

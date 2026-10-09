@@ -336,7 +336,15 @@ pub(crate) async fn decode_transaction(
     if let Some(issuance) = &decoded.issuance {
         refuse_hidden_issuer(&state, Some(issuance.issuer.as_str())).await?;
     }
-    Ok(Json(decoded.into()))
+    let mined = decoded.height.is_some();
+    let mut response: crate::dto::DecodedTransactionResponse = decoded.into();
+    if let (Some(store), true) = (&state.metadata, mined) {
+        response.swap =
+            crate::swaps::fill_for(store.as_ref(), state.chain.as_ref(), &response.txid)
+                .await
+                .map(Into::into);
+    }
+    Ok(Json(response))
 }
 
 /// Public events of an asset's life, oldest first. Transfers are shielded

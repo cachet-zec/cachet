@@ -200,6 +200,8 @@ async fn main() -> anyhow::Result<()> {
                             tracing::warn!(%error, "block cache warm-up failed; will retry");
                         }
                         if let Some(gc) = &gc_index {
+                            cachet_api::swaps::confirm_fills(gc.as_ref(), warm_backend.as_ref())
+                                .await;
                             gc_pass(gc).await;
                         }
                     }

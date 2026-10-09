@@ -14,7 +14,7 @@ use sqlx::Row;
 
 use crate::{
     AssetIndex, HiddenEntry, IndexError, ModerationKind, SWAP_MAKER_AWAY_SECS, SWAP_TAKE_HOLD_SECS,
-    SwapRow,
+    SwapFill, SwapRow,
 };
 
 #[async_trait]
@@ -137,8 +137,29 @@ pub trait MetadataStore: Send + Sync {
         _maker_token: [u8; 32],
         _taken_at: i64,
         _countersignature: &str,
+        _txid: &str,
     ) -> Result<bool, IndexError> {
         Ok(false)
+    }
+
+    /// Countersigned offers whose transaction the chain has not shown yet.
+    async fn swap_awaiting_fill(&self) -> Result<Vec<SwapRow>, IndexError> {
+        Ok(Vec::new())
+    }
+
+    /// The offer countersigned for transaction `txid`, if any.
+    async fn swap_for_txid(&self, _txid: &str) -> Result<Option<SwapRow>, IndexError> {
+        Ok(None)
+    }
+
+    /// Record a swap the chain shows landed, and close its offer.
+    async fn swap_record_fill(&self, _fill: &SwapFill) -> Result<(), IndexError> {
+        Ok(())
+    }
+
+    /// The board offer transaction `txid` filled, if it filled one.
+    async fn swap_fill(&self, _txid: &str) -> Result<Option<SwapFill>, IndexError> {
+        Ok(None)
     }
 
     /// Drop the take holding an offer (the maker refused it), so the offer
@@ -219,7 +240,22 @@ fn swap_row(row: sqlx::postgres::PgRow) -> Result<SwapRow, IndexError> {
             .transpose()?,
         taken_at: row.get("taken_at"),
         countersignature: row.get("countersignature"),
+        txid: row.get("txid"),
         closed: row.get("closed"),
+    })
+}
+
+fn swap_fill_row(row: sqlx::postgres::PgRow) -> Result<SwapFill, IndexError> {
+    Ok(SwapFill {
+        txid: row.get("txid"),
+        offer_id: row.get("offer_id"),
+        give_asset: bytes32(row.get("give_asset"), "give asset")?,
+        give_amount: u64::try_from(row.get::<i64, _>("give_amount"))
+            .map_err(|_| out_of_range("give amount"))?,
+        want_asset: bytes32(row.get("want_asset"), "want asset")?,
+        want_amount: u64::try_from(row.get::<i64, _>("want_amount"))
+            .map_err(|_| out_of_range("want amount"))?,
+        height: u64::try_from(row.get::<i64, _>("height")).map_err(|_| out_of_range("height"))?,
     })
 }
 
@@ -406,9 +442,10 @@ impl MetadataStore for AssetIndex {
         maker_token: [u8; 32],
         taken_at: i64,
         countersignature: &str,
+        txid: &str,
     ) -> Result<bool, IndexError> {
         let result = sqlx::query(
-            "UPDATE swap_offers SET countersignature = $4
+            "UPDATE swap_offers SET countersignature = $4, txid = $5
              WHERE id = $1 AND maker_token = $2 AND taken_at = $3
                AND take IS NOT NULL AND countersignature IS NULL AND NOT closed",
         )
@@ -416,9 +453,62 @@ impl MetadataStore for AssetIndex {
         .bind(maker_token.as_slice())
         .bind(taken_at)
         .bind(countersignature)
+        .bind(txid)
         .execute(self.pool())
         .await?;
         Ok(result.rows_affected() == 1)
+    }
+
+    async fn swap_awaiting_fill(&self) -> Result<Vec<SwapRow>, IndexError> {
+        let rows = sqlx::query(
+            "SELECT o.* FROM swap_offers o
+             WHERE o.txid IS NOT NULL
+               AND NOT EXISTS (SELECT 1 FROM swap_fills f WHERE f.txid = o.txid)",
+        )
+        .fetch_all(self.pool())
+        .await?;
+        rows.into_iter().map(swap_row).collect()
+    }
+
+    async fn swap_for_txid(&self, txid: &str) -> Result<Option<SwapRow>, IndexError> {
+        let row = sqlx::query("SELECT * FROM swap_offers WHERE txid = $1 LIMIT 1")
+            .bind(txid)
+            .fetch_optional(self.pool())
+            .await?;
+        row.map(swap_row).transpose()
+    }
+
+    async fn swap_record_fill(&self, fill: &SwapFill) -> Result<(), IndexError> {
+        let mut tx = self.pool().begin().await?;
+        sqlx::query(
+            "INSERT INTO swap_fills (txid, offer_id, give_asset, give_amount, want_asset,
+                 want_amount, height)
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (txid) DO NOTHING",
+        )
+        .bind(&fill.txid)
+        .bind(&fill.offer_id)
+        .bind(fill.give_asset.as_slice())
+        .bind(i64::try_from(fill.give_amount).map_err(|_| out_of_range("give amount"))?)
+        .bind(fill.want_asset.as_slice())
+        .bind(i64::try_from(fill.want_amount).map_err(|_| out_of_range("want amount"))?)
+        .bind(i64::try_from(fill.height).map_err(|_| out_of_range("height"))?)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query("UPDATE swap_offers SET closed = true WHERE id = $1")
+            .bind(&fill.offer_id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    async fn swap_fill(&self, txid: &str) -> Result<Option<SwapFill>, IndexError> {
+        let row = sqlx::query("SELECT * FROM swap_fills WHERE txid = $1")
+            .bind(txid)
+            .fetch_optional(self.pool())
+            .await?;
+        row.map(swap_fill_row).transpose()
     }
 
     async fn swap_release(&self, id: &str, maker_token: [u8; 32]) -> Result<bool, IndexError> {
@@ -508,6 +598,7 @@ pub struct MemoryMetadataStore {
     moderation: Mutex<ModerationMap>,
     settings: Mutex<HashMap<String, String>>,
     swaps: Mutex<Vec<SwapRow>>,
+    fills: Mutex<Vec<SwapFill>>,
 }
 
 impl MemoryMetadataStore {
@@ -719,6 +810,7 @@ impl MetadataStore for MemoryMetadataStore {
         maker_token: [u8; 32],
         taken_at: i64,
         countersignature: &str,
+        txid: &str,
     ) -> Result<bool, IndexError> {
         let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
         match swaps.iter_mut().find(|row| {
@@ -731,10 +823,50 @@ impl MetadataStore for MemoryMetadataStore {
         }) {
             Some(row) => {
                 row.countersignature = Some(countersignature.to_owned());
+                row.txid = Some(txid.to_owned());
                 Ok(true)
             }
             None => Ok(false),
         }
+    }
+
+    async fn swap_awaiting_fill(&self) -> Result<Vec<SwapRow>, IndexError> {
+        let fills = self.fills.lock().expect("metadata store lock poisoned");
+        let swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        Ok(swaps
+            .iter()
+            .filter(|row| {
+                row.txid
+                    .as_ref()
+                    .is_some_and(|txid| !fills.iter().any(|fill| &fill.txid == txid))
+            })
+            .cloned()
+            .collect())
+    }
+
+    async fn swap_for_txid(&self, txid: &str) -> Result<Option<SwapRow>, IndexError> {
+        let swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        Ok(swaps
+            .iter()
+            .find(|row| row.txid.as_deref() == Some(txid))
+            .cloned())
+    }
+
+    async fn swap_record_fill(&self, fill: &SwapFill) -> Result<(), IndexError> {
+        let mut fills = self.fills.lock().expect("metadata store lock poisoned");
+        if !fills.iter().any(|known| known.txid == fill.txid) {
+            fills.push(fill.clone());
+        }
+        let mut swaps = self.swaps.lock().expect("metadata store lock poisoned");
+        if let Some(row) = swaps.iter_mut().find(|row| row.id == fill.offer_id) {
+            row.closed = true;
+        }
+        Ok(())
+    }
+
+    async fn swap_fill(&self, txid: &str) -> Result<Option<SwapFill>, IndexError> {
+        let fills = self.fills.lock().expect("metadata store lock poisoned");
+        Ok(fills.iter().find(|fill| fill.txid == txid).cloned())
     }
 
     async fn swap_release(&self, id: &str, maker_token: [u8; 32]) -> Result<bool, IndexError> {

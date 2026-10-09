@@ -20,6 +20,10 @@ type SwapMaker = {
   setStatus: (status: string | null) => void;
   /** The taker relayed the swap. */
   done: boolean;
+  /** The transaction this page countersigned, read from the take itself. */
+  txid: string | null;
+  /** The block holding it, once the chain shows it. */
+  height: number | null;
   /** Forget the offer, after it was filled or cancelled. */
   clear: () => void;
   /** Bumped when the answering loop moved funds: wallets read the chain again. */
@@ -61,6 +65,8 @@ export function SwapMakerProvider({ children }: { children: React.ReactNode }) {
   const [listing, setListing] = useState<Listing | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [txid, setTxid] = useState<string | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
   const [fundsVersion, setFundsVersion] = useState(0);
   const [unseen, setUnseen] = useState(0);
   const answeredTake = useRef<number | null>(null);
@@ -72,6 +78,8 @@ export function SwapMakerProvider({ children }: { children: React.ReactNode }) {
     setListing(null);
     setStatus(null);
     setDone(false);
+    setTxid(null);
+    setHeight(null);
     answeredTake.current = null;
   };
 
@@ -86,15 +94,30 @@ export function SwapMakerProvider({ children }: { children: React.ReactNode }) {
     const headers = { "x-swap-token": listing.token };
     const path = { id: listing.id };
     let stopped = false;
+    let signedTxid: string | null = null;
+    // The chain, not the board, says where the swap landed.
+    const waitForBlock = async (id: string) => {
+      for (let attempt = 0; attempt < 30; attempt++) {
+        const { data } = await api
+          .GET("/api/v1/transactions/{txid}", { params: { path: { txid: id } } })
+          .catch(() => ({ data: undefined }));
+        if (typeof data?.height === "number") {
+          setHeight(data.height);
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5_000));
+      }
+    };
     const tick = async () => {
       const board = await api.GET("/api/v1/swaps/{id}", { params: { path } });
       if (board.data?.status === "closed") {
         stopped = true;
-        setStatus("Swapped: the taker relayed the transaction.");
+        setStatus("Swapped in one transaction.");
         setDone(true);
         setUnseen((count) => count + 1);
         setFundsVersion((version) => version + 1);
         notify("Your offer was filled: the swap landed in one transaction.");
+        if (signedTxid) void waitForBlock(signedTxid);
         return;
       }
       // Takers' wallets build on the roots of their last 100 blocks: an
@@ -157,6 +180,12 @@ export function SwapMakerProvider({ children }: { children: React.ReactNode }) {
           body: { countersignature: signed, taken_at: takenAt },
         });
         if (posted.error) throw new Error(problemMessage(posted.error));
+        // The id the swap will have: a v6 txid leaves proofs and
+        // signatures out, so the take already fixes it.
+        signedTxid = await call<string>("swap_take_txid", { take: take.data.take }).catch(
+          () => null,
+        );
+        setTxid(signedTxid);
         setStatus("Countersigned. Waiting for the taker to relay the swap…");
       } catch (refusal) {
         // Refused: release it, so the offer reopens now rather than after
@@ -200,6 +229,8 @@ export function SwapMakerProvider({ children }: { children: React.ReactNode }) {
         status,
         setStatus,
         done,
+        txid,
+        height,
         clear,
         fundsVersion,
         unseen,

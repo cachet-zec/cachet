@@ -57,6 +57,14 @@ librustzcash's cached ZSA proving key is made public for the same build.
 - The maker sees the transaction it countersigns: the taker's spends are
   nullifiers and the taker's outputs are encrypted to the taker, so it
   learns what it is paid and nothing about the taker's holdings.
+- The swap's id is fixed by the take: a v6 txid commits to the effecting
+  data, not to proofs or signatures (with no transparent input, the
+  signed digest is the txid). The maker's engine reads it when it
+  countersigns (`swap_take_txid`) and the registry reads it from the take
+  it stores; a fill is recorded only when the chain holds that id, so the
+  link between a transaction and an offer is the chain's, and a maker
+  taking its units back (which also spends the offered note) never reads
+  as a fill.
 
 ## Limits (prototype)
 

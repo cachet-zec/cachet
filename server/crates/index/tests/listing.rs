@@ -302,6 +302,7 @@ async fn the_database_answers_what_the_reference_answers() {
             taker_token: None,
             taken_at: None,
             countersignature: None,
+            txid: None,
             closed: false,
         };
         index.swap_insert(row).await.expect("insert");
@@ -376,19 +377,19 @@ async fn the_database_answers_what_the_reference_answers() {
         );
         assert!(
             !index
-                .swap_countersign("offer-1", [9; 32], 2_000, "sig-a")
+                .swap_countersign("offer-1", [9; 32], 2_000, "sig-a", "tx-a")
                 .await
                 .expect("sign")
         );
         assert!(
             !index
-                .swap_countersign("offer-1", [8; 32], later, "sig-b")
+                .swap_countersign("offer-1", [8; 32], later, "sig-b", "tx-b")
                 .await
                 .expect("sign")
         );
         assert!(
             index
-                .swap_countersign("offer-1", [9; 32], later, "sig-b")
+                .swap_countersign("offer-1", [9; 32], later, "sig-b", "tx-b")
                 .await
                 .expect("sign")
         );
@@ -402,9 +403,43 @@ async fn the_database_answers_what_the_reference_answers() {
         let row = index.swap_get("offer-1").await.expect("get").expect("row");
         assert_eq!(row.take.as_deref(), Some("take-b"));
         assert_eq!(row.countersignature.as_deref(), Some("sig-b"));
+        // The countersignature names the transaction to look for.
+        assert_eq!(row.txid.as_deref(), Some("tx-b"));
+        let awaiting = index.swap_awaiting_fill().await.expect("awaiting");
+        assert_eq!(awaiting.len(), 1);
+        assert_eq!(
+            index
+                .swap_for_txid("tx-b")
+                .await
+                .expect("by txid")
+                .map(|row| row.id),
+            Some("offer-1".to_owned())
+        );
         assert!(!index.swap_close("offer-1", [7; 32]).await.expect("close"));
         assert!(index.swap_close("offer-1", [8; 32]).await.expect("close"));
         assert_eq!(index.swap_sweep(100_000 + 86_401).await.expect("sweep"), 1);
+
+        // A fill outlives its swept offer, and recording it twice is one.
+        let fill = cachet_index::SwapFill {
+            txid: "tx-b".to_owned(),
+            offer_id: "offer-1".to_owned(),
+            give_asset: [1; 32],
+            give_amount: 5,
+            want_asset: [2; 32],
+            want_amount: 30,
+            height: 42,
+        };
+        index.swap_record_fill(&fill).await.expect("fill");
+        index.swap_record_fill(&fill).await.expect("fill again");
+        assert_eq!(index.swap_fill("tx-b").await.expect("fill"), Some(fill));
+        assert!(index.swap_fill("tx-a").await.expect("fill").is_none());
+        assert!(
+            index
+                .swap_awaiting_fill()
+                .await
+                .expect("awaiting")
+                .is_empty()
+        );
     }
 
     // The journal outlives the chain: a description whose asset is no

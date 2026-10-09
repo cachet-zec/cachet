@@ -123,7 +123,27 @@ pub struct SwapRow {
     pub taker_token: Option<[u8; 32]>,
     pub taken_at: Option<i64>,
     pub countersignature: Option<String>,
+    /// The id the swap will have once relayed, read from the take the
+    /// maker countersigned (migration 0014). Hex, display order.
+    pub txid: Option<String>,
     pub closed: bool,
+}
+
+/// A swap from the board that landed: the offer's public terms and the
+/// block that holds the transaction (migration 0014). Recorded only once
+/// the chain shows the very transaction the maker countersigned, so the
+/// link between a transaction and an offer is the chain's, not anyone's
+/// word. Kept after the offer is swept: the terms were public anyway.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SwapFill {
+    /// Hex, display order.
+    pub txid: String,
+    pub offer_id: String,
+    pub give_asset: [u8; 32],
+    pub give_amount: u64,
+    pub want_asset: [u8; 32],
+    pub want_amount: u64,
+    pub height: u64,
 }
 
 impl SwapRow {

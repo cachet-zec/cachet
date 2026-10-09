@@ -89,6 +89,14 @@ export function swap_slot_address(seed_phrase: string, slot: number): string;
 export function swap_take(seed_phrase: string, offer_json: string, target_height: number): string;
 
 /**
+ * The id the swap will have once the taker relays it, read from the take
+ * the maker countersigns: a v6 txid commits to the effecting data, never
+ * to proofs or signatures. The maker's page shows the transaction it
+ * signed for without asking anyone. Hex, display order.
+ */
+export function swap_take_txid(take_json: string): string;
+
+/**
  * Reset the in-module wallet to a fresh state for this seed. Returns the
  * wallet state (empty, scanned_height 0).
  */
@@ -125,6 +133,7 @@ export interface InitOutput {
     readonly swap_make_offer: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
     readonly swap_slot_address: (a: number, b: number, c: number) => [number, number, number, number];
     readonly swap_take: (a: number, b: number, c: number, d: number, e: number) => [number, number, number, number];
+    readonly swap_take_txid: (a: number, b: number) => [number, number, number, number];
     readonly wallet_reset: (a: number, b: number) => [number, number, number];
     readonly wallet_scan: (a: number, b: number, c: any) => [number, number, number];
     readonly wallet_start_after: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number];

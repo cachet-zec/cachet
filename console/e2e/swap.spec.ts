@@ -176,6 +176,22 @@ test("a swap through the public board, with nothing passed by hand", async ({ br
   await expect(makerSwap.getByTestId("swap-board-status")).toContainText("Swapped", {
     timeout: 120_000,
   });
+  // The maker's engine read the swap's id from the take it countersigned:
+  // the same transaction the taker relayed, and its page names the offer.
+  const swappedTxid = (await takerSwap
+    .getByTestId("swap-done")
+    .getByRole("link")
+    .getAttribute("href"))!;
+  await expect(makerSwap.getByTestId("swap-maker-tx")).toHaveAttribute("href", swappedTxid);
+  await expect(makerSwap.getByTestId("swap-board-status")).toContainText("block", {
+    timeout: 120_000,
+  });
+  const txPage = await (await browser.newContext()).newPage();
+  await txPage.goto(swappedTxid);
+  await expect(txPage.getByTestId("tx-swap")).toContainText("The maker gave", { timeout: 30_000 });
+  await expect(txPage.getByTestId("tx-swap")).toContainText(`Board Gold ${tag}`);
+  await expect(txPage.getByTestId("tx-swap")).toContainText(`Board Silver ${tag}`);
+  await txPage.close();
 
   // --- Balances, from each side's own scan; the board is empty again ---
   await expect(await holding(taker, gold)).toContainText("× 3", { timeout: 120_000 });
