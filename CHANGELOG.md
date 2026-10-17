@@ -62,6 +62,22 @@ All notable changes to Cachet are documented here. The format follows
   spend one of the wallet's notes, and never on issuance. The engines are
   rebuilt.
 
+### Security
+
+- SECURITY.md records the halo2_gadgets soundness advisory as resolved:
+  the stack moved to the fixed circuit in 0.6.0, and no advisory is
+  accepted any more. CONTRIBUTING.md and the Dependabot policy stop
+  saying the lockfile holds yanked crates; none remains.
+
+### Fixed
+
+- The README's honest-scope note says where ZSA stands: not on mainnet
+  and not part of NU7. Mainnet has had a v6 transaction format since
+  NU6.3 (ZIP 229, Ironwood), but it carries no ZSA bundles; the v6 Cachet
+  builds is the one the withdrawn ZIP 230 specified. SECURITY.md adds
+  that with Orchard sealed since NU6.3, ZSA has to be carried over to the
+  Ironwood pool before a mainnet Cachet exists to retarget.
+
 ## [0.6.0] - 2026-10-07
 
 ### Added

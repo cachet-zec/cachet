@@ -21,13 +21,15 @@ protocol can do.
 
 ## The dependency rule (important)
 
-`server/Cargo.lock` pins crates that have been **yanked** from crates.io
-(`core2 0.3.3`, `halo2_gadgets 0.4.0`) but are required by the QEDIT
-protocol forks. The build only works because the lockfile carries them.
+`server/Cargo.lock` is the resolution the QEDIT protocol forks were tested
+with. Until 0.6.0 it also had to carry crates **yanked** from crates.io
+(`core2 0.3.3`, `halo2_gadgets 0.4.0`); the move to the fixed Orchard
+circuit (`halo2_gadgets 0.5.0`) dropped both, and none remains. The
+lockfile is still the tested state, not a starting point.
 
 - Never run a blanket `cargo update`.
-- Update a single crate with `cargo update -p <crate>` and make sure the
-  lockfile still contains the yanked entries afterwards.
+- Update a single crate with `cargo update -p <crate>` and check that the
+  `server/Cargo.lock` diff moves only what you meant to move.
 - The QEDIT forks themselves are pinned by git rev in
   `server/Cargo.toml [patch.crates-io]`; bumping a pin is its own PR with the
   regtest integration suite run against it
