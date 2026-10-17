@@ -1,13 +1,14 @@
 # Dependabot policy.
 #
 # The Rust workspace is intentionally NOT auto-updated: the protocol stack
-# is pinned to QEDIT git revs (ADR-001) and the lockfile deliberately holds
-# yanked crates (core2, halo2_gadgets — ADR-000). Automated bumps cannot
-# produce a valid resolution and every Dependabot cargo job fails by
-# construction; dependency bumps there are manual, reviewed PRs. Keep
-# Dependabot *alerts* enabled in the repo settings, but disable Dependabot
-# *security updates* (the auto-PR feature) — it cannot succeed on this
-# workspace. Known accepted advisories are tracked in SECURITY.md.
+# is pinned to QEDIT git revs (ADR-001), and server/Cargo.lock is the
+# resolution those pins were tested with. It used to hold yanked crates
+# (core2, halo2_gadgets 0.4.0 — ADR-000), which made every Dependabot cargo
+# job fail; 0.6.0 dropped them, but bumps there stay manual, reviewed PRs
+# (CONTRIBUTING.md, "The dependency rule"). Keep Dependabot *alerts*
+# enabled in the repo settings, and leave Dependabot *security updates*
+# (the auto-PR feature) disabled for this workspace. Dependency advisories
+# are tracked in SECURITY.md.
 version: 2
 updates:
   - package-ecosystem: cargo

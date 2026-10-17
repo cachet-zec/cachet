@@ -7,6 +7,15 @@ audited, it depends on alpha protocol libraries, and it must not be used with
 mainnet keys or value-bearing assets. Security reports are welcome all the
 same — building the reporting habit before mainnet is the point.
 
+There is no mainnet to retarget to yet, and reaching one is more than a
+configuration change. Since NU6.3 (Ironwood, July 2026) mainnet's Orchard
+pool is sealed: funds can only leave it, so OrchardZSA, which extends
+Orchard, has no mainnet pool to deploy into as specified. ZSA has to be
+carried over to the Ironwood pool (or a successor), in a transaction
+format that can hold it (mainnet's v6, ZIP 229, cannot). A mainnet Cachet
+means rebuilding against that ported stack and re-reviewing what this
+policy covers against it.
+
 ## Threat model: the web-wallet caveat
 
 The mint studio's guarantee is "your keys never leave the page" — and
@@ -93,53 +102,36 @@ You will get an acknowledgement within 72 hours. Please do not open public
 issues for suspected vulnerabilities before a fix or a coordinated
 disclosure.
 
-## Known accepted advisories
+## Dependency advisories
 
 The protocol stack is pinned to QEDIT's git revisions (ADR-000/001); some
 transitive versions are dictated by those pins and cannot be bumped on our
-side. Currently tracked:
+side. No advisory is accepted today. Resolved ones stay listed with their
+reasoning, so it can be checked rather than trusted:
 
-- **`halo2_gadgets 0.4.0` — circuit soundness (critical).** A missing
-  copy constraint in variable-base scalar multiplication leaves the base
-  under-constrained, which breaks soundness of the Orchard Action circuit:
-  a malicious prover could produce a valid-looking proof for a statement
-  that is not true. Fixed in `0.5.0`.
+- **`halo2_gadgets 0.4.0` — circuit soundness (critical). Resolved in
+  0.6.0.** A missing copy constraint in variable-base scalar
+  multiplication left the base under-constrained, which broke soundness
+  of the Orchard Action circuit: a malicious prover could produce a
+  valid-looking proof for a statement that is not true. Fixed in `0.5.0`.
 
-  The bump was built and tested, and the result is on the
-  `chore/bump-qedit-stack` branch: QEDIT's `zsa1` line now carries
-  `halo2_gadgets 0.5`, the whole stack resolves, compiles with no API
-  break, and every workspace test passes. What fails is the regtest
-  gate ADR-000 requires - the node rejects the new proofs with "could
-  not validate orchard proof".
+  The fix changes the circuit, so it changes the verifying key: it was a
+  consensus change, not a library update. A client shipping the fixed
+  circuit produces proofs that a node on the old circuit refuses, so the
+  bump waited on the network, not on this repository (reported upstream
+  as QED-it/zebra#164). Until then the advisory was accepted on stated
+  grounds: soundness protects whoever _relies_ on a proof, and that is
+  consensus, not this software; Cachet produces proofs and never
+  validates anyone else's, and the only network it ran against was a test
+  network.
 
-  That failure is the real finding. The soundness fix changes the
-  circuit, so it changes the verifying key: it is a consensus change,
-  not a library update. A client shipping the fixed circuit produces
-  proofs the deployed network refuses - and the public testnet node
-  still verifies with the old key (it accepts old-circuit proofs
-  today). Deploying the fix would break browser minting against the
-  network this project exists to run on.
-
-  So the constraint is the deployed testnet, not this repository. The
-  branch merges the day QEDIT redeploys on the fixed circuit; until
-  then every network participant, including every other ZSA tool,
-  necessarily proves against the old one.
-
-  Why it is nevertheless accepted here, stated so you can disagree with
-  the reasoning rather than trust it: soundness protects whoever _relies_
-  on a proof, and that is consensus, not this software. Cachet produces
-  proofs and never validates anyone else's. The only network it runs
-  against is a test network, so forging one
-  buys nothing. The defect is in the shared Zcash proving stack at these
-  versions, not in anything Cachet does with it.
-
-  Dependabot reports this against several manifests. One of them,
-  `crates/verify-engine`, does not build the circuit at all — it takes
-  `orchard` without the `circuit` feature, purely for asset-id derivation.
-  The alert there is a manifest-level match, not an exposure.
-
-  This is a release blocker for any mainnet story: Cachet retargets to
-  mainnet by configuration only once the ZSA branches sit on a fixed stack.
+  Since 0.6.0 the stack is on QEDIT's `zsa1` line with the fixed circuit
+  (`halo2_gadgets 0.5`, orchard 0.14), the three wasm engines are rebuilt
+  on it, and CI's regtest node is built from `zsa1` too. The flip side:
+  proofs from this build verify only on nodes of that line (Zebra 5.2.0
+  or later, `rpc.test-zsa.org` by default). The older node at
+  `dev.zebra.zsa-test.net` still verifies with the old circuit and
+  rejects them ([docs/DEPLOY.md](docs/DEPLOY.md)).
 
 - **`postcss` (4 advisories, source-map path traversal and stringify
   XSS).** `next` pins `postcss 8.4.31` exactly as a direct dependency, so
@@ -148,8 +140,9 @@ side. Currently tracked:
   semver-compatible, and the console build plus the end-to-end suite were
   re-run against it. Remove the override once `next` ships a bumped pin.
 
-The first entry is reviewed at every QEDIT rev bump. If you believe it is
-exploitable in this codebase despite the scope above, please report it.
+Advisories reached through the QEDIT pins are reviewed at every QEDIT rev
+bump. If you believe one is exploitable in this codebase despite the scope
+above, please report it.
 
 ## Out of scope
 
