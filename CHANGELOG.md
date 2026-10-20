@@ -77,6 +77,10 @@ All notable changes to Cachet are documented here. The format follows
   builds is the one the withdrawn ZIP 230 specified. SECURITY.md adds
   that with Orchard sealed since NU6.3, ZSA has to be carried over to the
   Ironwood pool before a mainnet Cachet exists to retarget.
+- The README's testnet link points to QEDIT's own announcement of the
+  network Cachet runs on (`rpc.test-zsa.org`). It used to point to the
+  forum thread of the community ZSA testnet at `zsa.methyl.cc`, a
+  separate network not run by QEDIT.
 
 ## [0.6.0] - 2026-10-07
 

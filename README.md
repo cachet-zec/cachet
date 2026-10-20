@@ -25,11 +25,12 @@ balances and transfers stay shielded, as Zcash intends.
 > part of NU7. Mainnet has had a v6 transaction format since NU6.3
 > (ZIP 229, Ironwood), but it carries no ZSA bundles: the ZSA-carrying v6
 > Cachet builds is the one ZIP 230 specified, since withdrawn in favour of
-> ZIP 229. That format lives on a
-> dedicated [public ZSA testnet](https://forum.zcashcommunity.com/t/zsa-testnet/56884)
-> (since August 2026, run by QEDIT; reset on 10 September 2026, then started
-> again on 25 September as a new network with a corrected Orchard circuit) and on
-> local regtest. Cachet is therefore **production-grade engineering around a
+> ZIP 229. That format lives on QEDIT's dedicated
+> [public ZSA testnet](https://forum.zcashcommunity.com/t/feature-branch-testnet-and-compatible-developer-tooling/55156/4)
+> (`rpc.test-zsa.org`, since August 2026; reset on 10 September 2026, then
+> started again on 25 September as a new network with a corrected Orchard
+> circuit) and on local regtest. The community ZSA testnet at `zsa.methyl.cc`
+> is a separate network that Cachet does not target. Cachet is therefore **production-grade engineering around a
 > testnet-grade product**, built so the tooling exists if the protocol
 > ships. No mainnet claims are made.
 
