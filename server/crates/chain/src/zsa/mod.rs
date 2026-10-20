@@ -895,10 +895,10 @@ impl ChainBackend for OrchardZsaBackend {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .clone();
-        if let Some((at, info)) = cached {
-            if at.elapsed() < FRESH_FOR {
-                return Ok(info);
-            }
+        if let Some((at, info)) = cached
+            && at.elapsed() < FRESH_FOR
+        {
+            return Ok(info);
         }
         let info = self.chain_info_inner().await?;
         *self

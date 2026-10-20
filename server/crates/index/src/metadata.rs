@@ -192,10 +192,10 @@ pub trait MetadataStore: Send + Sync {
             if self.is_hidden(sha256).await? {
                 continue;
             }
-            if let Some(bytes) = self.get(sha256).await? {
-                if has_embedded_image(&bytes) {
-                    visible.insert(sha256);
-                }
+            if let Some(bytes) = self.get(sha256).await?
+                && has_embedded_image(&bytes)
+            {
+                visible.insert(sha256);
             }
         }
         Ok(visible)

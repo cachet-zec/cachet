@@ -82,11 +82,11 @@ All of these are fixed on the branch.
 Results on the branch:
 
 - `cargo check --workspace --all-targets` and `cargo fmt --check`: clean.
-- `cargo clippy --workspace --all-targets -- -D warnings`: clean, except
-  four `collapsible_if` hits in `crates/domain`. That crate has no protocol
-  dependency and is unchanged, so `main` gets the same hits with this
-  toolchain (clippy 1.99.1, what CI's `@stable` resolves to now). That is a
-  separate fix.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean. Raising
+  `rust-version` to 1.88 makes let-chains available, so clippy's
+  `collapsible_if` then flags nine nested `if let` blocks (domain, index,
+  chain, api) that it leaves alone at 1.86. `main` is not affected. They
+  are collapsed on the branch, with no behavior change.
 - `cargo test --workspace`: every test passes (api 13 + 42 HTTP, chain 6 + 2,
   domain 26, index 4, mint-engine 2, swap 5, verify-engine 6). The regtest
   suite (7) and the Postgres listing test (1) are `#[ignore]`d as on

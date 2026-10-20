@@ -102,15 +102,15 @@ impl AssetListQuery {
         if self.resolved_only && asset.description.is_none() {
             return false;
         }
-        if let Some(issuer) = &self.issuer {
-            if asset.issuer.as_deref() != Some(hex::encode(issuer).as_str()) {
-                return false;
-            }
+        if let Some(issuer) = &self.issuer
+            && asset.issuer.as_deref() != Some(hex::encode(issuer).as_str())
+        {
+            return false;
         }
-        if let Some(supply) = self.supply {
-            if asset.finalized != (supply == SupplyState::Sealed) {
-                return false;
-            }
+        if let Some(supply) = self.supply
+            && asset.finalized != (supply == SupplyState::Sealed)
+        {
+            return false;
         }
         let Some(needle) = self.search.as_deref() else {
             return true;

@@ -237,10 +237,10 @@ pub(crate) async fn registry_snapshot(
         let guard = CACHE
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if let Some((sealed_at, cached)) = guard.as_ref() {
-            if sealed_at.elapsed() < SNAPSHOT_TTL {
-                return Ok(Json(cached.clone()));
-            }
+        if let Some((sealed_at, cached)) = guard.as_ref()
+            && sealed_at.elapsed() < SNAPSHOT_TTL
+        {
+            return Ok(Json(cached.clone()));
         }
     }
     let info = state.chain.chain_info().await?;
@@ -376,13 +376,12 @@ pub(crate) async fn asset_events(
                 .await
                 .ok()
                 .and_then(|a| a.issuer);
-            if let Some(issuer) = issuer {
-                if hex::decode(&issuer)
+            if let Some(issuer) = issuer
+                && hex::decode(&issuer)
                     .map(|bytes| hidden.iter().any(|key| key == &bytes))
                     .unwrap_or(false)
-                {
-                    return Err(ApiError::HiddenByOperator);
-                }
+            {
+                return Err(ApiError::HiddenByOperator);
             }
         }
     }
@@ -674,10 +673,10 @@ async fn enrich_image_paths(
         .await
         .map_err(metadata_error)?;
     for response in responses {
-        if let Some((hash, hex)) = sealed_hash(response) {
-            if visible.contains(&hash) {
-                response.image_path = Some(format!("/api/v1/metadata/{hex}/image"));
-            }
+        if let Some((hash, hex)) = sealed_hash(response)
+            && visible.contains(&hash)
+        {
+            response.image_path = Some(format!("/api/v1/metadata/{hex}/image"));
         }
     }
     Ok(())

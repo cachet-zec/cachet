@@ -71,12 +71,12 @@ impl MetadataBundle {
                 reason: "name exceeds 120 bytes",
             });
         }
-        if let Some(description) = &description {
-            if description.len() > MAX_LONG_DESCRIPTION_BYTES {
-                return Err(DomainError::InvalidMetadata {
-                    reason: "description exceeds 4096 bytes",
-                });
-            }
+        if let Some(description) = &description
+            && description.len() > MAX_LONG_DESCRIPTION_BYTES
+        {
+            return Err(DomainError::InvalidMetadata {
+                reason: "description exceeds 4096 bytes",
+            });
         }
         if let Some(image) = &image_data_uri {
             if image.len() > MAX_IMAGE_DATA_URI_BYTES {
@@ -98,12 +98,12 @@ impl MetadataBundle {
                 });
             }
         }
-        if let Some(url) = &external_url {
-            if !(url.starts_with("https://") || url.starts_with("http://")) {
-                return Err(DomainError::InvalidMetadata {
-                    reason: "external_url must be http(s)",
-                });
-            }
+        if let Some(url) = &external_url
+            && !(url.starts_with("https://") || url.starts_with("http://"))
+        {
+            return Err(DomainError::InvalidMetadata {
+                reason: "external_url must be http(s)",
+            });
         }
         Ok(Self {
             v: 1,
