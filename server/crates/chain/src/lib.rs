@@ -69,10 +69,11 @@ impl RecentAnchors {
 /// first mint of this process does not pay for it. Costs seconds of CPU;
 /// call it from a background thread at boot on instances that sign
 /// (read-only deployments never prove and should skip it). The cache
-/// itself lives in the vendored zcash_primitives patch
-/// (server/vendor/librustzcash/README.md).
+/// itself is zcash_primitives' own, one key per circuit version.
 pub fn prepare_proving() {
-    zcash_primitives::transaction::builder::prepare_orchard_zsa_proving_key();
+    let _ = zcash_primitives::transaction::builder::cached_orchard_proving_key(
+        orchard::circuit::OrchardCircuitVersion::ZSA,
+    );
 }
 
 use async_trait::async_trait;

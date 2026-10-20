@@ -28,11 +28,11 @@ wasm-bindgen-rayon = { version = "1.3", features = ["no-bundler"], optional = tr
 cachet-notes = { path = "../notes" }
 cachet-swap = { path = "../swap" }
 serde_json = { workspace = true }
-zcash_address = { version = "0.12.0", default-features = false }
-orchard = { version = "0.14.0", default-features = false, features = ["circuit", "std", "zsa-issuance"] }
-zcash_primitives = { version = "0.28.0", default-features = false, features = ["std", "circuits", "zsa-issuance", "transparent-inputs", "non-standard-fees", "zip-233"] }
-zcash_protocol = { version = "0.9.0" }
-zcash_transparent = { version = "0.8.0", default-features = false }
+zcash_address = { version = "0.13.0", default-features = false }
+orchard = { version = "0.15.5", default-features = false, features = ["circuit", "std", "zsa-issuance"] }
+zcash_primitives = { version = "0.30.1", default-features = false, features = ["std", "circuits", "zsa-issuance", "transparent-inputs", "non-standard-fees", "zip-233"] }
+zcash_protocol = { version = "0.10.5" }
+zcash_transparent = { version = "0.10.0", default-features = false }
 sapling-crypto = { version = "0.7.0", default-features = false }
 zip32 = "0.2"
 bip0039 = "0.12"

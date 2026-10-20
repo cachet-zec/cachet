@@ -68,9 +68,12 @@ impl Nullifier {
     /// $DeriveNullifier$.
     ///
     /// Defined in [Zcash Protocol Spec § 4.16: Note Commitments and Nullifiers][commitmentsandnullifiers].
+    /// A split note's nullifier is offset by $\mathcal{L}^{\mathsf{Orchard}}$, as defined in
+    /// [ZIP-226: Transfer and Burn of Zcash Shielded Assets][zip226].
     ///
     /// [commitmentsandnullifiers]: https://zips.z.cash/protocol/nu5.pdf#commitmentsandnullifiers
-    pub(super) fn derive(
+    /// [zip226]: https://zips.z.cash/zip-0226
+    pub(crate) fn derive(
         nk: &NullifierDerivingKey,
         rho: pallas::Base,
         psi: pallas::Base,
@@ -85,7 +88,7 @@ impl Nullifier {
         let selected_nullifier =
             pallas::Point::conditional_select(&nullifier, &split_note_nullifier, is_split_note);
 
-        Nullifier(extract_p(&(selected_nullifier)))
+        Nullifier(extract_p(&selected_nullifier))
     }
 }
 

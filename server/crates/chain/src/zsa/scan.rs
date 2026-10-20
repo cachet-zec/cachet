@@ -5,7 +5,7 @@
 //! full walk in a later milestone (PRIVACY.md P4 keeps it reconstructible).
 
 use orchard::note::{AssetBase, AssetId as OrchardAssetId};
-use zcash_primitives::transaction::{OrchardBundle, Transaction};
+use zcash_primitives::transaction::Transaction;
 use zcash_protocol::consensus::BranchId;
 
 use crate::ChainError;
@@ -35,10 +35,10 @@ impl ScannedAsset {
 /// Fetch and parse every transaction in `from_height..=to_height`, in
 /// consensus order, feeding each to `visit`.
 ///
-/// Blocks before NU7 activation (regtest: height 1) cannot contain v6
+/// Blocks before NU7 activation (regtest: height 1) cannot contain v7
 /// transactions, and the genesis coinbase predates the ZSA protocol, so
 /// callers start at height 1 (or the first unindexed height). Every tx
-/// parses under the NU7 branch (v6 and earlier formats alike).
+/// parses under the NU7 branch (v7 and earlier formats alike).
 pub async fn for_each_transaction_in<F>(
     rpc: &NodeRpc,
     from_height: u64,
@@ -147,7 +147,8 @@ impl AssetFold {
             }
         }
 
-        if let Some(OrchardBundle::OrchardZSA(bundle)) = tx.orchard_bundle() {
+        // v7: burns ride in the ZSA bundle, in the Ironwood slot.
+        if let Some(bundle) = tx.ironwood_bundle() {
             for (burned_asset, value) in bundle.burn() {
                 let key = burned_asset.to_bytes();
                 if !self.by_id.contains_key(&key) {
@@ -220,7 +221,7 @@ fn fold_transaction(state: &mut ScannedAsset, tx: &Transaction, asset: AssetBase
         }
     }
 
-    if let Some(OrchardBundle::OrchardZSA(bundle)) = tx.orchard_bundle() {
+    if let Some(bundle) = tx.ironwood_bundle() {
         for (burned_asset, value) in bundle.burn() {
             if *burned_asset == asset {
                 state.seen = true;

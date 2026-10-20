@@ -1,13 +1,18 @@
 # Vendored orchard (QED-it fork) + signing-parts accessors
 
-Snapshot of `QED-it/orchard` at rev `cf801a5d6701bc128e21678ba0034564af4a2aca`,
-the rev QEDIT's Zebra `zsa1` pins and the public ZSA testnet verifies with.
-`src`, `benches`, `tests`, the manifest and the licences are copied; `book/`
-is left out.
+Snapshot of `QED-it/orchard` at rev `e40bdfad5d153dd3f5384289edc1cb9786583f42`
+(`zsa1`, orchard 0.15.5, includes QED-it/orchard#291), the rev
+QED-it/librustzcash#377 pins for the transaction-v7 line (ADR-005). The
+public ZSA testnet still verifies with `cf801a5d` (v6); a v7 node does not
+exist yet. `src`, `benches`, `tests`, the manifest and the licences are
+copied; `book/` is left out.
 
 ## The patch
 
-`src/builder.rs`, two blocks marked `CACHET PATCH`, nothing else modified:
+`src/builder.rs`, two blocks marked `CACHET PATCH`, nothing else modified
+(on `e40bdfad` the bundle lost its `OrchardPrimitives` type parameter, so the
+second block takes `Bundle<_, V>` and passes the bundle's `BundleVersion`
+on):
 
 - `SigningParts::ak()` and `SigningParts::alpha()`;
 - on a partially signed bundle (`InProgress<Proof, PartiallyAuthorized>`):

@@ -7,20 +7,28 @@
 //!
 //! Correctness hinges on one invariant: note commitments must enter the
 //! tree in exactly the consensus order — for each transaction, every
-//! Orchard action's `cmx` first, then every issuance note's commitment,
-//! transactions in block order, blocks in height order.
+//! action's `cmx` of the bundle ZSA notes ride in first, then every
+//! issuance note's commitment, transactions in block order, blocks in
+//! height order.
+//!
+//! SPIKE (ADR-005): a v7 transaction carries the ZSA bundle in its Ironwood
+//! slot, next to a ZEC-only Orchard slot. This assumes ZSA and issuance
+//! notes enter the Ironwood note commitment tree (as they entered the
+//! Orchard tree in v6), so the tracked tree is the Ironwood one and the
+//! Orchard slot is ignored. To confirm against QEDIT's v7 Zebra.
 
 use bridgetree::BridgeTree;
 use incrementalmerkletree::Position;
+use orchard::bundle::BundleVersion;
 use orchard::keys::{
     FullViewingKey, IncomingViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
 };
 use orchard::note::AssetBase;
-use orchard::primitives::OrchardDomain;
+use orchard::note_encryption::ZSADomain;
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::{Address, Anchor, Note};
 use zcash_note_encryption::try_note_decryption;
-use zcash_primitives::transaction::{OrchardBundle, Transaction};
+use zcash_primitives::transaction::Transaction;
 
 const TREE_DEPTH: u8 = 32;
 const MAX_CHECKPOINTS: usize = 100;
@@ -171,41 +179,36 @@ impl HotWallet {
     /// Process one transaction, in consensus order. Must be called for every
     /// transaction of every block from activation to the tip.
     pub fn process_transaction(&mut self, tx: &Transaction) -> Result<(), NotesError> {
-        // 1. Notes sent to us through the Orchard bundle (trial decryption),
+        // 1. Notes sent to us through the ZSA bundle (trial decryption),
         //    and spends of our notes (nullifier match).
         let mut received: Vec<(usize, Note, usize)> = Vec::new(); // (commitment index, note, account slot)
         let mut orchard_action_count = 0;
 
-        if let Some(bundle) = tx.orchard_bundle() {
-            // The first account whose external key decrypts an action owns
-            // it, as `Bundle::decrypt_outputs_with_keys` would say, with
-            // the keys prepared once for the whole scan.
-            macro_rules! trial_decrypt {
-                ($bundle:expr) => {{
-                    orchard_action_count = $bundle.actions().len();
-                    let spends_ours = self
-                        .mark_spends($bundle.actions().iter().map(|a| a.nullifier().to_bytes()));
-                    for (action_idx, action) in $bundle.actions().iter().enumerate() {
-                        let domain = OrchardDomain::for_action(action);
-                        if let Some((slot, note)) = self
-                            .prepared
-                            .iter()
-                            .zip(&self.own_spends_only)
-                            .enumerate()
-                            .filter(|(_, (_, own_only))| spends_ours || !**own_only)
-                            .find_map(|(slot, (ivk, _))| {
-                                try_note_decryption(&domain, ivk, action)
-                                    .map(|(note, _, _)| (slot, note))
-                            })
-                        {
-                            received.push((action_idx, note, slot));
-                        }
+        if let Some(bundle) = tx.ironwood_bundle() {
+            orchard_action_count = bundle.actions().len();
+            let spends_ours =
+                self.mark_spends(bundle.actions().iter().map(|a| a.nullifier().to_bytes()));
+            // An Ironwood v3 bundle (a v6 transaction) carries ZEC only.
+            if bundle.bundle_version() == BundleVersion::zsa() {
+                // The first account whose external key decrypts an action
+                // owns it, as `Bundle::decrypt_outputs_with_keys` would say,
+                // with the keys prepared once for the whole scan.
+                for (action_idx, action) in bundle.actions().iter().enumerate() {
+                    let domain = ZSADomain::for_action(action);
+                    if let Some((slot, note)) = self
+                        .prepared
+                        .iter()
+                        .zip(&self.own_spends_only)
+                        .enumerate()
+                        .filter(|(_, (_, own_only))| spends_ours || !**own_only)
+                        .find_map(|(slot, (ivk, _))| {
+                            try_note_decryption(&domain, ivk, action)
+                                .map(|(note, _, _)| (slot, note))
+                        })
+                    {
+                        received.push((action_idx, note, slot));
                     }
-                }};
-            }
-            match bundle {
-                OrchardBundle::OrchardVanilla(bundle) => trial_decrypt!(bundle),
-                OrchardBundle::OrchardZSA(bundle) => trial_decrypt!(bundle),
+                }
             }
         }
 
@@ -239,25 +242,13 @@ impl HotWallet {
         // 3. Append every commitment in consensus order; mark ours to keep
         //    witnesses.
         let mut commitments: Vec<MerkleHashOrchard> = Vec::new();
-        if let Some(bundle) = tx.orchard_bundle() {
-            match bundle {
-                OrchardBundle::OrchardVanilla(bundle) => {
-                    commitments.extend(
-                        bundle
-                            .actions()
-                            .iter()
-                            .map(|a| MerkleHashOrchard::from_cmx(a.cmx())),
-                    );
-                }
-                OrchardBundle::OrchardZSA(bundle) => {
-                    commitments.extend(
-                        bundle
-                            .actions()
-                            .iter()
-                            .map(|a| MerkleHashOrchard::from_cmx(a.cmx())),
-                    );
-                }
-            }
+        if let Some(bundle) = tx.ironwood_bundle() {
+            commitments.extend(
+                bundle
+                    .actions()
+                    .iter()
+                    .map(|a| MerkleHashOrchard::from_cmx(a.cmx())),
+            );
         }
         if let Some(issue_bundle) = tx.issue_bundle() {
             commitments.extend(

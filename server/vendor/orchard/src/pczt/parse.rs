@@ -12,14 +12,13 @@ use zip32::ChildIndex;
 
 use super::{Action, Bundle, Output, Spend, Zip32Derivation};
 use crate::{
-    bundle::Flags,
-    flavor::OrchardVanilla,
+    bundle::{BundleVersion, Flags},
     keys::{FullViewingKey, SpendingKey},
-    note::{ExtractedNoteCommitment, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext},
-    primitives::{
-        redpallas::{self, SpendAuth},
-        OrchardPrimitives,
+    note::{
+        ExtractedNoteCommitment, NoteVersion, Nullifier, RandomSeed, Rho, TransmittedNoteCiphertext,
     },
+    note_encryption::{enc_ciphertext_size, NoteCiphertextBytes},
+    primitives::redpallas::{self, SpendAuth},
     tree::{MerkleHashOrchard, MerklePath},
     value::{NoteValue, Sign, ValueCommitTrapdoor, ValueCommitment, ValueSum},
     Address, Anchor, Proof, NOTE_COMMITMENT_TREE_DEPTH,
@@ -27,16 +26,28 @@ use crate::{
 
 impl Bundle {
     /// Parses a PCZT bundle from its component parts.
+    ///
+    /// See [`BundleVersion`] for the choice of `bundle_version`.
+    ///
     /// `value_sum` is represented as `(magnitude, is_negative)`.
     pub fn parse(
         actions: Vec<Action>,
         flags: u8,
+        bundle_version: BundleVersion,
         value_sum: (u64, bool),
         anchor: [u8; 32],
         zkproof: Option<Vec<u8>>,
         bsk: Option<[u8; 32]>,
     ) -> Result<Self, ParseError> {
-        let flags = Flags::from_byte(flags).ok_or(ParseError::UnexpectedFlagBitsSet)?;
+        let flags =
+            Flags::from_byte(flags, bundle_version).ok_or(ParseError::UnexpectedFlagBitsSet)?;
+
+        let note_version = bundle_version.note_version();
+        for action in actions.iter() {
+            if *action.output.note_version() != note_version {
+                return Err(ParseError::InvalidNoteVersion);
+            }
+        }
 
         let value_sum = {
             let (magnitude, is_negative) = value_sum;
@@ -64,8 +75,13 @@ impl Bundle {
         Ok(Self {
             actions,
             flags,
+            bundle_version,
             value_sum,
             anchor,
+            // A parsed bundle always reports a non-deferred anchor: absence on the wire
+            // is resolved by the caller before parsing, and tracked separately for
+            // re-serialization.
+            anchor_deferred: false,
             zkproof,
             bsk,
         })
@@ -101,8 +117,25 @@ impl Action {
     }
 }
 
+/// Whether [`Spend::parse_inner`] derives the on-wire `fvk` (the full parse) or ignores it,
+/// leaving the parsed `fvk` as `None` (the preverified signing parse). See
+/// [`Spend::parse_preverified_for_signing`] for why skipping is sound.
+enum FvkHandling {
+    Derive,
+    Skip,
+}
+
 impl Spend {
     /// Parses a PCZT spend from its component parts.
+    ///
+    /// This is the **full** parse used when the caller needs to validate or preserve the
+    /// wire `fvk`: when `fvk` is provided, it derives the [`FullViewingKey`] via
+    /// [`FullViewingKey::from_bytes`] (a relatively expensive operation involving Pallas
+    /// point decompression and two `commit_ivk` Sinsemilla hashes).
+    ///
+    /// The byte-for-byte behaviour of this method is part of the full verification contract
+    /// and must not change. The preverified signing variant lives in
+    /// [`Spend::parse_preverified_for_signing`].
     #[allow(clippy::too_many_arguments)]
     pub fn parse(
         nullifier: [u8; 32],
@@ -117,7 +150,110 @@ impl Spend {
         alpha: Option<[u8; 32]>,
         zip32_derivation: Option<Zip32Derivation>,
         dummy_sk: Option<[u8; 32]>,
+        note_version: NoteVersion,
         proprietary: BTreeMap<String, Vec<u8>>,
+    ) -> Result<Self, ParseError> {
+        Self::parse_inner(
+            nullifier,
+            rk,
+            spend_auth_sig,
+            recipient,
+            value,
+            rho,
+            rseed,
+            fvk,
+            witness,
+            alpha,
+            zip32_derivation,
+            dummy_sk,
+            note_version,
+            proprietary,
+            FvkHandling::Derive,
+        )
+    }
+
+    /// Parses a PCZT spend for a preverified signing pass, deliberately skipping the
+    /// [`FullViewingKey`] derivation.
+    ///
+    /// The resulting `Spend` has `fvk: None` even when an `fvk` was present on the wire. It
+    /// retains everything the spend-authorization signature depends on (`rk`, `alpha`, and
+    /// the nullifier), so [`Action::sign`](super::Action::sign) produces a byte-identical
+    /// `spend_auth_sig` to one produced from a full parse. Unlike [`Spend::parse`], the
+    /// on-wire `fvk` bytes are not validated: a malformed `fvk` still parses (as `fvk: None`),
+    /// making this the one respect in which the parse is more permissive.
+    ///
+    /// # Invariant (why this is sound)
+    ///
+    /// Skipping FVK derivation is valid because [`Action::sign`](super::Action::sign) never
+    /// reads `spend.fvk` (only `alpha`, `rk`, and the seed-derived `ask`), and because callers
+    /// MUST have already run the full verifier checks (`verify_nullifier` / `verify_rk`) over
+    /// the identical PCZT bytes before signing — which do derive and check the FVK (including
+    /// the malformed-`fvk` case above). The signer therefore need not re-derive it.
+    ///
+    /// A `Spend` produced by this method must not be:
+    /// - passed to the Verifier check path
+    ///   ([`verify_nullifier`](super::Spend::verify_nullifier),
+    ///   [`verify_rk`](super::Spend::verify_rk)): with `fvk: None` it can no longer cross-check
+    ///   the on-wire `fvk`, and dummy-note verification fails;
+    /// - passed to the Prover, which requires `fvk`;
+    /// - re-serialized where the `fvk` field must be preserved, as it would be dropped.
+    #[allow(clippy::too_many_arguments)]
+    pub fn parse_preverified_for_signing(
+        nullifier: [u8; 32],
+        rk: [u8; 32],
+        spend_auth_sig: Option<[u8; 64]>,
+        recipient: Option<[u8; 43]>,
+        value: Option<u64>,
+        rho: Option<[u8; 32]>,
+        rseed: Option<[u8; 32]>,
+        fvk: Option<[u8; 96]>,
+        witness: Option<(u32, [[u8; 32]; NOTE_COMMITMENT_TREE_DEPTH])>,
+        alpha: Option<[u8; 32]>,
+        zip32_derivation: Option<Zip32Derivation>,
+        dummy_sk: Option<[u8; 32]>,
+        note_version: NoteVersion,
+        proprietary: BTreeMap<String, Vec<u8>>,
+    ) -> Result<Self, ParseError> {
+        Self::parse_inner(
+            nullifier,
+            rk,
+            spend_auth_sig,
+            recipient,
+            value,
+            rho,
+            rseed,
+            fvk,
+            witness,
+            alpha,
+            zip32_derivation,
+            dummy_sk,
+            note_version,
+            proprietary,
+            FvkHandling::Skip,
+        )
+    }
+
+    /// The shared body of [`Spend::parse`] and [`Spend::parse_preverified_for_signing`].
+    /// With [`FvkHandling::Derive`] the on-wire `fvk` is derived via
+    /// [`FullViewingKey::from_bytes`]; with [`FvkHandling::Skip`] it is ignored and the
+    /// parsed `fvk` is left `None`. Every other field is parsed identically.
+    #[allow(clippy::too_many_arguments)]
+    fn parse_inner(
+        nullifier: [u8; 32],
+        rk: [u8; 32],
+        spend_auth_sig: Option<[u8; 64]>,
+        recipient: Option<[u8; 43]>,
+        value: Option<u64>,
+        rho: Option<[u8; 32]>,
+        rseed: Option<[u8; 32]>,
+        fvk: Option<[u8; 96]>,
+        witness: Option<(u32, [[u8; 32]; NOTE_COMMITMENT_TREE_DEPTH])>,
+        alpha: Option<[u8; 32]>,
+        zip32_derivation: Option<Zip32Derivation>,
+        dummy_sk: Option<[u8; 32]>,
+        note_version: NoteVersion,
+        proprietary: BTreeMap<String, Vec<u8>>,
+        fvk_handling: FvkHandling,
     ) -> Result<Self, ParseError> {
         let nullifier = Nullifier::from_bytes(&nullifier)
             .into_option()
@@ -156,9 +292,16 @@ impl Spend {
             })
             .transpose()?;
 
-        let fvk = fvk
-            .map(|fvk| FullViewingKey::from_bytes(&fvk).ok_or(ParseError::InvalidFullViewingKey))
-            .transpose()?;
+        // Skip the (relatively expensive) FVK derivation in the preverified signing parse;
+        // see `parse_preverified_for_signing` for why it is sound. The full parse derives it.
+        let fvk = match fvk_handling {
+            FvkHandling::Skip => None,
+            FvkHandling::Derive => fvk
+                .map(|fvk| {
+                    FullViewingKey::from_bytes(&fvk).ok_or(ParseError::InvalidFullViewingKey)
+                })
+                .transpose()?,
+        };
 
         let witness = witness
             .map(|(position, auth_path)| {
@@ -199,6 +342,7 @@ impl Spend {
             value,
             rho,
             rseed,
+            note_version,
             fvk,
             witness,
             alpha,
@@ -225,18 +369,24 @@ impl Output {
         ock: Option<[u8; 32]>,
         zip32_derivation: Option<Zip32Derivation>,
         user_address: Option<String>,
+        note_version: NoteVersion,
         proprietary: BTreeMap<String, Vec<u8>>,
     ) -> Result<Self, ParseError> {
         let cmx = ExtractedNoteCommitment::from_bytes(&cmx)
             .into_option()
             .ok_or(ParseError::InvalidExtractedNoteCommitment)?;
 
-        let encrypted_note = TransmittedNoteCiphertext::<OrchardVanilla> {
+        // `NoteCiphertextBytes::from_slice` accepts either encoding, so pin the length to the
+        // one `note_version` implies. Otherwise a ciphertext of the wrong kind survives every
+        // PCZT role and is only rejected by `validate_action_ciphertext_kind` at extraction.
+        if enc_ciphertext.len() != enc_ciphertext_size(note_version) {
+            return Err(ParseError::InvalidEncCiphertext);
+        }
+
+        let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: ephemeral_key,
-            enc_ciphertext: <OrchardVanilla as OrchardPrimitives>::NoteCiphertextBytes::from_slice(
-                enc_ciphertext.as_slice(),
-            )
-            .ok_or(ParseError::InvalidEncCiphertext)?,
+            enc_ciphertext: NoteCiphertextBytes::from_slice(enc_ciphertext.as_slice())
+                .ok_or(ParseError::InvalidEncCiphertext)?,
             out_ciphertext: out_ciphertext
                 .as_slice()
                 .try_into()
@@ -267,6 +417,7 @@ impl Output {
 
         Ok(Self {
             cmx,
+            note_version,
             encrypted_note,
             recipient,
             value,
@@ -338,8 +489,11 @@ pub enum ParseError {
     InvalidZip32Derivation,
     /// `rho` must be provided whenever `rseed` is provided.
     MissingRho,
-    /// The provided `flags` field had unexpected bits set.
+    /// The provided `flags` field had unexpected bits set for the bundle's pool
+    /// restrictions.
     UnexpectedFlagBitsSet,
+    /// An invalid `note_version` was provided.
+    InvalidNoteVersion,
 }
 
 impl fmt::Display for ParseError {
@@ -366,6 +520,7 @@ impl fmt::Display for ParseError {
                 write!(f, "`rho` must be provided whenever `rseed` is provided")
             }
             ParseError::UnexpectedFlagBitsSet => write!(f, "`flags` field had unexpected bits set"),
+            ParseError::InvalidNoteVersion => write!(f, "invalid `note_version`"),
         }
     }
 }

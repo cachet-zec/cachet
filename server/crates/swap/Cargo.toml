@@ -9,10 +9,10 @@ edition = { workspace = true }
 license = { workspace = true }
 
 [dependencies]
-orchard = { version = "0.14.0", default-features = false, features = ["circuit", "std", "zsa-issuance"] }
-zcash_primitives = { version = "0.28.0", default-features = false, features = ["std", "circuits", "zsa-issuance", "zip-233"] }
-zcash_protocol = { version = "0.9.0" }
-zcash_transparent = { version = "0.8.0", default-features = false }
+orchard = { version = "0.15.5", default-features = false, features = ["circuit", "std", "zsa-issuance"] }
+zcash_primitives = { version = "0.30.1", default-features = false, features = ["std", "circuits", "zsa-issuance", "zip-233"] }
+zcash_protocol = { version = "0.10.5" }
+zcash_transparent = { version = "0.10.0", default-features = false }
 sapling-crypto = { version = "0.7.0", default-features = false }
 pasta_curves = "0.5"
 ff = "0.13"

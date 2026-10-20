@@ -21,7 +21,7 @@ use orchard::value::NoteValue;
 use orchard::{Address, Anchor};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
-use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
 use zcash_primitives::transaction::fees::zip317::{FeeError, FeeRule};
 use zcash_protocol::consensus::REGTEST_NETWORK;
 use zcash_protocol::constants;
@@ -39,11 +39,13 @@ pub use wasm_bindgen_rayon::init_thread_pool;
 /// Build (and cache, process-wide) the Orchard proving key so the next
 /// `build_issuance_tx` skips its most expensive step. The worker calls
 /// this off the critical path, while the user is still filling the form;
-/// the vendored proving-key cache (vendor/librustzcash/README.md) keeps
-/// the key for every later mint in the session.
+/// zcash_primitives' per-circuit-version cache keeps the key for every
+/// later mint in the session.
 #[wasm_bindgen]
 pub fn prepare_proving() {
-    zcash_primitives::transaction::builder::prepare_orchard_zsa_proving_key();
+    let _ = zcash_primitives::transaction::builder::cached_orchard_proving_key(
+        orchard::circuit::OrchardCircuitVersion::ZSA,
+    );
 }
 
 /// Derived issuer identity (mirror of `cachet-chain`'s `IssuerKeys`).
@@ -256,7 +258,7 @@ fn seal_only(amount: u64, finalize: bool, first_issuance: bool) -> Result<bool, 
 
 #[derive(Serialize)]
 struct BuiltTx {
-    /// The complete signed v6 transaction, hex-encoded, ready to relay.
+    /// The complete signed v7 transaction, hex-encoded, ready to relay.
     tx_hex: String,
     /// Transaction id, display byte order.
     txid: String,
@@ -298,9 +300,13 @@ pub fn build_issuance_tx(
         target_height.into(),
         BuildConfig::Standard {
             sapling_anchor: None,
-            // Issuance spends no Orchard notes; the empty-tree anchor is
-            // valid for output-only bundles.
-            orchard_anchor: Some(Anchor::empty_tree()),
+            orchard_anchor: None,
+            // v7 carries the ZSA bundle in the Ironwood slot. Issuance
+            // spends no notes; the empty-tree anchor is valid for
+            // output-only bundles.
+            ironwood_anchor: Some(Anchor::empty_tree()),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
         },
     );
 
@@ -326,10 +332,10 @@ pub fn build_issuance_tx(
             .map_err(|e| build_error("finalization", format!("{e:?}")))?;
     }
 
-    // The v6 builder requires at least one Orchard action to derive rho; a
+    // The builder requires at least one ZSA action to derive rho; a
     // zero-value ZEC output is the reference workaround.
     builder
-        .add_orchard_output::<FeeError>(
+        .add_ironwood_output::<FeeError>(
             Some(keys.orchard_ovk()),
             keys.default_address(),
             Zatoshis::ZERO,
@@ -355,7 +361,8 @@ pub fn build_issuance_tx(
             |asset_base| first_issuance && asset_base == &asset,
         )
         .map_err(|e| build_error("build", format!("{e:?}")))?
-        .into_transaction();
+        .transaction()
+        .clone();
 
     let mut tx_bytes = Vec::new();
     tx.write(&mut tx_bytes)
@@ -708,14 +715,18 @@ pub fn build_spend_tx(
         target_height.into(),
         BuildConfig::Standard {
             sapling_anchor: None,
-            orchard_anchor: Some(anchor),
+            orchard_anchor: None,
+            // v7 carries the ZSA bundle in the Ironwood slot.
+            ironwood_anchor: Some(anchor),
+            orchard_padding: BundlePadding::DEFAULT,
+            ironwood_padding: BundlePadding::DEFAULT,
         },
     );
 
     let mut spend_auth_keys: Vec<orchard::keys::SpendAuthorizingKey> = Vec::new();
     for (spending_key, note, merkle_path) in inputs {
         builder
-            .add_orchard_spend::<FeeError>((&spending_key).into(), note, merkle_path)
+            .add_ironwood_spend::<FeeError>((&spending_key).into(), note, merkle_path)
             .map_err(|error| build_error("spend", format!("{error:?}")))?;
         spend_auth_keys.push(orchard::keys::SpendAuthorizingKey::from(&spending_key));
     }
@@ -723,7 +734,7 @@ pub fn build_spend_tx(
     match recipient_address {
         Some(recipient) => {
             builder
-                .add_orchard_output::<FeeError>(
+                .add_ironwood_output::<FeeError>(
                     Some(keys.orchard_ovk()),
                     recipient,
                     Zatoshis::from_u64(amount).expect("nonzero validated amount"),
@@ -742,7 +753,7 @@ pub fn build_spend_tx(
     let change = total_inputs - amount;
     if change > 0 {
         builder
-            .add_orchard_output::<FeeError>(
+            .add_ironwood_output::<FeeError>(
                 Some(keys.orchard_ovk()),
                 own_address,
                 Zatoshis::from_u64(change).expect("validated change"),
@@ -767,7 +778,8 @@ pub fn build_spend_tx(
             |_| false,
         )
         .map_err(|error| build_error("build", format!("{error:?}")))?
-        .into_transaction();
+        .transaction()
+        .clone();
 
     let mut tx_bytes = Vec::new();
     tx.write(&mut tx_bytes)
@@ -964,7 +976,7 @@ pub fn swap_countersign(
 }
 
 /// The id the swap will have once the taker relays it, read from the take
-/// the maker countersigns: a v6 txid commits to the effecting data, never
+/// the maker countersigns: a v7 txid commits to the effecting data, never
 /// to proofs or signatures. The maker's page shows the transaction it
 /// signed for without asking anyone. Hex, display order.
 #[wasm_bindgen]

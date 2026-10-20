@@ -9,16 +9,16 @@ use core::iter;
 
 use group::ff::{Field, PrimeField};
 use halo2_proofs::{
-    circuit::{AssignedCell, Layouter, Value},
+    circuit::{AssignedCell, Chip, Layouter, Value},
     plonk::{Advice, Column, ConstraintSystem, Constraints, Error, Expression, Selector},
     poly::Rotation,
 };
 use pasta_curves::pallas;
 
-use crate::constants::{OrchardCommitDomains, OrchardFixedBases, T_P};
+use crate::constants::{OrchardCommitDomains, OrchardFixedBases, OrchardHashDomains, T_P};
 use halo2_gadgets::{
     ecc::{chip::EccChip, ScalarFixed, X},
-    sinsemilla::{CommitDomain, Message, MessagePiece},
+    sinsemilla::{chip::SinsemillaChip, CommitDomain, Message, MessagePiece},
     utilities::{bool_check, RangeConstrained},
 };
 
@@ -247,19 +247,19 @@ pub(in crate::circuit) mod gadgets {
 
     use super::*;
 
-    use super::super::orchard_sinsemilla_chip::OrchardSinsemillaChip;
-
     /// `Commit^ivk` from [Section 5.4.8.4 Sinsemilla commitments].
     ///
     /// [Section 5.4.8.4 Sinsemilla commitments]: https://zips.z.cash/protocol/protocol.pdf#concretesinsemillacommit
     #[allow(non_snake_case)]
     #[allow(clippy::type_complexity)]
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
-    pub(in crate::circuit) fn commit_ivk<
-        Lookup: PallasLookupRangeCheck,
-        SinsemillaChip: OrchardSinsemillaChip<Lookup>,
-    >(
-        sinsemilla_chip: SinsemillaChip,
+    pub(in crate::circuit) fn commit_ivk<Lookup: PallasLookupRangeCheck>(
+        sinsemilla_chip: SinsemillaChip<
+            OrchardHashDomains,
+            OrchardCommitDomains,
+            OrchardFixedBases,
+            Lookup,
+        >,
         ecc_chip: EccChip<OrchardFixedBases, Lookup>,
         commit_ivk_chip: CommitIvkChip,
         mut layouter: impl Layouter<pallas::Base>,

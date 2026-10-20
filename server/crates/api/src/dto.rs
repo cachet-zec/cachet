@@ -404,7 +404,7 @@ pub struct BurnAssetRequest {
 /// point is that the server holds no keys.
 #[derive(Debug, Deserialize, ToSchema)]
 pub struct RelayRequest {
-    /// Complete signed v6 transaction, hex-encoded.
+    /// Complete signed v7 transaction, hex-encoded.
     pub tx_hex: String,
 }
 

@@ -319,7 +319,7 @@ impl Debug for IssueAuthKey<ZSASchnorr> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         // Do not print bytes from the issuance authorizing key.
         let ik = IssueValidatingKey::from(self);
-        write!(f, "IssueAuthKey({:?})", ik)
+        write!(f, "IssueAuthKey({ik:?})")
     }
 }
 

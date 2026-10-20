@@ -7,12 +7,11 @@ use std::ops::Deref;
 
 use cachet_swap::testing::{address, key, note, setup};
 use cachet_swap::{Countersignature, Offer, SwapError, countersign, finish, take, take_txid};
-use orchard::circuit::VerifyingKey;
-use orchard::flavor::OrchardZSA;
+use orchard::bundle::BundleVersion;
+use orchard::circuit::{OrchardCircuitVersion, VerifyingKey};
 use orchard::keys::{FullViewingKey, Scope};
 use orchard::note::AssetBase;
 use rand::rngs::OsRng;
-use zcash_primitives::transaction::OrchardBundle;
 use zcash_protocol::consensus::BlockHeight;
 
 #[test]
@@ -44,7 +43,12 @@ fn a_swap_completes_and_verifies_like_a_node_would_check_it() {
 
     // Checked as a node would: one sighash for everything.
     let data = tx.deref();
-    let Some(OrchardBundle::OrchardZSA(bundle)) = data.orchard_bundle() else {
+    // v7: the ZSA bundle sits in the Ironwood slot, the Orchard one is empty.
+    assert!(data.orchard_bundle().is_none());
+    let Some(bundle) = data
+        .ironwood_bundle()
+        .filter(|bundle| bundle.bundle_version() == BundleVersion::zsa())
+    else {
         panic!("a swap is an OrchardZSA bundle");
     };
     // ZIP 244: with no transparent input, the shielded signature digest IS
@@ -52,7 +56,7 @@ fn a_swap_completes_and_verifies_like_a_node_would_check_it() {
     // independently of the code that produced them.
     let sighash: [u8; 32] = *tx.txid().as_ref();
     bundle
-        .verify_proof(&VerifyingKey::build::<OrchardZSA>())
+        .verify_proof(&VerifyingKey::build(OrchardCircuitVersion::ZSA))
         .expect("the proof verifies");
     for action in bundle.actions() {
         action

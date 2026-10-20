@@ -2506,7 +2506,7 @@
         "properties": {
           "tx_hex": {
             "type": "string",
-            "description": "Complete signed v6 transaction, hex-encoded."
+            "description": "Complete signed v7 transaction, hex-encoded."
           }
         }
       },

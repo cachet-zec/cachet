@@ -3,6 +3,7 @@ use alloc::vec::Vec;
 use core::fmt;
 use memuse::DynamicUsage;
 
+use blake2b_simd::Params as Blake2bParams;
 use ff::PrimeField;
 use group::GroupEncoding;
 use pasta_curves::pallas;
@@ -11,8 +12,8 @@ use subtle::{Choice, ConditionallySelectable, CtOption};
 
 use crate::{
     keys::{EphemeralSecretKey, FullViewingKey, Scope, SpendingKey},
-    primitives::OrchardPrimitives,
-    spec::{to_base, to_scalar, NonZeroPallasScalar, PrfExpand},
+    note_encryption::NoteCiphertextBytes,
+    spec::{to_base, to_scalar, NonIdentityPallasPoint, NonZeroPallasScalar, PrfExpand},
     value::NoteValue,
     Address,
 };
@@ -22,6 +23,10 @@ pub use self::asset_base::AssetBase;
 #[cfg(feature = "zsa-issuance")]
 pub use self::asset_base::AssetId;
 
+const PRF_EXPAND_PERSONALIZATION: &[u8; 16] = b"Zcash_ExpandSeed";
+const ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR: u8 = 0x0B;
+const ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR: u8 = 0x0E;
+
 #[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod commitment;
 #[cfg(feature = "unstable-voting-circuits")]
@@ -29,6 +34,45 @@ pub mod commitment;
 #[cfg(feature = "unstable-voting-circuits")]
 pub use self::commitment::NoteCommitTrapdoor;
 pub use self::commitment::{ExtractedNoteCommitment, NoteCommitment};
+
+/// Note plaintext version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteVersion {
+    /// The [ZIP 212] Orchard note plaintext format, identified by lead byte
+    /// `0x02`.
+    ///
+    /// [ZIP 212]: https://zips.z.cash/zip-0212
+    V2,
+    /// The quantum-recoverable Ironwood note plaintext version defined in
+    /// [ZIP 2005].
+    ///
+    /// [ZIP 2005]: https://zips.z.cash/zip-2005
+    V3,
+    /// The quantum-recoverable ZSA note plaintext version.
+    ZSA,
+}
+
+impl NoteVersion {
+    /// Returns the note plaintext lead byte signaling this version.
+    pub(crate) const fn lead_byte(self) -> u8 {
+        match self {
+            Self::V2 => 0x02,
+            Self::V3 => 0x03,
+            Self::ZSA => 0x04,
+        }
+    }
+
+    /// Parses a note plaintext lead byte into the corresponding version,
+    /// returning `None` if the byte is not a recognized version.
+    pub(crate) fn from_lead_byte(b: u8) -> Option<Self> {
+        match b {
+            0x02 => Some(Self::V2),
+            0x03 => Some(Self::V3),
+            0x04 => Some(Self::ZSA),
+            _ => None,
+        }
+    }
+}
 
 #[cfg(not(feature = "unstable-voting-circuits"))]
 pub(crate) mod nullifier;
@@ -51,7 +95,7 @@ impl Rho {
     /// value otherwise.
     ///
     /// [`Action::rho`]: crate::action::Action::rho
-    /// [`CompactAction::rho`]: crate::primitives::CompactAction::rho
+    /// [`CompactAction::rho`]: crate::note_encryption::CompactAction::rho
     pub fn from_bytes(bytes: &[u8; 32]) -> CtOption<Self> {
         pallas::Base::from_repr(*bytes).map(Rho)
     }
@@ -132,14 +176,128 @@ impl RandomSeed {
         self.esk_inner(rho).unwrap()
     }
 
+    /// The rcm derivation for V2 (ZIP 212) notes.
+    ///
     /// Defined in [Zcash Protocol Spec § 4.7.3: Sending Notes (Orchard)][orchardsend].
     ///
     /// [orchardsend]: https://zips.z.cash/protocol/nu5.pdf#orchardsend
     #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
-    pub(crate) fn rcm(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
+    pub(crate) fn rcm_v2(&self, rho: &Rho) -> commitment::NoteCommitTrapdoor {
         commitment::NoteCommitTrapdoor(to_scalar(
             PrfExpand::ORCHARD_RCM.with(&self.0, &rho.to_bytes()),
         ))
+    }
+
+    /// Quantum-recoverable rcm derivation per [ZIP 2005].
+    ///
+    /// Binds rcm to all note fields for post-quantum commitment binding. This
+    /// implements $\mathsf{H}^{\mathsf{rcm},\mathsf{Orchard}}\_{\mathsf{rseed}}$:
+    ///
+    /// $$
+    /// \mathsf{pre}\_{\mathsf{rcm}} =
+    /// [ \mathtt{0x0B} ]
+    /// \mathbin\Vert \mathsf{g}^\star\_{\mathsf{d}}
+    /// \mathbin\Vert \mathsf{pk}^\star\_{\mathsf{d}}
+    /// \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
+    /// \mathbin\Vert \rho
+    /// \mathbin\Vert \mathsf{I2LEOSP}\_{256}(\psi)
+    /// $$
+    ///
+    /// $$
+    /// \mathsf{rcm} =
+    /// \mathsf{ToScalar}^{\mathsf{Orchard}}
+    /// \left(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}
+    /// (\mathsf{pre}\_{\mathsf{rcm}})\right)
+    /// $$
+    ///
+    /// [ZIP 2005]: https://zips.z.cash/zip-2005
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+    pub(crate) fn rcm_v3(
+        &self,
+        rho: &Rho,
+        g_d: &NonIdentityPallasPoint,
+        pk_d: &NonIdentityPallasPoint,
+        value: u64,
+        psi: &pallas::Base,
+    ) -> commitment::NoteCommitTrapdoor {
+        let mut h = Blake2bParams::new()
+            .hash_length(64)
+            .personal(PRF_EXPAND_PERSONALIZATION)
+            .to_state();
+        // rseed: raw bytes (32 bytes)
+        h.update(&self.0);
+        // domain separator: [0x0B] (1 byte, literal)
+        h.update(&[ZIP2005_ORCHARD_QR_RCM_DOMAIN_SEPARATOR]);
+        // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
+        h.update(&g_d.to_bytes());
+        // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
+        h.update(&pk_d.to_bytes());
+        // v: I2LEOSP_64(v) — unsigned 64-bit little-endian (8 bytes)
+        h.update(&value.to_le_bytes());
+        // rho: LEBS2OSP_256(repr_P(rho)) — Pallas base field canonical repr (32 bytes)
+        h.update(&rho.0.to_repr());
+        // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
+        h.update(&psi.to_repr());
+
+        commitment::NoteCommitTrapdoor(to_scalar(*h.finalize().as_array()))
+    }
+
+    /// Quantum-recoverable rcm derivation for ZSA notes.
+    ///
+    /// Binds rcm to all note fields for post-quantum commitment binding. Compared
+    /// to rcm_v3, we bind the note's [`AssetBase`] as well, so that rcm (and hence
+    /// the note commitment) cannot be reused across notes that differ only in their asset.
+    /// This implements $\mathsf{H}^{\mathsf{rcm},\mathsf{OrchardZSA}}\_{\mathsf{rseed}}$:
+    ///
+    /// $$
+    /// \mathsf{pre}\_{\mathsf{rcm}} =
+    /// [ \mathtt{0x0E} ]
+    /// \mathbin\Vert \mathsf{g}^\star\_{\mathsf{d}}
+    /// \mathbin\Vert \mathsf{pk}^\star\_{\mathsf{d}}
+    /// \mathbin\Vert \mathsf{I2LEOSP}\_{64}(\mathsf{v})
+    /// \mathbin\Vert \rho
+    /// \mathbin\Vert \mathsf{I2LEOSP}\_{256}(\psi)
+    /// \mathbin\Vert \mathsf{asset}^\star
+    /// $$
+    ///
+    /// $$
+    /// \mathsf{rcm} =
+    /// \mathsf{ToScalar}^{\mathsf{Orchard}}
+    /// \left(\mathsf{PRF}^{\mathsf{expand}}\_{\mathsf{rseed}}
+    /// (\mathsf{pre}\_{\mathsf{rcm}})\right)
+    /// $$
+    #[cfg_attr(feature = "unstable-voting-circuits", visibility::make(pub))]
+    pub(crate) fn rcm_zsa(
+        &self,
+        rho: &Rho,
+        g_d: &NonIdentityPallasPoint,
+        pk_d: &NonIdentityPallasPoint,
+        value: u64,
+        psi: &pallas::Base,
+        asset: &AssetBase,
+    ) -> commitment::NoteCommitTrapdoor {
+        let mut h = Blake2bParams::new()
+            .hash_length(64)
+            .personal(PRF_EXPAND_PERSONALIZATION)
+            .to_state();
+        // rseed: raw bytes (32 bytes)
+        h.update(&self.0);
+        // domain separator: [0x0E] (1 byte, literal)
+        h.update(&[ZSA_ORCHARD_RCM_DOMAIN_SEPARATOR]);
+        // g_d: LEBS2OSP_256(repr_P(g_d)) — compressed Pallas point (32 bytes)
+        h.update(&g_d.to_bytes());
+        // pk_d: LEBS2OSP_256(repr_P(pk_d)) — compressed Pallas point (32 bytes)
+        h.update(&pk_d.to_bytes());
+        // v: I2LEOSP_64(v) — unsigned 64-bit little-endian (8 bytes)
+        h.update(&value.to_le_bytes());
+        // rho: LEBS2OSP_256(repr_P(rho)) — Pallas base field canonical repr (32 bytes)
+        h.update(&rho.0.to_repr());
+        // psi: LEBS2OSP_256(repr_P(psi)) — Pallas base field canonical repr (32 bytes)
+        h.update(&psi.to_repr());
+        // asset: LEBS2OSP_256(repr_P(asset)) — compressed Pallas point (32 bytes)
+        h.update(&asset.to_bytes());
+
+        commitment::NoteCommitTrapdoor(to_scalar(*h.finalize().as_array()))
     }
 }
 
@@ -183,6 +341,8 @@ pub struct Note {
     ///
     /// If it is not a split note, this field is `None`.
     rseed_split_note: CtOption<RandomSeed>,
+    /// The note plaintext version, determining rcm derivation strategy.
+    version: NoteVersion,
 }
 
 impl PartialEq for Note {
@@ -216,30 +376,24 @@ impl Note {
         asset: AssetBase,
         rho: Rho,
         rseed: RandomSeed,
+        version: NoteVersion,
     ) -> CtOption<Self> {
-        Self::from_parts_internal(
+        let note = Note {
             recipient,
             value,
             asset,
-            rho,
+            rho: Some(rho),
             rseed,
-            CtOption::new(rseed, 0u8.into()),
-        )
+            rseed_split_note: CtOption::new(rseed, 0u8.into()),
+            version,
+        };
+        CtOption::new(note, note.commitment_inner().is_some())
     }
 
-    /// Creates a `Note` from its component parts.
+    /// Creates a `Note` from all its component parts (rseed_split_note included).
     ///
-    /// This additionally permits constructing a [Split Input note], which is necessary
-    /// for constructing certain patterns of bundles containing ZSA outputs. It is used by
-    /// the PCZT code, which is the only place where these notes are serialized.
-    ///
-    /// Returns `None` if a valid [`NoteCommitment`] cannot be derived from the note.
-    ///
-    /// # Caveats
-    ///
-    /// See [`Self::from_parts`].
-    ///
-    /// [Split Input note]: https://zips.z.cash/zip-0226#split-notes
+    /// This function is only used in tests.
+    #[cfg(test)]
     pub(crate) fn from_parts_internal(
         recipient: Address,
         value: NoteValue,
@@ -247,6 +401,7 @@ impl Note {
         rho: Rho,
         rseed: RandomSeed,
         rseed_split_note: CtOption<RandomSeed>,
+        version: NoteVersion,
     ) -> CtOption<Self> {
         let note = Note {
             recipient,
@@ -255,6 +410,7 @@ impl Note {
             rho: Some(rho),
             rseed,
             rseed_split_note,
+            version,
         };
         CtOption::new(note, note.commitment_inner().is_some())
     }
@@ -270,6 +426,7 @@ impl Note {
         value: NoteValue,
         asset: AssetBase,
         rho: Rho,
+        version: NoteVersion,
         mut rng: impl RngCore,
     ) -> Self {
         loop {
@@ -279,6 +436,7 @@ impl Note {
                 asset,
                 rho,
                 RandomSeed::random(&mut rng, &rho),
+                version,
             );
             if note.is_some().into() {
                 break note.unwrap();
@@ -300,6 +458,7 @@ impl Note {
         recipient: Address,
         value: NoteValue,
         asset: AssetBase,
+        version: NoteVersion,
         mut rng: impl RngCore,
     ) -> Self {
         let rseed = RandomSeed::random(&mut rng, &Rho(pallas::Base::zero()));
@@ -310,6 +469,7 @@ impl Note {
             rho: None,
             rseed,
             rseed_split_note: CtOption::new(rseed, 0u8.into()),
+            version,
         }
     }
 
@@ -322,6 +482,7 @@ impl Note {
     pub(crate) fn dummy(
         rng: &mut impl RngCore,
         rho: Option<Rho>,
+        note_version: NoteVersion,
     ) -> (SpendingKey, FullViewingKey, Self) {
         let sk = SpendingKey::random(rng);
         let fvk: FullViewingKey = (&sk).into();
@@ -332,6 +493,7 @@ impl Note {
             NoteValue::ZERO,
             AssetBase::zatoshi(),
             rho.unwrap_or_else(|| Rho::from_nf_old(Nullifier::dummy(rng))),
+            note_version,
             rng,
         );
 
@@ -379,6 +541,49 @@ impl Note {
         self.rho.is_some()
     }
 
+    /// Returns the version of this note.
+    pub fn version(&self) -> NoteVersion {
+        self.version
+    }
+
+    /// Derives the ψ value for this note.
+    pub(crate) fn psi(&self) -> pallas::Base {
+        self.rseed.psi(&self.rho())
+    }
+
+    /// Derives the `psi_nf` value for this note.
+    ///
+    /// For a split note, this value comes from `rseed_split_note`. It is then different from
+    /// [`Self::psi`]. For all other notes, the two values are the same.
+    pub(crate) fn psi_nf(&self) -> pallas::Base {
+        self.rseed_split_note.unwrap_or(self.rseed).psi(&self.rho())
+    }
+
+    /// Derives the note commitment trapdoor for this note.
+    pub(crate) fn rcm(&self) -> commitment::NoteCommitTrapdoor {
+        let rho = self.rho();
+
+        match self.version {
+            NoteVersion::V2 => self.rseed.rcm_v2(&rho),
+            NoteVersion::V3 => {
+                let g_d = self.recipient.g_d();
+                let pk_d = self.recipient.pk_d().inner();
+                let psi = self.rseed.psi(&rho);
+
+                self.rseed
+                    .rcm_v3(&rho, &g_d, &pk_d, self.value.inner(), &psi)
+            }
+            NoteVersion::ZSA => {
+                let g_d = self.recipient.g_d();
+                let pk_d = self.recipient.pk_d().inner();
+                let psi = self.rseed.psi(&rho);
+
+                self.rseed
+                    .rcm_zsa(&rho, &g_d, &pk_d, self.value.inner(), &psi, &self.asset)
+            }
+        }
+    }
+
     /// Derives the commitment to this note.
     ///
     /// Defined in [Zcash Protocol Spec § 3.2: Notes][notes].
@@ -400,26 +605,28 @@ impl Note {
     /// [notes]: https://zips.z.cash/protocol/nu5.pdf#notes
     fn commitment_inner(&self) -> CtOption<NoteCommitment> {
         let g_d = self.recipient.g_d();
+        let g_d_bytes = g_d.to_bytes();
+        let pk_d = self.recipient.pk_d().inner();
+        let pk_d_bytes = pk_d.to_bytes();
+        let psi = self.psi();
 
         NoteCommitment::derive(
-            g_d.to_bytes(),
-            self.recipient.pk_d().to_bytes(),
+            g_d_bytes,
+            pk_d_bytes,
             self.value,
             self.asset,
             self.rho().0,
-            self.rseed.psi(&self.rho()),
-            self.rseed.rcm(&self.rho()),
+            psi,
+            self.rcm(),
         )
     }
 
     /// Derives the nullifier for this note.
     pub fn nullifier(&self, fvk: &FullViewingKey) -> Nullifier {
-        let selected_rseed = self.rseed_split_note.unwrap_or(self.rseed);
-
         Nullifier::derive(
             fvk.nk(),
             self.rho().0,
-            selected_rseed.psi(&self.rho()),
+            self.psi_nf(),
             self.commitment(),
             self.rseed_split_note.is_some(),
         )
@@ -490,17 +697,17 @@ pub(crate) fn rho_for_issuance_note(
 
 /// An encrypted note.
 #[derive(Clone)]
-pub struct TransmittedNoteCiphertext<Pr: OrchardPrimitives> {
+pub struct TransmittedNoteCiphertext {
     /// The serialization of the ephemeral public key
     pub epk_bytes: [u8; 32],
     /// The encrypted note ciphertext
-    pub enc_ciphertext: Pr::NoteCiphertextBytes,
+    pub enc_ciphertext: NoteCiphertextBytes,
     /// An encrypted value that allows the holder of the outgoing cipher
     /// key for the note to recover the note plaintext.
     pub out_ciphertext: [u8; 80],
 }
 
-impl<Pr: OrchardPrimitives> fmt::Debug for TransmittedNoteCiphertext<Pr> {
+impl fmt::Debug for TransmittedNoteCiphertext {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TransmittedNoteCiphertext")
             .field("epk_bytes", &self.epk_bytes)
@@ -527,7 +734,7 @@ pub mod testing {
 
     use subtle::CtOption;
 
-    use super::{Note, RandomSeed, Rho};
+    use super::{Note, NoteVersion, RandomSeed, Rho};
 
     prop_compose! {
         /// Generate an arbitrary random seed
@@ -537,8 +744,8 @@ pub mod testing {
     }
 
     prop_compose! {
-        /// Generate an arbitrary note
-        pub fn arb_note(value: NoteValue)(
+        /// Generate an arbitrary note with the given plaintext version.
+        pub fn arb_note(value: NoteValue, version: NoteVersion)(
             recipient in arb_address(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
             rseed in arb_rseed(),
@@ -551,13 +758,14 @@ pub mod testing {
                 rho: Some(rho),
                 rseed,
                 rseed_split_note: CtOption::new(rseed, 0u8.into()),
+                version,
             }
         }
     }
 
     prop_compose! {
         /// Generate an arbitrary zatoshi note
-        pub fn arb_zatoshi_note()(
+        pub fn arb_zatoshi_note(version: NoteVersion)(
             recipient in arb_address(),
             value in arb_note_value(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
@@ -569,7 +777,8 @@ pub mod testing {
                 asset: AssetBase::zatoshi(),
                 rho: Some(rho),
                 rseed,
-                rseed_split_note: CtOption::new(rseed, 0u8.into())
+                rseed_split_note: CtOption::new(rseed, 0u8.into()),
+                version,
             }
         }
     }
@@ -577,7 +786,7 @@ pub mod testing {
     #[cfg(feature = "zsa-issuance")]
     prop_compose! {
         /// Generate an arbitrary zsa note
-        pub fn arb_zsa_note(ik: IssueValidatingKey<ZSASchnorr>, asset_desc_hash: [u8; 32])(
+        pub fn arb_zsa_note(ik: IssueValidatingKey<ZSASchnorr>, asset_desc_hash: [u8; 32], version: NoteVersion)(
             recipient in arb_address(),
             value in arb_note_value(),
             rho in arb_nullifier().prop_map(Rho::from_nf_old),
@@ -591,7 +800,170 @@ pub mod testing {
                 rho: Some(rho),
                 rseed,
                 rseed_split_note: CtOption::new(rseed, 0u8.into()),
+                version,
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    // TODO Constance: update the zcash_test_vectors repository so that keys.rs can be
+    // generated with post-quantum keys and issuance keys.
+    /*
+    use crate::{
+        keys::{FullViewingKey, Scope, SpendingKey},
+        test_vectors::keys::TestVector,
+    };
+    use ff::PrimeField;
+    use group::GroupEncoding;
+
+
+    struct QrRcmDerivation {
+        rcm_old_repr: [u8; 32],
+        rcm_new_repr: [u8; 32],
+        cmx_old_bytes: [u8; 32],
+        cmx_qr_bytes: [u8; 32],
+    }
+
+    fn qr_rcm_from_key_test_vector(tv: &TestVector) -> QrRcmDerivation {
+        let sk = SpendingKey::from_bytes(tv.sk).unwrap();
+        let fvk = FullViewingKey::from(&sk);
+        let addr = fvk.address_at(0u32, Scope::External);
+        let rho = Rho::from_bytes(&tv.note_rho).unwrap();
+        let rseed = RandomSeed::from_bytes(tv.note_rseed, &rho).unwrap();
+
+        let g_d = addr.g_d();
+        let pk_d = addr.pk_d().inner();
+        let g_d_bytes = g_d.to_bytes();
+        let pk_d_bytes = pk_d.to_bytes();
+
+        let rcm_old = rseed.rcm_v2(&rho);
+        let psi = rseed.psi(&rho);
+        let rcm_new = rseed.rcm_v3(&rho, &g_d, &pk_d, tv.note_v, &psi);
+
+        let rcm_old_repr = rcm_old.0.to_repr();
+        let rcm_new_repr = rcm_new.0.to_repr();
+        let rho_inner = rho.into_inner();
+        let value = NoteValue::from_raw(tv.note_v);
+
+        let cmx_old = NoteCommitment::derive(
+            g_d_bytes,
+            pk_d_bytes,
+            value,
+            AssetBase::zatoshi(),
+            rho_inner,
+            psi,
+            rcm_old,
+        )
+        .unwrap();
+        let cmx_old_bytes = ExtractedNoteCommitment::from(cmx_old).to_bytes();
+
+        let cmx_qr = NoteCommitment::derive(
+            g_d_bytes,
+            pk_d_bytes,
+            value,
+            AssetBase::zatoshi(),
+            rho_inner,
+            psi,
+            rcm_new,
+        )
+        .unwrap();
+        let cmx_qr_bytes = ExtractedNoteCommitment::from(cmx_qr).to_bytes();
+
+        QrRcmDerivation {
+            rcm_old_repr,
+            rcm_new_repr,
+            cmx_old_bytes,
+            cmx_qr_bytes,
+        }
+    }
+
+    #[test]
+    fn qr_rcm_differs_from_old_rcm() {
+        let tv = &crate::test_vectors::keys::test_vectors()[0];
+        let derived = qr_rcm_from_key_test_vector(tv);
+
+        assert_ne!(derived.rcm_old_repr, derived.rcm_new_repr);
+        assert_eq!(
+            derived.cmx_old_bytes, tv.note_cmx,
+            "old cmx must match known test vector"
+        );
+        assert_ne!(derived.cmx_old_bytes, derived.cmx_qr_bytes);
+    }
+
+    #[test]
+    fn qr_rcm_verify_stored_vectors() {
+        for (i, key_tv) in crate::test_vectors::keys::test_vectors().iter().enumerate() {
+            let derived = qr_rcm_from_key_test_vector(key_tv);
+
+            assert_eq!(
+                derived.rcm_new_repr, key_tv.note_qr_rcm,
+                "vector {i}: rcm_qr mismatch"
+            );
+            assert_eq!(
+                derived.cmx_old_bytes, key_tv.note_cmx,
+                "vector {i}: cmx_old mismatch"
+            );
+            assert_eq!(
+                derived.cmx_qr_bytes, key_tv.note_qr_cmx,
+                "vector {i}: cmx_qr mismatch"
+            );
+        }
+    }
+    */
+
+    /// A split note takes its psi from the split seed, and adds NULLIFIER_L to its nullifier.
+    /// No constructor sets `rseed_split_note`, so this test sets it directly.
+    #[test]
+    fn split_note_nullifier() {
+        let mut rng = rand::rngs::OsRng;
+        let (_, fvk, note) = Note::dummy(&mut rng, None, NoteVersion::V3);
+        let rho = note.rho();
+        let split_rseed = RandomSeed::random(&mut rng, &rho);
+        let split_note = Note {
+            rseed_split_note: CtOption::new(split_rseed, 1u8.into()),
+            ..note
+        };
+
+        let psi_nf = split_rseed.psi(&rho);
+        assert_eq!(split_note.psi_nf(), psi_nf);
+        assert_ne!(psi_nf, note.psi());
+
+        let derive = |psi, is_split: bool| {
+            Nullifier::derive(
+                fvk.nk(),
+                rho.into_inner(),
+                psi,
+                note.commitment(),
+                Choice::from(u8::from(is_split)),
+            )
+        };
+
+        // The split note uses the split seed's psi and adds NULLIFIER_L.
+        assert_eq!(split_note.nullifier(&fvk), derive(psi_nf, true));
+        // Without NULLIFIER_L  (is_split=false), the result is different.
+        assert_ne!(split_note.nullifier(&fvk), derive(psi_nf, false));
+        // With the note's own psi, the result is different.
+        assert_ne!(split_note.nullifier(&fvk), derive(note.psi(), true));
+        // A note with no split seed uses its own psi and does not add NULLIFIER_L (is_split=false).
+        assert_eq!(note.nullifier(&fvk), derive(note.psi(), false));
+    }
+
+    /// `rcm_zsa` binds the note's asset, so two ZSA notes differing only in their asset have
+    /// distinct rcm and hence distinct note commitments.
+    #[test]
+    fn rcm_zsa_binds_the_asset() {
+        let mut rng = rand::rngs::OsRng;
+        let (_, _, note) = Note::dummy(&mut rng, None, NoteVersion::ZSA);
+
+        // Everything but the asset is shared, by construction.
+        let other = Note {
+            asset: AssetBase::random(&mut rng),
+            ..note
+        };
+
+        assert_ne!(note.rcm().inner(), other.rcm().inner());
     }
 }

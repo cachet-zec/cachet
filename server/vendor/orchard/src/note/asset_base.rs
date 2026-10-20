@@ -1,10 +1,9 @@
 use core::cmp::Ordering;
-use core::hash::{Hash, Hasher};
 use group::{Group, GroupEncoding};
-use pasta_curves::{arithmetic::CurveExt, pallas};
+use pasta_curves::pallas;
 use subtle::{Choice, ConstantTimeEq, CtOption};
 
-use crate::constants::fixed_bases::{VALUE_COMMITMENT_PERSONALIZATION, ZATOSHI_ASSET_BASE_V_BYTES};
+use crate::constants::zatoshi_asset_base::zatoshi_asset_base;
 
 #[cfg(test)]
 use rand_core::CryptoRngCore;
@@ -15,6 +14,7 @@ use {
     crate::issuance::auth::{IssueValidatingKey, ZSASchnorr},
     alloc::vec::Vec,
     blake2b_simd::{Hash as Blake2bHash, Params},
+    pasta_curves::arithmetic::CurveExt,
 };
 
 /// Asset Identifier
@@ -139,9 +139,7 @@ impl AssetBase {
 
     /// Note type for zatoshi, maintains backward compatibility with Orchard untyped notes.
     pub fn zatoshi() -> Self {
-        AssetBase(pallas::Point::hash_to_curve(
-            VALUE_COMMITMENT_PERSONALIZATION,
-        )(&ZATOSHI_ASSET_BASE_V_BYTES))
+        AssetBase(pallas::Point::from(zatoshi_asset_base()))
     }
 
     /// The base point used in value commitments.
@@ -171,13 +169,6 @@ impl AssetBase {
             }
             return Self(random_point);
         }
-    }
-}
-
-impl Hash for AssetBase {
-    fn hash<H: Hasher>(&self, h: &mut H) {
-        h.write(&self.to_bytes());
-        let _ = h.finish();
     }
 }
 

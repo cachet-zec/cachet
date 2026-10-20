@@ -9,7 +9,7 @@ use cachet_domain::{
     AssetId, DecodedBurn, DecodedIssuance, DecodedIssueAction, DecodedTransaction, TxId,
 };
 use orchard::note::{AssetBase, AssetId as OrchardAssetId};
-use zcash_primitives::transaction::{OrchardBundle, Transaction};
+use zcash_primitives::transaction::Transaction;
 
 /// Decode `tx`, mined at `height` (`None` in the mempool), whose format
 /// version the node reported as `version`.
@@ -46,10 +46,16 @@ pub fn decode(tx: &Transaction, height: Option<u64>, version: u32) -> DecodedTra
         }
     });
 
-    let (orchard_actions, burns) = match tx.orchard_bundle() {
-        Some(OrchardBundle::OrchardVanilla(bundle)) => (bundle.actions().len() as u32, Vec::new()),
-        Some(OrchardBundle::OrchardZSA(bundle)) => (
-            bundle.actions().len() as u32,
+    // A v7 transaction has two Orchard-shaped slots: Orchard (ZEC only)
+    // and Ironwood, which carries the ZSA bundle and so the burns.
+    let orchard_actions = [tx.orchard_bundle(), tx.ironwood_bundle()]
+        .into_iter()
+        .flatten()
+        .map(|bundle| bundle.actions().len() as u32)
+        .sum();
+    let burns = tx
+        .ironwood_bundle()
+        .map(|bundle| {
             bundle
                 .burn()
                 .iter()
@@ -57,10 +63,9 @@ pub fn decode(tx: &Transaction, height: Option<u64>, version: u32) -> DecodedTra
                     asset_id: AssetId::from_bytes(asset.to_bytes()),
                     amount: value.inner(),
                 })
-                .collect(),
-        ),
-        None => (0, Vec::new()),
-    };
+                .collect()
+        })
+        .unwrap_or_default();
 
     let (transparent_inputs, transparent_outputs) = tx
         .transparent_bundle()

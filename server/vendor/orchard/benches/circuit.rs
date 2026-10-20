@@ -7,9 +7,8 @@ use criterion::{BenchmarkId, Criterion};
 use pprof::criterion::{Output, PProfProfiler};
 
 use orchard::{
-    builder::Builder,
+    builder::{Builder, BundleType},
     circuit::{ProvingKey, VerifyingKey},
-    flavor::{OrchardVanilla, OrchardZSA},
     keys::{FullViewingKey, Scope, SpendingKey},
     note::AssetBase,
     value::NoteValue,
@@ -19,7 +18,7 @@ use rand::rngs::OsRng;
 
 mod utils;
 
-use utils::OrchardFlavorBench;
+use utils::{IronwoodV3, OrchardFlavorBench, OrchardV2, Zsa};
 
 fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
     let rng = OsRng;
@@ -27,14 +26,19 @@ fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
     let sk = SpendingKey::from_bytes([7; 32]).unwrap();
     let recipient = FullViewingKey::from(&sk).address_at(0u32, Scope::External);
 
-    let vk = VerifyingKey::build::<FL>();
-    let pk = ProvingKey::build::<FL>();
+    let bundle_version = FL::DEFAULT_BUNDLE_VERSION;
+
+    let vk = VerifyingKey::build(bundle_version.circuit_version());
+    let pk = ProvingKey::build(bundle_version.circuit_version());
 
     let create_bundle = |num_recipients| {
         let mut builder = Builder::new(
-            FL::DEFAULT_BUNDLE_TYPE,
+            BundleType::DEFAULT,
+            bundle_version,
+            bundle_version.default_flags(),
             Anchor::from_bytes([0; 32]).unwrap(),
-        );
+        )
+        .unwrap();
         for _ in 0..num_recipients {
             builder
                 .add_output(
@@ -46,7 +50,7 @@ fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
                 )
                 .unwrap();
         }
-        let bundle: Bundle<_, i64, FL> = builder.build(rng).unwrap().unwrap().0;
+        let bundle: Bundle<_, i64> = builder.build(rng).unwrap().unwrap().0;
 
         let instances: Vec<_> = bundle
             .actions()
@@ -68,7 +72,7 @@ fn criterion_benchmark<FL: OrchardFlavorBench>(c: &mut Criterion) {
                 b.iter(|| {
                     bundle
                         .authorization()
-                        .create_proof::<FL>(&pk, &instances, rng)
+                        .create_proof(&pk, &instances, rng)
                         .unwrap()
                 });
             });
@@ -103,15 +107,21 @@ fn create_config() -> Criterion {
 }
 
 criterion_group! {
-    name = benches_vanilla;
+    name = benches_orchard_v2;
     config = create_config();
-    targets = criterion_benchmark::<OrchardVanilla>
+    targets = criterion_benchmark::<OrchardV2>
+}
+
+criterion_group! {
+    name = benches_ironwood_v3;
+    config = create_config();
+    targets = criterion_benchmark::<IronwoodV3>
 }
 
 criterion_group! {
     name = benches_zsa;
     config = create_config();
-    targets = criterion_benchmark::<OrchardZSA>
+    targets = criterion_benchmark::<Zsa>
 }
 
-criterion_main!(benches_vanilla, benches_zsa);
+criterion_main!(benches_orchard_v2, benches_ironwood_v3, benches_zsa);

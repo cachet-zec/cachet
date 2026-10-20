@@ -10,7 +10,7 @@ use orchard::keys::{FullViewingKey, Scope, SpendingKey};
 use orchard::note::{AssetBase, AssetId, ExtractedNoteCommitment, RandomSeed, Rho};
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::value::NoteValue;
-use orchard::{Address, Anchor, Note};
+use orchard::{Address, Anchor, Note, NoteVersion};
 use rand::RngCore;
 use rand::rngs::OsRng;
 
@@ -59,6 +59,7 @@ pub fn note(to: Address, value: u64, asset: AssetBase) -> Note {
             asset,
             rho,
             rseed,
+            NoteVersion::ZSA,
         )) {
             return note;
         }

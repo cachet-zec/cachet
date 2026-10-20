@@ -2,7 +2,7 @@
 //! running the QEDIT ZSA stack.
 //!
 //! Flow per issuance (mirrors the reference `zcash_tx_tool` scenarios):
-//! 1. build a v6 transaction whose issuance bundle mints the requested
+//! 1. build a v7 transaction whose issuance bundle mints the requested
 //!    amount (optionally finalizing the asset),
 //! 2. assemble a block from the node's `getblocktemplate` and submit it —
 //!    the QEDIT regtest has no miner, so the client mines,
@@ -33,7 +33,7 @@ use orchard::value::NoteValue;
 use orchard::{Address, Anchor, Note};
 use rand::rngs::OsRng;
 use zcash_primitives::transaction::Transaction;
-use zcash_primitives::transaction::builder::{BuildConfig, Builder};
+use zcash_primitives::transaction::builder::{BuildConfig, Builder, BundlePadding};
 use zcash_primitives::transaction::fees::zip317::{FeeError, FeeRule};
 use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus::REGTEST_NETWORK;
@@ -516,9 +516,13 @@ impl OrchardZsaBackend {
             target_height.into(),
             BuildConfig::Standard {
                 sapling_anchor: None,
-                // Issuance spends no Orchard notes; the empty-tree anchor is
-                // valid for output-only bundles.
-                orchard_anchor: Some(Anchor::empty_tree()),
+                orchard_anchor: None,
+                // v7 carries the ZSA bundle in the Ironwood slot. Issuance
+                // spends no notes; the empty-tree anchor is valid for
+                // output-only bundles.
+                ironwood_anchor: Some(Anchor::empty_tree()),
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
             },
         );
 
@@ -551,11 +555,11 @@ impl OrchardZsaBackend {
                 .map_err(|error| build_error("finalization")(format!("{error:?}")))?;
         }
 
-        // The v6 builder requires at least one Orchard action to derive rho;
-        // a zero-value ZEC output is the reference workaround (tx_tool does
+        // The builder requires at least one ZSA action to derive rho; a
+        // zero-value ZEC output is the reference workaround (tx_tool does
         // the same — custom assets cannot pad output-only bundles).
         builder
-            .add_orchard_output::<FeeError>(
+            .add_ironwood_output::<FeeError>(
                 Some(keys.orchard_ovk()),
                 keys.default_address(),
                 Zatoshis::ZERO,
@@ -591,7 +595,8 @@ impl OrchardZsaBackend {
                 },
             )
             .map_err(|error| build_error("build")(format!("{error:?}")))?
-            .into_transaction();
+            .transaction()
+            .clone();
         Ok(tx)
     }
 
@@ -724,7 +729,7 @@ impl OrchardZsaBackend {
         }
     }
 
-    /// Build a v6 transaction spending `inputs`, sending `amount` of `asset`
+    /// Build a v7 transaction spending `inputs`, sending `amount` of `asset`
     /// to `recipient`, returning change to `change_address`. When `burn` is
     /// true the amount is destroyed instead of sent. CPU-heavy — call
     /// inside `spawn_blocking`.
@@ -749,14 +754,18 @@ impl OrchardZsaBackend {
             target_height.into(),
             BuildConfig::Standard {
                 sapling_anchor: None,
-                orchard_anchor: Some(anchor),
+                orchard_anchor: None,
+                // v7 carries the ZSA bundle in the Ironwood slot.
+                ironwood_anchor: Some(anchor),
+                orchard_padding: BundlePadding::DEFAULT,
+                ironwood_padding: BundlePadding::DEFAULT,
             },
         );
 
         let mut spend_auth_keys: Vec<SpendAuthorizingKey> = Vec::new();
         for (spending_key, note, merkle_path) in inputs {
             builder
-                .add_orchard_spend::<FeeError>((&spending_key).into(), note, merkle_path)
+                .add_ironwood_spend::<FeeError>((&spending_key).into(), note, merkle_path)
                 .map_err(|error| stage_error("spend", format!("{error:?}")))?;
             spend_auth_keys.push(SpendAuthorizingKey::from(&spending_key));
         }
@@ -764,7 +773,7 @@ impl OrchardZsaBackend {
         match recipient {
             Some(recipient) => {
                 builder
-                    .add_orchard_output::<FeeError>(
+                    .add_ironwood_output::<FeeError>(
                         Some(keys.orchard_ovk()),
                         recipient,
                         Zatoshis::from_u64(amount).expect("validated amount"),
@@ -783,7 +792,7 @@ impl OrchardZsaBackend {
         let change = total_inputs - amount;
         if change > 0 {
             builder
-                .add_orchard_output::<FeeError>(
+                .add_ironwood_output::<FeeError>(
                     Some(keys.orchard_ovk()),
                     change_address,
                     Zatoshis::from_u64(change).expect("validated change"),
@@ -814,7 +823,8 @@ impl OrchardZsaBackend {
                 |_| false,
             )
             .map_err(|error| stage_error("build", format!("{error:?}")))?
-            .into_transaction();
+            .transaction()
+            .clone();
         Ok(tx)
     }
 
@@ -998,13 +1008,16 @@ impl ChainBackend for OrchardZsaBackend {
         let transaction =
             Transaction::read(tx_bytes.as_slice(), BranchId::Nu7).map_err(|error| {
                 ChainError::Rejected {
-                    reason: format!("not a valid v6 transaction: {error}"),
+                    reason: format!("not a valid v7 transaction: {error}"),
                 }
             })?;
-        // ZSA relay only: a transaction must carry an issuance bundle or an
-        // Orchard bundle (shielded transfer/burn). General broadcast is out
-        // of scope for a public instance.
-        if transaction.issue_bundle().is_none() && transaction.orchard_bundle().is_none() {
+        // ZSA relay only: a transaction must carry an issuance bundle or a
+        // ZSA bundle (shielded transfer/burn; v7 puts it in the Ironwood
+        // slot). General broadcast is out of scope for a public instance.
+        let zsa_bundle = transaction
+            .ironwood_bundle()
+            .is_some_and(|bundle| bundle.bundle_version() == orchard::bundle::BundleVersion::zsa());
+        if transaction.issue_bundle().is_none() && !zsa_bundle {
             return Err(ChainError::Rejected {
                 reason: "only issuance and shielded transfer/burn transactions are relayed"
                     .to_owned(),

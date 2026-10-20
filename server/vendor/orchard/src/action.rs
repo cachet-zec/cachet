@@ -9,7 +9,6 @@ use subtle::CtOption;
 use crate::{
     note::{ExtractedNoteCommitment, Nullifier, Rho, TransmittedNoteCiphertext},
     primitives::redpallas::{self, SpendAuth},
-    primitives::OrchardPrimitives,
     sighash_kind::OrchardSpendAuthSig,
     value::ValueCommitment,
 };
@@ -24,7 +23,7 @@ use crate::{
 /// Every `Action` has a non-identity `rk`, and an `epk_bytes` that encodes a
 /// non-identity [`pasta_curves::pallas::Point`].
 #[derive(Debug, Clone)]
-pub struct Action<A, Pr: OrchardPrimitives> {
+pub struct Action<A> {
     /// The nullifier of the note being spent.
     nf: Nullifier,
     /// The randomized verification key for the note being spent.
@@ -32,14 +31,14 @@ pub struct Action<A, Pr: OrchardPrimitives> {
     /// A commitment to the new note being created.
     cmx: ExtractedNoteCommitment,
     /// The transmitted note ciphertext.
-    encrypted_note: TransmittedNoteCiphertext<Pr>,
+    encrypted_note: TransmittedNoteCiphertext,
     /// A commitment to the net value created or consumed by this action.
     cv_net: ValueCommitment,
     /// The authorization for this action.
     authorization: A,
 }
 
-impl<A, Pr: OrchardPrimitives> Action<A, Pr> {
+impl<A> Action<A> {
     /// Constructs an `Action` from its constituent parts.
     ///
     /// Returns an [`ActionFromPartsError`] if `rk` is the identity
@@ -60,7 +59,7 @@ impl<A, Pr: OrchardPrimitives> Action<A, Pr> {
         nf: Nullifier,
         rk: redpallas::VerificationKey<SpendAuth>,
         cmx: ExtractedNoteCommitment,
-        encrypted_note: TransmittedNoteCiphertext<Pr>,
+        encrypted_note: TransmittedNoteCiphertext,
         cv_net: ValueCommitment,
         authorization: A,
     ) -> Result<Self, ActionFromPartsError> {
@@ -100,7 +99,7 @@ impl<A, Pr: OrchardPrimitives> Action<A, Pr> {
     }
 
     /// Returns the encrypted note ciphertext.
-    pub fn encrypted_note(&self) -> &TransmittedNoteCiphertext<Pr> {
+    pub fn encrypted_note(&self) -> &TransmittedNoteCiphertext {
         &self.encrypted_note
     }
 
@@ -120,7 +119,7 @@ impl<A, Pr: OrchardPrimitives> Action<A, Pr> {
     }
 
     /// Transitions this action from one authorization state to another.
-    pub fn map<U>(self, step: impl FnOnce(A) -> U) -> Action<U, Pr> {
+    pub fn map<U>(self, step: impl FnOnce(A) -> U) -> Action<U> {
         Action {
             nf: self.nf,
             rk: self.rk,
@@ -132,7 +131,7 @@ impl<A, Pr: OrchardPrimitives> Action<A, Pr> {
     }
 
     /// Transitions this action from one authorization state to another.
-    pub fn try_map<U, E>(self, step: impl FnOnce(A) -> Result<U, E>) -> Result<Action<U, Pr>, E> {
+    pub fn try_map<U, E>(self, step: impl FnOnce(A) -> Result<U, E>) -> Result<Action<U>, E> {
         Ok(Action {
             nf: self.nf,
             rk: self.rk,
@@ -173,7 +172,7 @@ impl fmt::Display for ActionFromPartsError {
 
 impl core::error::Error for ActionFromPartsError {}
 
-impl<Pr: OrchardPrimitives> DynamicUsage for Action<OrchardSpendAuthSig, Pr> {
+impl DynamicUsage for Action<OrchardSpendAuthSig> {
     #[inline(always)]
     fn dynamic_usage(&self) -> usize {
         0
@@ -191,121 +190,118 @@ impl<Pr: OrchardPrimitives> DynamicUsage for Action<OrchardSpendAuthSig, Pr> {
 pub(crate) mod testing {
     use alloc::vec::Vec;
     use rand::{rngs::StdRng, RngCore, SeedableRng};
-    use zcash_note_encryption::Domain as _;
+    use zcash_note_encryption::{Domain as _, NoteEncryption};
 
     use proptest::prelude::*;
-
-    use zcash_note_encryption::NoteEncryption;
 
     use crate::{
         note::{
             commitment::ExtractedNoteCommitment, nullifier::testing::arb_nullifier,
-            testing::arb_note, AssetBase, Note, TransmittedNoteCiphertext,
+            testing::arb_note, AssetBase, TransmittedNoteCiphertext,
         },
+        note_encryption::{NoteEncryptionDomain, OrchardVersion},
         primitives::redpallas::testing::arb_valid_spendauth_keypair,
-        primitives::{OrchardDomain, OrchardPrimitives},
         sighash_kind::{OrchardSighashKind, OrchardSpendAuthSig},
         value::{NoteValue, ValueCommitTrapdoor, ValueCommitment},
+        Note, NoteVersion,
     };
 
     use super::Action;
 
-    /// `ActionArb` adapts `arb_...` functions for both Vanilla and ZSA Orchard protocol flavors
-    /// in property-based testing, addressing proptest crate limitations.
-    #[derive(Debug)]
-    pub struct ActionArb<Pr: OrchardPrimitives> {
-        phantom: core::marker::PhantomData<Pr>,
+    /// Builds a real, decryptable `TransmittedNoteCiphertext` for `note`,
+    /// mirroring `OutputInfo::build`: the same encryptor yields a non-identity
+    /// ephemeral public key (satisfying the `Action::from_parts` epk invariant)
+    /// together with the note and outgoing ciphertexts. No outgoing viewing key
+    /// is used, so `out_ciphertext` is encrypted under a random key, as for a
+    /// real output sent without an `ovk`.
+    fn encrypted_note_for(
+        note: Note,
+        memo: Vec<u8>,
+        cv_net: &ValueCommitment,
+        cmx: &ExtractedNoteCommitment,
+        mut rng: impl RngCore,
+    ) -> TransmittedNoteCiphertext {
+        // The Orchard, Ironwood and ZSA encryptor aliases share encryption behavior;
+        // `Note::version()` selects the note plaintext lead byte.
+        let encryptor = NoteEncryption::<NoteEncryptionDomain<OrchardVersion>>::new(
+            None,
+            note,
+            memo.try_into().unwrap(),
+        );
+
+        TransmittedNoteCiphertext {
+            epk_bytes: NoteEncryptionDomain::<OrchardVersion>::epk_bytes(encryptor.epk()).0,
+            enc_ciphertext: encryptor.encrypt_note_plaintext(),
+            out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, cmx, &mut rng),
+        }
     }
 
-    impl<Pr: OrchardPrimitives> ActionArb<Pr> {
-        /// Builds a real, decryptable `TransmittedNoteCiphertext` for `note`,
-        /// mirroring `OutputInfo::build`: the same encryptor yields a non-identity
-        /// ephemeral public key (satisfying the `Action::from_parts` epk invariant)
-        /// together with the note and outgoing ciphertexts. No outgoing viewing key
-        /// is used, so `out_ciphertext` is encrypted under a random key, as for a
-        /// real output sent without an `ovk`.
-        fn encrypted_note_for(
-            note: Note,
-            memo: Vec<u8>,
-            cv_net: &ValueCommitment,
-            cmx: &ExtractedNoteCommitment,
-            mut rng: impl RngCore,
-        ) -> TransmittedNoteCiphertext<Pr> {
-            let encryptor =
-                NoteEncryption::<OrchardDomain<Pr>>::new(None, note, memo.try_into().unwrap());
-
-            TransmittedNoteCiphertext {
-                epk_bytes: OrchardDomain::<Pr>::epk_bytes(encryptor.epk()).0,
-                enc_ciphertext: encryptor.encrypt_note_plaintext(),
-                out_ciphertext: encryptor.encrypt_outgoing_plaintext(cv_net, cmx, &mut rng),
+    prop_compose! {
+        /// Generate an action without authorization data.
+        pub fn arb_unauthorized_action(
+            note_version: NoteVersion,
+            spend_value: NoteValue,
+            output_value: NoteValue,
+            asset: AssetBase)
+        (
+            nf in arb_nullifier(),
+            (_, rk) in arb_valid_spendauth_keypair(),
+            note in arb_note(output_value, note_version),
+            rng_seed in prop::array::uniform32(prop::num::u8::ANY),
+            memo in prop::collection::vec(prop::num::u8::ANY, 512),
+        ) -> Action<()> {
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let cv_net = ValueCommitment::derive_with_asset(
+                spend_value - output_value,
+                ValueCommitTrapdoor::zero(),
+                asset
+            );
+            let encrypted_note = encrypted_note_for(note, memo, &cv_net, &cmx,StdRng::from_seed(rng_seed));
+            Action {
+                nf,
+                rk,
+                cmx,
+                encrypted_note,
+                cv_net,
+                authorization: ()
             }
         }
+    }
 
-        prop_compose! {
-            /// Generate an action without authorization data.
-            pub fn arb_unauthorized_action(
-                spend_value: NoteValue,
-                output_value: NoteValue,
-                asset: AssetBase)
-            (
-                nf in arb_nullifier(),
-                (_, rk) in arb_valid_spendauth_keypair(),
-                note in arb_note(output_value),
-                rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-                memo in prop::collection::vec(prop::num::u8::ANY, 512),
-            ) -> Action<(), Pr> {
-                let cmx = ExtractedNoteCommitment::from(note.commitment());
-                let cv_net = ValueCommitment::derive(
-                    spend_value - output_value,
-                    ValueCommitTrapdoor::zero(),
-                    asset
-                );
-                let encrypted_note = Self::encrypted_note_for(note, memo, &cv_net, &cmx,StdRng::from_seed(rng_seed));
-                Action {
-                    nf,
-                    rk,
-                    cmx,
-                    encrypted_note,
-                    cv_net,
-                    authorization: ()
-                }
-            }
-        }
+    prop_compose! {
+        /// Generate an action with invalid (random) authorization data.
+        pub fn arb_action(
+            note_version: NoteVersion,
+            spend_value: NoteValue,
+            output_value: NoteValue,
+            asset: AssetBase,
+        )(
+            nf in arb_nullifier(),
+            (rsk, rk) in arb_valid_spendauth_keypair(),
+            note in arb_note(output_value, note_version),
+            enc_rng_seed in prop::array::uniform32(prop::num::u8::ANY),
+            rng_seed in prop::array::uniform32(prop::num::u8::ANY),
+            fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
+            memo in prop::collection::vec(prop::num::u8::ANY, 512),
+        ) -> Action<OrchardSpendAuthSig> {
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            let cv_net = ValueCommitment::derive_with_asset(
+                spend_value - output_value,
+                ValueCommitTrapdoor::zero(),
+                asset
+            );
 
-        prop_compose! {
-            /// Generate an action with invalid (random) authorization data.
-            pub fn arb_action(
-                spend_value: NoteValue,
-                output_value: NoteValue,
-                asset: AssetBase,
-            )(
-                nf in arb_nullifier(),
-                (rsk, rk) in arb_valid_spendauth_keypair(),
-                note in arb_note(output_value),
-                enc_rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-                rng_seed in prop::array::uniform32(prop::num::u8::ANY),
-                fake_sighash in prop::array::uniform32(prop::num::u8::ANY),
-                memo in prop::collection::vec(prop::num::u8::ANY, 512),
-            ) -> Action<OrchardSpendAuthSig, Pr> {
-                let cmx = ExtractedNoteCommitment::from(note.commitment());
-                let cv_net = ValueCommitment::derive(
-                    spend_value - output_value,
-                    ValueCommitTrapdoor::zero(),
-                    asset
-                );
+            let encrypted_note = encrypted_note_for(note, memo, &cv_net, &cmx, StdRng::from_seed(enc_rng_seed));
 
-                let encrypted_note = Self::encrypted_note_for(note, memo, &cv_net, &cmx, StdRng::from_seed(enc_rng_seed));
+            let rng = StdRng::from_seed(rng_seed);
 
-                let rng = StdRng::from_seed(rng_seed);
-
-                Action {
-                    nf,
-                    rk,
-                    cmx,
-                    encrypted_note,
-                    cv_net,
-                    authorization: OrchardSpendAuthSig::new(OrchardSighashKind::AllEffecting, rsk.sign(rng, &fake_sighash)),
-                }
+            Action {
+                nf,
+                rk,
+                cmx,
+                encrypted_note,
+                cv_net,
+                authorization: OrchardSpendAuthSig::new(OrchardSighashKind::AllEffecting, rsk.sign(rng, &fake_sighash)),
             }
         }
     }
@@ -320,12 +316,11 @@ mod tests {
 
     use super::{Action, ActionFromPartsError};
     use crate::{
-        flavor::{OrchardVanilla, OrchardZSA},
-        note::{AssetBase, ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
-        primitives::{
-            redpallas::{self, SpendAuth},
-            OrchardPrimitives,
+        note::{ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
+        note_encryption::{
+            NoteCiphertextBytes, ENC_CIPHERTEXT_SIZE_VANILLA, ENC_CIPHERTEXT_SIZE_ZSA,
         },
+        primitives::redpallas::{self, SpendAuth},
         value::{ValueCommitTrapdoor, ValueCommitment, ValueSum},
     };
 
@@ -355,28 +350,24 @@ mod tests {
     /// encoding of the group generator. `cv_net` is an arbitrary value
     /// commitment; its own Pallas-point type check lives at deserialization in
     /// `ValueCommitment::from_bytes` (e.g. `src/pczt/parse.rs`).
-    fn dummy_other_fields<Pr: OrchardPrimitives>() -> (
+    fn dummy_other_fields(
+        enc_ciphertext_size: usize,
+    ) -> (
         Nullifier,
         ExtractedNoteCommitment,
-        TransmittedNoteCiphertext<Pr>,
+        TransmittedNoteCiphertext,
         ValueCommitment,
     ) {
         let nf = Nullifier::from_bytes(&[1u8; 32]).unwrap();
         let cmx = ExtractedNoteCommitment::from_bytes(&[2u8; 32]).unwrap();
-        let encrypted_note = TransmittedNoteCiphertext::<Pr> {
+        let encrypted_note = TransmittedNoteCiphertext {
             epk_bytes: pallas::Point::generator().to_bytes(),
-            enc_ciphertext: Pr::NoteCiphertextBytes::from_slice(&vec![
-                4u8;
-                Pr::ENC_CIPHERTEXT_SIZE
-            ])
-            .expect("correct size"),
+            enc_ciphertext: NoteCiphertextBytes::from_slice(&vec![4u8; enc_ciphertext_size])
+                .expect("correct size"),
             out_ciphertext: [5u8; 80],
         };
-        let cv_net = ValueCommitment::derive(
-            ValueSum::from_raw_inner(42),
-            ValueCommitTrapdoor::zero(),
-            AssetBase::zatoshi(),
-        );
+        let cv_net =
+            ValueCommitment::derive(ValueSum::from_raw_inner(42), ValueCommitTrapdoor::zero());
         (nf, cmx, encrypted_note, cv_net)
     }
 
@@ -390,20 +381,20 @@ mod tests {
         assert!(!non_identity_rk().is_identity());
     }
 
-    fn from_parts_rejects_identity_rk<Pr: OrchardPrimitives>() {
-        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields::<Pr>();
+    fn from_parts_rejects_identity_rk(enc_ciphertext_size: usize) {
+        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields(enc_ciphertext_size);
         let result = Action::from_parts(nf, identity_rk(), cmx, encrypted_note, cv_net, ());
         assert!(matches!(result, Err(ActionFromPartsError::IdentityRk)));
     }
 
     #[test]
     fn test_from_parts_rejects_identity_rk() {
-        from_parts_rejects_identity_rk::<OrchardVanilla>();
-        from_parts_rejects_identity_rk::<OrchardZSA>();
+        from_parts_rejects_identity_rk(ENC_CIPHERTEXT_SIZE_VANILLA);
+        from_parts_rejects_identity_rk(ENC_CIPHERTEXT_SIZE_ZSA);
     }
 
-    fn from_parts_accepts_non_identity_rk<Pr: OrchardPrimitives>() {
-        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields::<Pr>();
+    fn from_parts_accepts_non_identity_rk(enc_ciphertext_size: usize) {
+        let (nf, cmx, encrypted_note, cv_net) = dummy_other_fields(enc_ciphertext_size);
         let rk = non_identity_rk();
         let action = Action::from_parts(nf, rk.clone(), cmx, encrypted_note, cv_net, ())
             .expect("non-identity rk must be accepted");
@@ -412,15 +403,15 @@ mod tests {
 
     #[test]
     fn test_from_parts_accepts_non_identity_rk() {
-        from_parts_accepts_non_identity_rk::<OrchardVanilla>();
-        from_parts_accepts_non_identity_rk::<OrchardZSA>();
+        from_parts_accepts_non_identity_rk(ENC_CIPHERTEXT_SIZE_VANILLA);
+        from_parts_accepts_non_identity_rk(ENC_CIPHERTEXT_SIZE_ZSA);
     }
 
-    fn from_parts_rejects_identity_epk<Pr: OrchardPrimitives>() {
+    fn from_parts_rejects_identity_epk(enc_ciphertext_size: usize) {
         // The canonical Pallas encoding of the identity is `[0u8; 32]`; an
         // action whose `epk` decodes to the identity must be rejected even
         // when `rk` is valid.
-        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields::<Pr>();
+        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields(enc_ciphertext_size);
         encrypted_note.epk_bytes = [0u8; 32];
         let result = Action::from_parts(nf, non_identity_rk(), cmx, encrypted_note, cv_net, ());
         assert!(matches!(result, Err(ActionFromPartsError::InvalidEpk)));
@@ -428,15 +419,15 @@ mod tests {
 
     #[test]
     fn test_from_parts_rejects_identity_epk() {
-        from_parts_rejects_identity_epk::<OrchardVanilla>();
-        from_parts_rejects_identity_epk::<OrchardZSA>();
+        from_parts_rejects_identity_epk(ENC_CIPHERTEXT_SIZE_VANILLA);
+        from_parts_rejects_identity_epk(ENC_CIPHERTEXT_SIZE_ZSA);
     }
 
-    fn from_parts_rejects_undecodable_epk<Pr: OrchardPrimitives>() {
+    fn from_parts_rejects_undecodable_epk(enc_ciphertext_size: usize) {
         // An `epk` that is not a valid Pallas point encoding is rejected: it
         // cannot be a `KA^{Orchard}` public key. `[0xff; 32]` is a non-canonical
         // (out-of-range) encoding.
-        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields::<Pr>();
+        let (nf, cmx, mut encrypted_note, cv_net) = dummy_other_fields(enc_ciphertext_size);
         encrypted_note.epk_bytes = [0xff; 32];
         let result = Action::from_parts(nf, non_identity_rk(), cmx, encrypted_note, cv_net, ());
         assert!(matches!(result, Err(ActionFromPartsError::InvalidEpk)));
@@ -444,7 +435,7 @@ mod tests {
 
     #[test]
     fn test_from_parts_rejects_undecodable_epk() {
-        from_parts_rejects_undecodable_epk::<OrchardVanilla>();
-        from_parts_rejects_undecodable_epk::<OrchardZSA>();
+        from_parts_rejects_undecodable_epk(ENC_CIPHERTEXT_SIZE_VANILLA);
+        from_parts_rejects_undecodable_epk(ENC_CIPHERTEXT_SIZE_ZSA);
     }
 }

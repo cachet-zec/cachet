@@ -40,9 +40,8 @@ pub mod testing;
 
 use ff::PrimeField;
 use orchard::builder::{Builder, BundleType, InProgress, PartiallyAuthorized};
-use orchard::bundle::Authorized as OrchardAuthorized;
-use orchard::circuit::Proof;
-use orchard::flavor::OrchardZSA;
+use orchard::bundle::{Authorized as OrchardAuthorized, BundleVersion};
+use orchard::circuit::{OrchardCircuitVersion, Proof};
 use orchard::keys::{
     FullViewingKey, IncomingViewingKey, OutgoingViewingKey, SpendAuthorizingKey,
     SpendValidatingKey, SpendingKey,
@@ -52,15 +51,15 @@ use orchard::primitives::redpallas::{Signature, SpendAuth};
 use orchard::sighash_kind::{OrchardSighashKind, OrchardSpendAuthSig};
 use orchard::tree::{MerkleHashOrchard, MerklePath};
 use orchard::value::NoteValue;
-use orchard::{Address, Anchor, Bundle, Note};
+use orchard::{Address, Anchor, Bundle, Note, NoteVersion};
 use pasta_curves::pallas;
 use rand::{CryptoRng, RngCore};
 use serde::{Deserialize, Serialize};
-use zcash_primitives::transaction::builder::orchard_zsa_proving_key;
+use zcash_primitives::transaction::builder::cached_orchard_proving_key;
 use zcash_primitives::transaction::sighash::{SignableInput, signature_hash};
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{
-    Authorized, OrchardBundle, Transaction, TransactionData, TxVersion, Unauthorized,
+    Authorized, Transaction, TransactionData, TxVersion, Unauthorized,
 };
 use zcash_protocol::consensus::{BlockHeight, BranchId};
 use zcash_protocol::value::{ZatBalance, Zatoshis};
@@ -143,7 +142,7 @@ pub struct Countersignature {
 
 /// The taker's half-finished swap, kept in memory between messages 2 and 3.
 pub struct PendingSwap {
-    bundle: Bundle<InProgress<Proof, PartiallyAuthorized>, ZatBalance, OrchardZSA>,
+    bundle: Bundle<InProgress<Proof, PartiallyAuthorized>, ZatBalance>,
     expiry_height: BlockHeight,
 }
 
@@ -188,6 +187,8 @@ fn note_from(wire: &NoteWire) -> Result<Note, SwapError> {
         asset_from(&wire.asset)?,
         rho,
         rseed,
+        // Every note a v7 ZSA bundle or an issuance creates is a ZSA note.
+        NoteVersion::ZSA,
     ))
     .ok_or(SwapError::Malformed("note"))
 }
@@ -348,12 +349,19 @@ impl zcash_primitives::transaction::Authorization for Received {
 
 // --- message 2 --------------------------------------------------------------
 
-/// The transaction the parts describe; `orchard` is the only bundle.
+/// The transaction the parts describe; `zsa` is the only bundle, in the
+/// slot a v7 transaction carries it in (the Ironwood one).
 fn transaction_data<A: zcash_primitives::transaction::Authorization>(
-    orchard: Bundle<A::OrchardAuth, ZatBalance, OrchardZSA>,
+    zsa: Bundle<A::OrchardAuth, ZatBalance>,
     expiry_height: BlockHeight,
 ) -> TransactionData<A> {
-    TransactionData::from_parts(
+    // SPIKE (ADR-005): librustzcash#377 has no public constructor that fills
+    // the Ironwood slot of a v7 transaction (`from_parts` leaves it empty,
+    // `from_parts_v6` fixes the version to 6). `map_bundles` applies its
+    // Orchard closure to the Orchard slot, then to the Ironwood one: hand
+    // the bundle over between the two calls. Replace with a
+    // `from_parts_v7` once upstream has one.
+    let data = TransactionData::<A>::from_parts(
         TxVersion::suggested_for_branch(BranchId::Nu7),
         BranchId::Nu7,
         0,
@@ -362,8 +370,21 @@ fn transaction_data<A: zcash_primitives::transaction::Authorization>(
         None,
         None,
         None,
-        Some(OrchardBundle::OrchardZSA(orchard)),
+        Some(zsa),
         None,
+    );
+    let mut moving = None;
+    data.map_bundles(
+        |transparent| transparent,
+        |sapling| sapling,
+        |slot| match slot {
+            Some(bundle) => {
+                moving = Some(bundle);
+                None
+            }
+            None => moving.take(),
+        },
+        |issue| issue,
     )
 }
 
@@ -398,7 +419,13 @@ pub fn take(
     }
 
     let build = |error: String| SwapError::Build(error);
-    let mut builder = Builder::new(BundleType::DEFAULT_ZSA, parts.anchor);
+    let mut builder = Builder::new(
+        BundleType::DEFAULT,
+        BundleVersion::zsa(),
+        BundleVersion::zsa().default_flags(),
+        parts.anchor,
+    )
+    .map_err(|error| build(format!("{error:?}")))?;
     builder
         .add_spend(parts.fvk.clone(), parts.note, parts.path.clone())
         .map_err(|error| build(format!("maker's spend: {error:?}")))?;
@@ -438,7 +465,7 @@ pub fn take(
             .map_err(|error| build(format!("taker's change: {error:?}")))?;
     }
     let (unproven, _) = builder
-        .build::<ZatBalance, OrchardZSA>(&mut rng)
+        .build::<ZatBalance>(&mut rng)
         .map_err(|error| build(format!("{error:?}")))?
         .ok_or_else(|| build("the bundle came out empty".into()))?;
 
@@ -455,7 +482,10 @@ pub fn take(
     .as_ref();
 
     let mut bundle = unproven
-        .create_proof(orchard_zsa_proving_key(), &mut rng)
+        .create_proof(
+            cached_orchard_proving_key(OrchardCircuitVersion::ZSA),
+            &mut rng,
+        )
         .map_err(|error| build(format!("proof: {error:?}")))?
         .prepare(&mut rng, sighash);
     for (key, _, _) in inputs {
@@ -520,11 +550,10 @@ struct TakeRead {
     sighash: [u8; 32],
 }
 
-fn zsa_bundle(
-    tx: &Transaction,
-) -> Result<&Bundle<OrchardAuthorized, ZatBalance, OrchardZSA>, SwapError> {
-    match tx.deref().orchard_bundle() {
-        Some(OrchardBundle::OrchardZSA(bundle)) => Ok(bundle),
+fn zsa_bundle(tx: &Transaction) -> Result<&Bundle<OrchardAuthorized, ZatBalance>, SwapError> {
+    // v7 carries the ZSA bundle in the Ironwood slot.
+    match tx.deref().ironwood_bundle() {
+        Some(bundle) if bundle.bundle_version() == BundleVersion::zsa() => Ok(bundle),
         _ => Err(SwapError::Refused("no OrchardZSA bundle")),
     }
 }
@@ -542,8 +571,11 @@ fn read_take(parts: &OfferParts, take: &Take) -> Result<TakeRead, SwapError> {
     let tx = Transaction::read(raw.as_slice(), BranchId::Nu7)
         .map_err(|_| SwapError::Malformed("transaction"))?;
     let data: &TransactionData<Authorized> = tx.deref();
+    // v7 keeps a separate (ZEC-only) Orchard slot next to the ZSA one: a
+    // swap leaves it empty too.
     if data.transparent_bundle().is_some()
         || data.sapling_bundle().is_some()
+        || data.orchard_bundle().is_some()
         || data.issue_bundle().is_some()
     {
         return Err(SwapError::Refused(
@@ -604,7 +636,7 @@ fn read_take(parts: &OfferParts, take: &Take) -> Result<TakeRead, SwapError> {
 /// The OrchardZSA verifying key, built once per process (seconds).
 fn verifying_key() -> &'static orchard::circuit::VerifyingKey {
     static KEY: std::sync::OnceLock<orchard::circuit::VerifyingKey> = std::sync::OnceLock::new();
-    KEY.get_or_init(orchard::circuit::VerifyingKey::build::<OrchardZSA>)
+    KEY.get_or_init(|| orchard::circuit::VerifyingKey::build(OrchardCircuitVersion::ZSA))
 }
 
 /// Build the verifying key now, off the request path (a registry calls
@@ -613,7 +645,7 @@ pub fn prepare_verifying_key() {
     let _ = verifying_key();
 }
 
-/// The id the finished swap will have, read from the take: a v6 txid
+/// The id the finished swap will have, read from the take: a v7 txid
 /// commits to the effecting data only, never to proofs or signatures, so
 /// the maker's countersignature does not change it. The maker and the
 /// registry both know which transaction to look for before it is relayed.
@@ -717,7 +749,7 @@ pub fn finish(
         OrchardSighashKind::AllEffecting,
         Signature::<SpendAuth>::from(bytes::<64>(&countersignature.signature, "signature")?),
     );
-    let bundle: Bundle<OrchardAuthorized, ZatBalance, OrchardZSA> = pending
+    let bundle: Bundle<OrchardAuthorized, ZatBalance> = pending
         .bundle
         .append_signatures(&[signature])
         .map_err(|_| SwapError::Refused("the signature is not the maker's for this transaction"))?

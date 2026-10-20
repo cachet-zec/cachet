@@ -1,22 +1,26 @@
 //! Validating burn operations on asset bundles.
-//!
-//! The module provides a function `validate_bundle_burn` that can be used to validate the burn values for the bundle.
-//!
+
 use core::fmt;
 
 #[cfg(feature = "zsa-issuance")]
 use alloc::collections::BTreeMap;
 
 #[cfg(feature = "zsa-issuance")]
-use crate::{issuance::AssetRecord, note::AssetBase, value::NoteValue};
+use crate::issuance::AssetRecord;
+
+use crate::{
+    bundle::{BundleError, BundleVersion, Flags},
+    note::AssetBase,
+    value::NoteValue,
+};
 
 /// Maximum burn value.
 /// Burns must fit in both u64 and i64 for value balance calculations.
-#[cfg(feature = "zsa-issuance")]
 pub const MAX_BURN_VALUE: u64 = (1u64 << 63) - 1;
 
 /// Possible errors that can occur during bundle burn validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum BurnError {
     /// Encountered a duplicate asset to burn.
     DuplicateAsset,
@@ -48,6 +52,43 @@ impl fmt::Display for BurnError {
             }
             BurnError::InsufficientSupply => write!(f, "Insufficient supply for burn"),
         }
+    }
+}
+
+/// Checks that a non-empty `burn` is only present when `bundle_version` permits ZSA and
+/// `flags` enable ZSA.
+///
+/// Burn instructions are only meaningful for the ZSA protocol, so both conditions are
+/// required. The version alone is not enough: a ZSA bundle may still be built with
+/// `zsa_enabled` cleared, and the circuit then forces every asset to zatoshi, so no burn
+/// can be balanced.
+///
+/// Returns [`BundleError::BurnNotPermitted`] otherwise.
+pub(crate) fn validate_burn(
+    burn: &[(AssetBase, NoteValue)],
+    flags: &Flags,
+    bundle_version: BundleVersion,
+) -> Result<(), BundleError> {
+    if burn.is_empty() || (bundle_version.permits_zsa() && flags.zsa_enabled()) {
+        Ok(())
+    } else {
+        Err(BundleError::BurnNotPermitted)
+    }
+}
+
+/// Checks one burn entry: the asset must not be the native one, and the amount must be
+/// non-zero and at most [`MAX_BURN_VALUE`].
+///
+/// Uniqueness is a property of the whole set, so it is left to the caller collecting one.
+pub(crate) fn validate_burn_entry(asset: AssetBase, value: NoteValue) -> Result<(), BurnError> {
+    if asset.is_zatoshi().into() {
+        Err(BurnError::ZatoshiAsset)
+    } else if value.inner() == 0 {
+        Err(BurnError::ZeroAmount)
+    } else if value.inner() > MAX_BURN_VALUE {
+        Err(BurnError::InvalidAmount)
+    } else {
+        Ok(())
     }
 }
 
@@ -89,17 +130,9 @@ pub fn validate_bundle_burn(
     let mut new_records = BTreeMap::new();
 
     for (asset, amount) in burn {
-        if asset.is_zatoshi().into() {
-            return Err(BurnError::ZatoshiAsset);
-        }
+        validate_burn_entry(asset, amount)?;
 
         let burn_amount_raw = amount.inner();
-        if burn_amount_raw == 0 {
-            return Err(BurnError::ZeroAmount);
-        }
-        if burn_amount_raw > MAX_BURN_VALUE {
-            return Err(BurnError::InvalidAmount);
-        }
 
         if new_records.contains_key(&asset) {
             return Err(BurnError::DuplicateAsset);
@@ -124,11 +157,51 @@ pub fn validate_bundle_burn(
     Ok(new_records)
 }
 
+#[cfg(test)]
+mod burn_permission_tests {
+    use super::validate_burn;
+    use crate::{
+        bundle::{BundleError, BundleVersion, Flags},
+        note::AssetBase,
+        value::NoteValue,
+    };
+    use alloc::vec;
+    use rand_core::OsRng;
+
+    #[test]
+    fn burn_needs_both_a_zsa_version_and_the_zsa_flag() {
+        let mut rng = OsRng;
+        let burn = vec![(AssetBase::random(&mut rng), NoteValue::from_raw(1))];
+
+        // Both conditions hold: permitted.
+        assert!(validate_burn(&burn, &Flags::ENABLED_WITH_ZSA, BundleVersion::zsa()).is_ok());
+
+        // The ZSA version alone is not enough; `zsa_enabled` is a separate bit.
+        assert!(matches!(
+            validate_burn(&burn, &Flags::ENABLED, BundleVersion::zsa()),
+            Err(BundleError::BurnNotPermitted)
+        ));
+
+        // Nor is the flag alone, on a version that cannot encode a burn.
+        assert!(matches!(
+            validate_burn(
+                &burn,
+                &Flags::ENABLED_WITH_ZSA,
+                BundleVersion::ironwood_v3()
+            ),
+            Err(BundleError::BurnNotPermitted)
+        ));
+
+        // An empty burn is always fine, whatever the version and flags.
+        assert!(validate_burn(&[], &Flags::ENABLED, BundleVersion::ironwood_v3()).is_ok());
+    }
+}
+
 #[cfg(feature = "zsa-issuance")]
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{value::NoteValue, Note};
+    use crate::{note::NoteVersion, value::NoteValue, Note};
 
     use alloc::{collections::BTreeSet, vec::Vec};
     use rand_core::OsRng;
@@ -174,6 +247,7 @@ mod tests {
                     ReferenceKeys::recipient(),
                     NoteValue::ZERO,
                     *asset,
+                    NoteVersion::ZSA,
                     &mut rng,
                 );
 

@@ -1,8 +1,7 @@
 [workspace]
 resolver = "2"
-# The vendored librustzcash workspace must resolve against its OWN root
-# (workspace-inherited deps), not this one.
-exclude = ["vendor/librustzcash", "vendor/orchard"]
+# The vendored orchard is a standalone package, not a member of this one.
+exclude = ["vendor/orchard"]
 members = [
     "crates/domain",
     "crates/notes",
@@ -19,7 +18,7 @@ version = "0.6.0"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/cachet-zec/cachet"
-rust-version = "1.86"
+rust-version = "1.88"
 
 [workspace.dependencies]
 # Internal crates
@@ -65,44 +64,50 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Bumping any rev is its own PR: `chore(chain): bump qedit stack to <rev>`.
 
 [workspace.dependencies.orchard]
-version = "0.14.0"
+version = "0.15.5"
 features = ["zsa-issuance"]
 
 [workspace.dependencies.zcash_primitives]
-version = "0.28.0"
+version = "0.30.1"
 features = ["transparent-inputs", "non-standard-fees", "zsa-issuance", "zip-233"]
 
 [workspace.dependencies.zcash_protocol]
-version = "0.9.0"
+version = "0.10.5"
 
 [workspace.dependencies.zcash_proofs]
-version = "0.28.0"
+version = "0.30.0"
 
 [workspace.dependencies.zcash_encoding]
+# Upstream librustzcash 0.30 still consumes zcash_encoding 0.4 from crates.io
+# (0.5.0 is a breaking release it has not adopted yet); stay on the same one.
 version = "0.4.0"
 
 [workspace.dependencies.zcash_transparent]
-version = "0.8.0"
+version = "0.10.0"
 features = ["transparent-inputs"]
 
 [patch.crates-io]
-# The librustzcash crates are vendored (QED-it rev c5c232db + the
-# proving-key cache patch) — see vendor/librustzcash/README.md.
-# Vendored QED-it orchard cf801a5 + the signing-parts accessor patch, see
-# vendor/orchard/README.cachet.md.
+# SPIKE (ADR-005): the transaction-v7 line, QED-it/librustzcash#377 head
+# (zcash_primitives 0.30.1, NU6.3 merged, ZSA moved to v7). Its pins below
+# (orchard, sapling-crypto, zcash_note_encryption, halo2) are #377's own.
+# #377 caches the Orchard proving key per circuit version upstream
+# (`cached_orchard_proving_key`), so the librustzcash vendor and its
+# CACHET PATCH are gone: back to git pins.
+# Vendored QED-it orchard e40bdfad (zsa1, includes QED-it/orchard#291) + the
+# signing-parts accessor patch, see vendor/orchard/README.cachet.md.
 orchard = { path = "vendor/orchard" }
-sapling-crypto = { git = "https://github.com/QED-it/sapling-crypto", rev = "e785faaa5eaf67bd2cb328fdd82a345df44e5754" }
-zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "9f7e93d42cef839d02b9d75918117941d453f8cb" }
-zcash_primitives = { path = "vendor/librustzcash/zcash_primitives" }
-zcash_protocol = { path = "vendor/librustzcash/components/zcash_protocol" }
-zcash_address = { path = "vendor/librustzcash/components/zcash_address" }
-zcash_proofs = { path = "vendor/librustzcash/zcash_proofs" }
-zcash_encoding = { path = "vendor/librustzcash/components/zcash_encoding" }
-zcash_transparent = { path = "vendor/librustzcash/zcash_transparent" }
+# QED-it/sapling-crypto#15 head (zcash_note_encryption 0.4.2), still open.
+sapling-crypto = { git = "https://github.com/QED-it/sapling-crypto", rev = "e5a27294bad91138156fec29932759d3a6f7c7d5" }
+zcash_note_encryption = { git = "https://github.com/zcash/zcash_note_encryption", rev = "40b73b157374b62b648a26b94a1f236e5d9c389f" }
+zcash_primitives = { git = "https://github.com/QED-it/librustzcash", rev = "562300d6861a244fab47e48f8f91057a3d2b0af5" }
+zcash_protocol = { git = "https://github.com/QED-it/librustzcash", rev = "562300d6861a244fab47e48f8f91057a3d2b0af5" }
+zcash_address = { git = "https://github.com/QED-it/librustzcash", rev = "562300d6861a244fab47e48f8f91057a3d2b0af5" }
+zcash_proofs = { git = "https://github.com/QED-it/librustzcash", rev = "562300d6861a244fab47e48f8f91057a3d2b0af5" }
+zcash_transparent = { git = "https://github.com/QED-it/librustzcash", rev = "562300d6861a244fab47e48f8f91057a3d2b0af5" }
 sinsemilla = { git = "https://github.com/zcash/sinsemilla", rev = "aabb707e862bc3d7b803c77d14e5a771bcee3e8c" }
-halo2_proofs = { git = "https://github.com/QED-it/halo2", rev = "ef3d0ba2e9a513658f8d3d00294ddebd92cc649e" }
-halo2_gadgets = { git = "https://github.com/QED-it/halo2", rev = "ef3d0ba2e9a513658f8d3d00294ddebd92cc649e" }
-halo2_poseidon = { git = "https://github.com/zcash/halo2", rev = "2308caf68c48c02468b66cfc452dad54e355e32f" }
+# QED-it/orchard#286 moved the zsa1 line back to upstream zcash/halo2.
+halo2_proofs = { git = "https://github.com/zcash/halo2", rev = "828fab66a72116a4a8ea0dc7d8895667d90dacf4" }
+halo2_gadgets = { git = "https://github.com/zcash/halo2", rev = "828fab66a72116a4a8ea0dc7d8895667d90dacf4" }
 zcash_spec = { git = "https://github.com/QED-it/zcash_spec", rev = "d5e84264d2ad0646b587a837f4e2424ca64d3a05" }
 
 [profile.release]

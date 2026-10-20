@@ -71,9 +71,9 @@ balances and transfers stay shielded, as Zcash intends.
   zero-knowledge proof in a Web Worker (the ZSA stack compiled to WASM),
   and hands the server nothing but signed bytes to relay. Works on the
   public read-only instance precisely because the instance signs nothing.
-  Proving is threaded and the proving key is cached per session (a
-  30-line vendored patch to zcash_primitives, see
-  [server/vendor/librustzcash](server/vendor/librustzcash/README.md)):
+  Proving is threaded and the proving key is cached per session
+  (zcash_primitives' own per-circuit cache on the v7 line, see
+  [ADR-005](docs/adr/005-zsa-tx-v7.md)):
   on cross-origin-isolated pages the worker proves over up to 8 wasm threads
   and warms the key while the user fills the form — a mint proves and
   signs in a measured 5.6 s, vs 43.4 s for the original single-core
