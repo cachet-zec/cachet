@@ -72,7 +72,7 @@ balances and transfers stay shielded, as Zcash intends.
   and hands the server nothing but signed bytes to relay. Works on the
   public read-only instance precisely because the instance signs nothing.
   Proving is threaded and the proving key is cached per session
-  (zcash_primitives' own per-circuit cache on the v7 line, see
+  (zcash_primitives' own per-circuit cache on QEDIT's TX_ZSA line, see
   [ADR-005](docs/adr/005-zsa-tx-v7.md)):
   on cross-origin-isolated pages the worker proves over up to 8 wasm threads
   and warms the key while the user fills the form — a mint proves and
