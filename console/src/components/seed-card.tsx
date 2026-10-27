@@ -109,9 +109,7 @@ export function SeedCard({
             >
               use my own instead
             </button>
-            <span className="text-sm text-accent">
-              testnet identity
-            </span>
+            <span className="text-sm text-accent">testnet identity</span>
           </div>
         </>
       )}

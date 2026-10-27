@@ -69,9 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="font-display text-xl font-semibold tracking-tight text-neutral-100">
                   Cachet
                 </span>
-                <span className="mt-0.5 text-sm text-accent">
-                  testnet
-                </span>
+                <span className="mt-0.5 text-sm text-accent">testnet</span>
               </Link>
               <NavLinks />
             </header>
@@ -92,9 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <p className="mt-3 max-w-xs text-sm leading-relaxed text-neutral-500">
                     Issuance console &amp; verifiable registry for Zcash Shielded Assets.
                   </p>
-                  <p className="mt-4 text-sm text-accent">
-                    Testnet only
-                  </p>
+                  <p className="mt-4 text-sm text-accent">Testnet only</p>
                   <p className="font-data mt-4 text-[13px]">
                     <Link
                       href="/support"
@@ -108,9 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
                 {/* Explore */}
                 <div>
-                  <h3 className="text-sm font-medium text-neutral-300">
-                    Explore
-                  </h3>
+                  <h3 className="text-sm font-medium text-neutral-300">Explore</h3>
                   <ul className="mt-3 flex flex-col gap-2 text-sm">
                     <li>
                       <Link
@@ -163,9 +157,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
                 {/* Verify */}
                 <div>
-                  <h3 className="text-sm font-medium text-neutral-300">
-                    Verify
-                  </h3>
+                  <h3 className="text-sm font-medium text-neutral-300">Verify</h3>
                   <ul className="mt-3 flex flex-col gap-2 text-sm">
                     <li>
                       <a

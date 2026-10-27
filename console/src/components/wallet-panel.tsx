@@ -62,9 +62,7 @@ export function WalletPanel() {
         <div className="flex flex-col gap-3">
           {wallet.data.map((account) => (
             <div key={account.account}>
-              <p className="font-data text-[13px] text-neutral-500">
-                account:{account.account}
-              </p>
+              <p className="font-data text-[13px] text-neutral-500">account:{account.account}</p>
               <div className="mt-1 border-t border-white/[0.07]">
                 {account.holdings.map((holding) => (
                   <Link
