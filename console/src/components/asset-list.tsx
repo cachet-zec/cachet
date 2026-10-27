@@ -391,7 +391,7 @@ export function AssetList() {
             onClick={() => setPage(currentPage - 1)}
             disabled={currentPage === 0}
           >
-            ← Previous
+            Previous
           </button>
           <span className="text-[13px] text-neutral-500">
             Page <span className="font-data text-neutral-300">{currentPage + 1}</span> /{" "}
@@ -402,7 +402,7 @@ export function AssetList() {
             onClick={() => setPage(currentPage + 1)}
             disabled={currentPage >= pageCount - 1}
           >
-            Next →
+            Next
           </button>
         </div>
       )}

@@ -98,11 +98,8 @@ export function SwapBoard({
     <div className="flex flex-col gap-7">
       <header className="flex flex-wrap items-end justify-between gap-x-10 gap-y-5">
         <div className="max-w-2xl">
-          <p className="font-data text-[13px] uppercase tracking-[0.18em] text-accent">
+          <h1 className="font-display text-4xl font-medium leading-[1.08] text-neutral-50 sm:text-5xl">
             Swap board
-          </p>
-          <h1 className="font-display mt-2 text-4xl font-medium leading-[1.08] text-neutral-50 sm:text-5xl">
-            Swaps
           </h1>
           <p className="mt-3 text-base leading-relaxed text-neutral-300">
             Trade one asset for another in a single shielded transaction. Both sides land together
@@ -123,7 +120,7 @@ export function SwapBoard({
 
       <section aria-label="Open offers" className="border-t border-line-strong">
         <div
-          className={`font-data hidden gap-x-5 border-b border-line py-2.5 text-[12px] uppercase tracking-[0.14em] text-neutral-500 sm:grid ${columns}`}
+          className={`hidden gap-x-5 border-b border-line py-2.5 text-sm text-neutral-500 sm:grid ${columns}`}
         >
           <span>Offered</span>
           <span className="text-center">Rate</span>
@@ -196,8 +193,8 @@ export function SwapBoard({
           </ul>
         )}
       </section>
-      <p className="font-data text-[12px] uppercase tracking-[0.14em] text-neutral-600">
-        Testnet only · test assets have no value · no fee · the chain can be reset
+      <p className="text-sm text-neutral-500">
+        Testnet only: test assets have no value, there is no fee, and the chain can be reset.
       </p>
     </div>
   );

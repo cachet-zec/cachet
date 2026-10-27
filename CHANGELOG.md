@@ -81,6 +81,28 @@ All notable changes to Cachet are documented here. The format follows
   network Cachet runs on (`rpc.test-zsa.org`). It used to point to the
   forum thread of the community ZSA testnet at `zsa.methyl.cc`, a
   separate network not run by QEDIT.
+- The landing's registry, steps and notice show without JavaScript. Their
+  scroll entrance hid them from the server-rendered HTML on, so a page
+  whose scripts failed stayed blank below the hero; they now hide only
+  once an inline script has marked the page as scripted.
+- Fields and ghost buttons have an edge you can see: a new
+  `--color-field-edge` holds 3:1 against the ground, the surface and a
+  field's own fill, where the old hairline measured 1.4:1.
+- The "Seal at mint" switch slides its knob with `translate` instead of
+  animating `left` through `transition-all`, and stands still under
+  reduced motion.
+
+### Changed
+
+- Labels read in the body face, in sentence case, without letter-spacing:
+  the testnet tag, the footer's headings, the node readout, the swap
+  board's columns, the reference's section names and the transaction
+  page's captions. The swap page's heading is "Swap board" without the
+  small capitals above it.
+- Meta lines are sentences instead of strings joined by middle dots (the
+  footer's promise, the swap board's testnet notice, the 404, the asset
+  page's hash hints), and links and pagers say their verb without an
+  arrow glued to it.
 
 ## [0.6.0] - 2026-10-07
 

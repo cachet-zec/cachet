@@ -62,7 +62,7 @@ export function WalletPanel() {
         <div className="flex flex-col gap-3">
           {wallet.data.map((account) => (
             <div key={account.account}>
-              <p className="font-data text-[13px] uppercase tracking-[0.18em] text-neutral-500">
+              <p className="font-data text-[13px] text-neutral-500">
                 account:{account.account}
               </p>
               <div className="mt-1 border-t border-white/[0.07]">

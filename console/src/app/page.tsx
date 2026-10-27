@@ -73,7 +73,7 @@ export default function LandingPage() {
             href="/console"
             className="font-data text-sm text-neutral-400 transition hover:text-accent"
           >
-            browse all →
+            Browse all
           </Link>
         </div>
         <FeaturedAssets />
@@ -119,7 +119,7 @@ export default function LandingPage() {
           </h2>
           <span
             aria-hidden
-            className="font-data stamp-press select-none rounded-sm border border-accent/70 px-2.5 py-1 text-[13px] uppercase tracking-[0.2em] text-accent/90 outline outline-1 outline-offset-4 outline-accent/30"
+            className="font-data stamp-press select-none rounded-sm border border-accent/70 px-2.5 py-1 text-[13px] text-accent/90 outline outline-1 outline-offset-4 outline-accent/30"
           >
             testnet
           </span>

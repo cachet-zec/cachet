@@ -21,7 +21,7 @@ export const fieldLabel = "font-data text-sm text-neutral-400";
 
 // text-base on mobile: below 16px, iOS zooms the page on input focus.
 export const input =
-  "w-full rounded-md border border-white/10 bg-black/30 px-3.5 py-2.5 font-data text-base sm:text-sm " +
+  "w-full rounded-md border border-field-edge bg-black/30 px-3.5 py-2.5 font-data text-base sm:text-sm " +
   "text-neutral-100 placeholder:text-neutral-600 outline-none transition " +
   "shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)] " +
   "focus:border-accent/60 focus:ring-1 focus:ring-accent/30";
@@ -36,7 +36,7 @@ export const primaryButton =
   "disabled:opacity-40 disabled:hover:translate-y-0";
 
 export const ghostButton =
-  "rounded-[2px] border border-line-strong px-5 py-3 text-base text-neutral-200 transition " +
+  "rounded-[2px] border border-field-edge px-5 py-3 text-base text-neutral-200 transition " +
   "hover:border-accent/60 hover:bg-white/[0.03] hover:text-accent " +
   "active:translate-y-px disabled:opacity-40";
 
