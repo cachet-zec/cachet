@@ -283,7 +283,7 @@ export function AssetDetail({
         href="/console"
         className="font-data text-sm text-neutral-400 transition hover:text-accent"
       >
-        ← Back to console
+        Back to console
       </Link>
 
       {state.isPending && justMinted && (
@@ -402,7 +402,7 @@ export function AssetDetail({
                         data-testid="seal-supply-link"
                         className="text-sm text-neutral-400 underline decoration-white/20 underline-offset-4 transition hover:text-accent"
                       >
-                        Issuer? Seal the supply →
+                        Issuer? Seal the supply
                       </Link>
                     )}
                   </div>
@@ -493,7 +493,7 @@ export function AssetDetail({
                     href={`/issuers/${state.data.issuer}`}
                     className="mt-2 inline-block text-sm text-neutral-300 underline decoration-white/20 transition hover:text-accent"
                   >
-                    All assets from this issuer →
+                    All assets from this issuer
                   </Link>
                 </EntryRow>
               )}
@@ -505,7 +505,7 @@ export function AssetDetail({
                 <>
                   <EntryRow
                     label="Asset digest"
-                    hint="ZIP 227 · BLAKE2b-512"
+                    hint="ZIP 227, BLAKE2b-512"
                     value={identity.data.derived.assetDigest}
                   >
                     <p className="mt-2 max-w-prose text-[13px] leading-relaxed text-neutral-500">
@@ -515,7 +515,7 @@ export function AssetDetail({
                   </EntryRow>
                   <EntryRow
                     label="Description hash"
-                    hint="ZIP 227 · BLAKE2b-256"
+                    hint="ZIP 227, BLAKE2b-256"
                     value={identity.data.derived.assetDescHash}
                   />
                 </>

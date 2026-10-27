@@ -83,7 +83,7 @@ export function KeptList() {
             onClick={() => setPage(page - 1)}
             disabled={page === 0}
           >
-            ← Previous
+            Previous
           </button>
           <span className="font-data text-[13px] text-neutral-500">
             page {page + 1} of {pageCount}
@@ -93,7 +93,7 @@ export function KeptList() {
             onClick={() => setPage(page + 1)}
             disabled={page >= pageCount - 1}
           >
-            Next →
+            Next
           </button>
         </div>
       )}

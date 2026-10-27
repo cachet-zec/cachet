@@ -622,8 +622,8 @@ export function MintStudio() {
                   <span
                     className={
                       finalize
-                        ? "absolute left-[17px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-accent transition-all"
-                        : "absolute left-[2px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 rounded-full bg-neutral-400 transition-all"
+                        ? "absolute left-[2px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 translate-x-[15px] rounded-full bg-accent transition-[translate,background-color] motion-reduce:transition-none"
+                        : "absolute left-[2px] top-1/2 h-3.5 w-3.5 -translate-y-1/2 translate-x-0 rounded-full bg-neutral-400 transition-[translate,background-color] motion-reduce:transition-none"
                     }
                   />
                 </span>

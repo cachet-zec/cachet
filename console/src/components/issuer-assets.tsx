@@ -53,7 +53,7 @@ export function IssuerAssets({ issuer }: { issuer: string }) {
         href="/issuers"
         className="font-data text-sm text-neutral-400 transition hover:text-accent"
       >
-        ← All issuers
+        All issuers
       </Link>
 
       <h1 className="font-display mt-6 text-4xl font-medium leading-[1.08] text-neutral-50 sm:text-5xl">
@@ -163,7 +163,7 @@ export function IssuerAssets({ issuer }: { issuer: string }) {
                 onClick={() => setPage(currentPage - 1)}
                 disabled={currentPage === 0}
               >
-                ← Previous
+                Previous
               </button>
               <span className="font-data text-[13px] text-neutral-500">
                 page {currentPage + 1} of {pageCount}
@@ -173,7 +173,7 @@ export function IssuerAssets({ issuer }: { issuer: string }) {
                 onClick={() => setPage(currentPage + 1)}
                 disabled={currentPage >= pageCount - 1}
               >
-                Next →
+                Next
               </button>
             </div>
           )}

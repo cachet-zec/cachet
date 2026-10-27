@@ -10,6 +10,9 @@
   --color-surface: #10281f;
   --color-line: #234238;
   --color-line-strong: #3a5d50;
+  /* The edge of a control (a field, a ghost button): 3:1 against the
+     ground, the surface and a field's own fill, where a hairline is not. */
+  --color-field-edge: #56786a;
   --color-accent: #dc9a76;
   --color-accent-hover: #e8b092;
   --color-accent-active: #c48461;
@@ -126,17 +129,19 @@ body::after {
 }
 
 /* Scroll-triggered entrances. The hidden initial state exists only for
-   users whose settings allow motion: with reduced motion, or without
-   JavaScript, the content is simply there. */
+   users whose settings allow motion AND whose JavaScript runs: the `js`
+   class is set on <html> by an inline script in the root layout, before
+   first paint. With reduced motion, or without JavaScript, the content is
+   simply there. */
 @media (prefers-reduced-motion: no-preference) {
-  .reveal {
+  .js .reveal {
     opacity: 0;
   }
   .reveal.in-view {
     animation: rise 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   /* A list that IS the content settles line by line. */
-  .reveal .stagger > * {
+  .js .reveal .stagger > * {
     opacity: 0;
   }
   .reveal.in-view .stagger > * {

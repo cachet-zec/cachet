@@ -46,7 +46,7 @@ function Prose({ text, className = "" }: { text: string; className?: string }) {
   );
 }
 
-const sub = "font-data mt-6 text-[13px] uppercase tracking-[0.18em] text-neutral-500";
+const sub = "mt-6 text-sm font-medium text-neutral-400";
 
 function Fields({ fields }: { fields: (Field & { where?: string })[] }) {
   return (
@@ -60,8 +60,8 @@ function Fields({ fields }: { fields: (Field & { where?: string })[] }) {
             <span className="text-neutral-100">{field.name}</span>
             <span className="block text-[13px] text-neutral-500">
               {field.type}
-              {field.where ? ` · ${field.where}` : ""}
-              {field.required ? " · required" : ""}
+              {field.where ? `, ${field.where}` : ""}
+              {field.required ? ", required" : ""}
             </span>
           </dt>
           <dd className="min-w-0 text-sm leading-relaxed text-neutral-400">

@@ -462,7 +462,7 @@ export function SwapPanel({
   const canPay = offer && wallet ? heldOf(offer.want_asset) >= offer.want_amount : null;
   const fieldRow = "grid grid-cols-[minmax(0,1fr)_8.5rem] gap-x-3 gap-y-1.5";
   const hint = "min-h-5 text-[13px] text-neutral-500";
-  const caption = "font-data text-[12px] uppercase tracking-[0.14em] text-neutral-500";
+  const caption = "text-sm text-neutral-500";
   const statusStrip =
     "flex items-start gap-3 rounded-md border border-accent/30 bg-accent/[0.04] px-4 py-3 text-sm leading-relaxed text-neutral-200";
   const doneStrip =

@@ -25,7 +25,7 @@ export function ChainStatus() {
             error ? "bg-red-400" : data ? "pulse-dot bg-accent" : "bg-neutral-600"
           }`}
         />
-        <span className="text-[13px] uppercase tracking-[0.18em] text-neutral-500">Node</span>
+        <span className="font-sans text-sm text-neutral-500">Node</span>
       </span>
       {isPending && (
         <span role="status" aria-label="Connecting" className="flex items-center gap-5">
@@ -41,14 +41,14 @@ export function ChainStatus() {
             tip <span className="text-accent">#{data.tip_height}</span>
           </span>
           {data.read_only && (
-            <span className="rounded-sm border border-neutral-500/50 px-1.5 py-0.5 text-[13px] uppercase tracking-[0.14em] text-neutral-400">
+            <span className="rounded-sm border border-neutral-500/50 px-1.5 py-0.5 text-[13px] text-neutral-400">
               read-only
             </span>
           )}
           {data.mints_paused && (
             <span
               title="Minting through this instance is paused by its operator"
-              className="rounded-sm border border-accent/50 px-1.5 py-0.5 text-[13px] uppercase tracking-[0.14em] text-accent"
+              className="rounded-sm border border-accent/50 px-1.5 py-0.5 text-[13px] text-accent"
             >
               mints paused
             </span>

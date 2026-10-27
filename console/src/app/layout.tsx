@@ -46,7 +46,20 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${display.variable} ${sans.variable} ${mono.variable}`}>
+    // suppressHydrationWarning: the inline script below adds `js` to this
+    // element's classes before React hydrates it.
+    <html
+      lang="en"
+      className={`${display.variable} ${sans.variable} ${mono.variable}`}
+      suppressHydrationWarning
+    >
+      <head>
+        {/* Scroll entrances hide their sections only once this has run, so a
+            page whose scripts never load still shows everything. */}
+        <script
+          dangerouslySetInnerHTML={{ __html: "document.documentElement.classList.add('js')" }}
+        />
+      </head>
       <body className="min-h-screen antialiased">
         <Providers>
           <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-6">
@@ -56,9 +69,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="font-display text-xl font-semibold tracking-tight text-neutral-100">
                   Cachet
                 </span>
-                <span className="font-data mt-0.5 text-[13px] uppercase tracking-[0.2em] text-accent">
-                  testnet
-                </span>
+                <span className="mt-0.5 text-sm text-accent">testnet</span>
               </Link>
               <NavLinks />
             </header>
@@ -79,9 +90,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   <p className="mt-3 max-w-xs text-sm leading-relaxed text-neutral-500">
                     Issuance console &amp; verifiable registry for Zcash Shielded Assets.
                   </p>
-                  <p className="font-data mt-4 text-[13px] uppercase tracking-[0.2em] text-accent">
-                    Testnet only
-                  </p>
+                  <p className="mt-4 text-sm text-accent">Testnet only</p>
                   <p className="font-data mt-4 text-[13px]">
                     <Link
                       href="/support"
@@ -95,9 +104,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
                 {/* Explore */}
                 <div>
-                  <h3 className="font-data text-[13px] uppercase tracking-[0.24em] text-neutral-500">
-                    Explore
-                  </h3>
+                  <h3 className="text-sm font-medium text-neutral-300">Explore</h3>
                   <ul className="mt-3 flex flex-col gap-2 text-sm">
                     <li>
                       <Link
@@ -150,9 +157,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
                 {/* Verify */}
                 <div>
-                  <h3 className="font-data text-[13px] uppercase tracking-[0.24em] text-neutral-500">
-                    Verify
-                  </h3>
+                  <h3 className="text-sm font-medium text-neutral-300">Verify</h3>
                   <ul className="mt-3 flex flex-col gap-2 text-sm">
                     <li>
                       <a
@@ -194,8 +199,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
 
               {/* Signature line, ledger-style. The name is already at the top
                   of the footer: only what it promises is said here. */}
-              <p className="font-data mt-10 text-[13px] uppercase tracking-[0.16em] text-neutral-600">
-                No telemetry · no tracking · MIT
+              <p className="mt-10 text-sm text-neutral-500">
+                No telemetry, no tracking, MIT licensed.
               </p>
             </footer>
           </div>

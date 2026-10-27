@@ -65,9 +65,7 @@ function SwapFill({
       </p>
       <div className="mt-5 grid gap-5 rounded-md border border-line bg-white/[0.02] p-5 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-3">
-          <span className="font-data text-[12px] uppercase tracking-[0.14em] text-neutral-500">
-            The maker gave
-          </span>
+          <span className="text-sm text-neutral-500">The maker gave</span>
           <OfferSide
             amount={swap.give_amount}
             id={swap.give_asset}
@@ -75,9 +73,7 @@ function SwapFill({
           />
         </div>
         <div className="flex min-w-0 flex-col gap-3">
-          <span className="font-data text-[12px] uppercase tracking-[0.14em] text-neutral-500">
-            The taker gave
-          </span>
+          <span className="text-sm text-neutral-500">The taker gave</span>
           <OfferSide
             amount={swap.want_amount}
             id={swap.want_asset}

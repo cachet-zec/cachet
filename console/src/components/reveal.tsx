@@ -9,8 +9,9 @@ import { useEffect, useRef, useState } from "react";
  *
  * Motion is a progressive enhancement here: without JavaScript or
  * IntersectionObserver the content is simply visible (the hidden initial
- * state lives behind `prefers-reduced-motion: no-preference` and is lifted
- * the moment the observer cannot exist).
+ * state lives behind `prefers-reduced-motion: no-preference` and the `js`
+ * class the root layout sets before first paint, and is lifted the moment
+ * the observer cannot exist).
  */
 export function Reveal({
   className = "",
