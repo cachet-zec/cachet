@@ -91,6 +91,11 @@ All notable changes to Cachet are documented here. The format follows
 - The "Seal at mint" switch slides its knob with `translate` instead of
   animating `left` through `transition-all`, and stands still under
   reduced motion.
+- `deploy.sh` no longer ends with warnings that `POSTGRES_PASSWORD`,
+  `CACHET_SEED_PHRASE` and `CACHET_SNAPSHOT_KEY` are unset: its closing
+  `docker compose ps` now reads `.env.prod` like the `up` before it. The
+  stack always had its secrets; only the check parsed the file without
+  them. DEPLOY.md's operations commands pass `--env-file` the same way.
 
 ### Changed
 
