@@ -98,11 +98,13 @@ keeps its certificates in a volume across restarts.
 
 ```bash
 # status / logs
-ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml ps'
-ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml logs -f server'
+# (--env-file on every call: without it compose warns that the secrets are
+# unset, which is about its own parsing, not the running stack)
+ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml --env-file .env.prod ps'
+ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f server'
 
 # operator moderation (availability-only denylist, see packages/registry-spec)
-ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml \
+ssh root@<ip> 'cd /opt/cachet && docker compose -f docker-compose.prod.yml --env-file .env.prod \
   exec server cachet-server moderate list'
 
 # one-screen health: load, memory against the ceilings, containers, API errors

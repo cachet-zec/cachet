@@ -77,4 +77,6 @@ ssh "$HOST" "cd $REMOTE \
     && docker image prune -f"
 
 echo "==> done. checks:"
-ssh "$HOST" "cd $REMOTE && docker compose -f docker-compose.prod.yml ps"
+# --env-file here too: without it compose interpolates the file with empty
+# secrets and warns that they are unset, although the stack has them.
+ssh "$HOST" "cd $REMOTE && docker compose -f docker-compose.prod.yml --env-file .env.prod ps"
