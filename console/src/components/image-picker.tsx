@@ -62,12 +62,12 @@ export function ImagePicker({
       />
 
       {value ? (
-        <div className="flex items-center gap-3 rounded-md border border-white/10 bg-black/20 p-2.5">
+        <div className="flex items-center gap-3 rounded-md border border-ink/10 bg-shade/20 p-2.5">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={value}
             alt="Image that will be sealed into the asset"
-            className="h-11 w-11 shrink-0 rounded-sm border border-white/10 object-cover"
+            className="h-11 w-11 shrink-0 rounded-sm border border-ink/10 object-cover"
           />
           <span className="min-w-0 flex-1">
             <span className="block text-sm text-neutral-300">Image sealed with the asset</span>
@@ -76,14 +76,14 @@ export function ImagePicker({
           <span className="flex shrink-0 items-center gap-3 text-[13px]">
             <button
               type="button"
-              className="text-neutral-400 underline decoration-white/20 underline-offset-2 transition hover:text-accent"
+              className="text-neutral-400 underline decoration-ink/20 underline-offset-2 transition hover:text-accent"
               onClick={() => fileInput.current?.click()}
             >
               Replace
             </button>
             <button
               type="button"
-              className="text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-red-400"
+              className="text-neutral-500 underline decoration-ink/20 underline-offset-2 transition hover:text-red-400"
               onClick={clear}
             >
               Remove
@@ -107,12 +107,12 @@ export function ImagePicker({
           className={`flex w-full items-center gap-3 rounded-md border border-dashed px-3.5 py-3 text-left transition ${
             dragging
               ? "border-accent/60 bg-accent/[0.05]"
-              : "border-white/15 hover:border-white/30 hover:bg-white/[0.02]"
+              : "border-ink/15 hover:border-ink/30 hover:bg-ink/[0.02]"
           }`}
         >
           <span
             aria-hidden
-            className="font-data flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border border-dashed border-white/15 text-lg text-neutral-600"
+            className="font-data flex h-11 w-11 shrink-0 items-center justify-center rounded-sm border border-dashed border-ink/15 text-lg text-neutral-600"
           >
             +
           </span>

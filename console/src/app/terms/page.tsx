@@ -34,7 +34,7 @@ export default function TermsPage() {
       </p>
 
       <section className={`${card} mt-8`}>
-        <h2 className={cardTitle}>01 · What this is</h2>
+        <h2 className={cardTitle}>1. What this is</h2>
         <p className="mt-3 text-sm leading-relaxed text-neutral-300">
           A free, non-custodial tool on a public Zcash test network. Assets minted here have no
           monetary value, can disappear when the test network is reset, and are not an investment, a
@@ -52,7 +52,7 @@ export default function TermsPage() {
       </section>
 
       <section className={`${card} mt-4`}>
-        <h2 className={cardTitle}>02 · What you may not upload</h2>
+        <h2 className={cardTitle}>2. What you may not upload</h2>
         <p className="mt-3 text-sm leading-relaxed text-neutral-300">
           Names, descriptions and images you seal into an asset are public and hosted by this
           instance. Do not upload content that is illegal where you or the operator are; sexual
@@ -64,7 +64,7 @@ export default function TermsPage() {
       </section>
 
       <section className={`${card} mt-4`}>
-        <h2 className={cardTitle}>03 · What the operator does about it</h2>
+        <h2 className={cardTitle}>3. What the operator does about it</h2>
         <p className="mt-3 text-sm leading-relaxed text-neutral-300">
           The operator may withhold content from this instance without notice: an asset&apos;s
           bundle, a whole issuer, or a resolved description. For content that must not be kept at
@@ -76,7 +76,7 @@ export default function TermsPage() {
       </section>
 
       <section className={`${card} mt-4`}>
-        <h2 className={cardTitle}>04 · Privacy</h2>
+        <h2 className={cardTitle}>4. Privacy</h2>
         <p className="mt-3 text-sm leading-relaxed text-neutral-300">
           No accounts, no cookies, no analytics. Your browser talks to the registry it reads from
           and to nothing else: this one by default, another operator&apos;s only if you pick it in
@@ -94,7 +94,7 @@ export default function TermsPage() {
       </section>
 
       <section className={`${card} mt-4`}>
-        <h2 className={cardTitle}>05 · Reporting content, and reaching the operator</h2>
+        <h2 className={cardTitle}>5. Reporting content, and reaching the operator</h2>
         <p className="mt-3 text-sm leading-relaxed text-neutral-300">
           To report illegal content, a rights infringement, or anything you believe should not be
           served here, write to{" "}

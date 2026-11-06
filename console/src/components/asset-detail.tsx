@@ -207,7 +207,7 @@ function SealedImage({ src }: { src: string }) {
             role="dialog"
             aria-modal="true"
             data-testid="asset-image-lightbox"
-            className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-black/90 p-8 backdrop-blur-md"
+            className="fixed inset-0 z-50 flex cursor-zoom-out flex-col items-center justify-center gap-3 bg-shade/90 p-8 backdrop-blur-md"
             onClick={() => setOpen(false)}
           >
             {/* Height budget: viewport minus the caption, the gaps and the
@@ -217,7 +217,7 @@ function SealedImage({ src }: { src: string }) {
             <img
               src={src}
               alt=""
-              className="max-h-[calc(100vh-9rem)] max-w-[min(88vw,52rem)] rounded-md border border-white/15 object-contain shadow-[0_8px_40px_rgba(0,0,0,0.6)]"
+              className="max-h-[calc(100vh-9rem)] max-w-[min(88vw,52rem)] rounded-md border border-ink/15 object-contain shadow-lightbox"
             />
             <p className="font-data text-sm text-neutral-400">
               Sealed with the asset. Click anywhere to close.
@@ -400,7 +400,7 @@ export function AssetDetail({
                       <Link
                         href={`/mint?seal=${assetId}`}
                         data-testid="seal-supply-link"
-                        className="text-sm text-neutral-400 underline decoration-white/20 underline-offset-4 transition hover:text-accent"
+                        className="text-sm text-neutral-400 underline decoration-ink/20 underline-offset-4 transition hover:text-accent"
                       >
                         Issuer? Seal the supply
                       </Link>
@@ -491,7 +491,7 @@ export function AssetDetail({
                 <EntryRow label="Issuer" value={state.data.issuer}>
                   <Link
                     href={`/issuers/${state.data.issuer}`}
-                    className="mt-2 inline-block text-sm text-neutral-300 underline decoration-white/20 transition hover:text-accent"
+                    className="mt-2 inline-block text-sm text-neutral-300 underline decoration-ink/20 transition hover:text-accent"
                   >
                     All assets from this issuer
                   </Link>

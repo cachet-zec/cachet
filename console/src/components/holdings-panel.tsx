@@ -179,7 +179,7 @@ export function HoldingsPanel({
 
   return (
     <section className={`${card} rise`}>
-      <h2 className={`${cardTitle} mb-3`}>Your holdings · transfer &amp; burn</h2>
+      <h2 className={`${cardTitle} mb-3`}>Your holdings: transfer &amp; burn</h2>
       <p className="text-[13px] leading-relaxed text-neutral-500">
         The chain is scanned locally: raw blocks are public data, identical for every visitor, and
         the trial decryption happens in this page. The server never learns which notes are yours.
@@ -230,7 +230,7 @@ export function HoldingsPanel({
           {wallet.holdings.map((holding) => (
             <li
               key={holding.asset_id}
-              className="rounded-md border border-white/10 px-3.5 py-2.5"
+              className="rounded-md border border-ink/10 px-3.5 py-2.5"
               data-testid={`holding-${holding.asset_id.slice(0, 8)}`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -282,11 +282,11 @@ export function HoldingsPanel({
               </div>
 
               {form && form.asset_id === holding.asset_id && (
-                <div className="mt-3 flex flex-col gap-2.5 border-t border-white/[0.06] pt-3">
+                <div className="mt-3 flex flex-col gap-2.5 border-t border-ink/[0.06] pt-3">
                   {form.mode === "transfer" && (
                     <div className="flex flex-col gap-1.5">
                       <label className={label} htmlFor="spend-recipient">
-                        Recipient · unified address
+                        Recipient (unified address)
                       </label>
                       <input
                         id="spend-recipient"

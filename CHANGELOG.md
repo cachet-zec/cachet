@@ -103,6 +103,16 @@ All notable changes to Cachet are documented here. The format follows
   footer's promise, the swap board's testnet notice, the 404, the asset
   page's hash hints), and links and pagers say their verb without an
   arrow glued to it.
+- The rest of the console follows: step titles are numbered "1. Issuer
+  identity" rather than "1 · Issuer identity" (mint, swaps, terms), and the
+  engine readout, an asset's history, the swap slots and the operator's
+  lists read as comma-separated lines.
+- Every colour the console draws comes from the theme. White and black
+  overlays are the ink and a new green-leaning `shade`; the card, field,
+  button, popover and lightbox shadows, the card sheen and the landing's
+  glow are named tokens. Nothing changes on screen. The social cards and
+  the app icon keep literal colours, since the image renderer cannot read
+  CSS variables, and the QR code keeps pure black on white for scanners.
 
 ## [0.6.0] - 2026-10-07
 

@@ -35,7 +35,7 @@ export function AssetThumb({
     />
   ) : (
     <span
-      className={`${className} font-data flex shrink-0 items-center justify-center rounded-sm border border-white/10 text-[13px] text-neutral-600`}
+      className={`${className} font-data flex shrink-0 items-center justify-center rounded-sm border border-ink/10 text-[13px] text-neutral-600`}
     >
       {id.slice(0, 2)}
     </span>

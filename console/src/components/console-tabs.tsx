@@ -79,7 +79,7 @@ export function ConsoleTabs() {
     <div>
       <div
         role="tablist"
-        className="flex flex-wrap gap-x-5 gap-y-1 border-b border-white/[0.08] px-1"
+        className="flex flex-wrap gap-x-5 gap-y-1 border-b border-ink/[0.08] px-1"
       >
         {TABS.map(({ id, label }) => (
           <button

@@ -75,9 +75,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </header>
             {/* Ledger double rule under the header, like a totals line. */}
             <div className="thread" />
-            <div className="mt-[3px] h-px bg-white/[0.05]" />
+            <div className="mt-[3px] h-px bg-ink/[0.05]" />
             <main className="flex-1 py-8">{children}</main>
-            <footer className="border-t border-white/[0.06] pb-6 pt-10">
+            <footer className="border-t border-ink/[0.06] pb-6 pt-10">
               <div className="grid gap-10 sm:grid-cols-[5fr_3fr_3fr]">
                 {/* Brand */}
                 <div>

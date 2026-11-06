@@ -58,7 +58,7 @@ export function SwapsWorkspace() {
           className={`mt-6 grid gap-5 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] ${ready ? "lg:items-start" : ""}`}
         >
           <SeedCard
-            title="1 · Your wallet"
+            title="1. Your wallet"
             savedNote="It holds what you trade: lose it and those units are gone."
           />
           {ready ? (
@@ -68,7 +68,7 @@ export function SwapsWorkspace() {
               data-testid="swap-needs-wallet"
               className="rounded-[3px] border border-dashed border-line-strong p-5 text-sm leading-relaxed text-neutral-400 sm:p-6"
             >
-              <h2 className={`${cardTitle} mb-3 text-neutral-300`}>2 · Make or take an offer</h2>
+              <h2 className={`${cardTitle} mb-3 text-neutral-300`}>2. Make or take an offer</h2>
               <p className="max-w-prose">
                 {takeId
                   ? "Open your wallet to take this offer: generate a seed, or enter the one holding the asset the offer asks for."

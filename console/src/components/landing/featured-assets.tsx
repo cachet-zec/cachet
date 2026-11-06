@@ -74,7 +74,7 @@ export function FeaturedAssets() {
   }
   if (error) {
     return (
-      <p className="border-y border-white/[0.07] py-8 text-sm text-neutral-500">
+      <p className="border-y border-ink/[0.07] py-8 text-sm text-neutral-500">
         Registry unreachable right now. Entries come back when it answers.
       </p>
     );
@@ -82,7 +82,7 @@ export function FeaturedAssets() {
   const entries: Row[] = data;
   if (entries.length === 0) {
     return (
-      <p className="border-y border-white/[0.07] py-8 text-sm text-neutral-500">
+      <p className="border-y border-ink/[0.07] py-8 text-sm text-neutral-500">
         No assets on this chain yet. Open the console and mint the first one.
       </p>
     );
@@ -99,7 +99,7 @@ export function FeaturedAssets() {
         <Link
           key={asset.asset_id}
           href={`/assets/${asset.asset_id}`}
-          className="group flex items-center gap-4 border-b border-line py-4 pl-1 pr-2 transition last:border-b-0 hover:bg-white/[0.025]"
+          className="group flex items-center gap-4 border-b border-line py-4 pl-1 pr-2 transition last:border-b-0 hover:bg-ink/[0.025]"
         >
           <span className={rowIndex}>{String(total - index).padStart(2, "0")}</span>
           {asset.image_path ? (

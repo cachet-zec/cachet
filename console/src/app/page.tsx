@@ -39,7 +39,7 @@ export default function LandingPage() {
       <section className="rise relative grid items-start gap-10 lg:grid-cols-[7fr_4fr]">
         <div
           aria-hidden
-          className="pointer-events-none absolute -left-24 -top-48 -z-10 h-[440px] w-[420px] bg-[radial-gradient(closest-side,rgba(213,154,124,0.06),transparent)] sm:-left-40 sm:w-[680px]"
+          className="pointer-events-none absolute -left-24 -top-48 -z-10 h-[440px] w-[420px] [background-image:var(--glow-accent)] sm:-left-40 sm:w-[680px]"
         />
         <SealWatermark className="absolute -right-64 -top-72 -z-10 w-[560px] sm:w-[760px] lg:-right-[26rem]" />
         <div>
@@ -112,7 +112,7 @@ export default function LandingPage() {
 
       {/* Honest framing: an official notice, set as ledger lines and
           stamped like a document. */}
-      <Reveal className="rounded-lg border border-white/[0.08] bg-surface p-6 [background-image:linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0)_45%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_1px_3px_rgba(0,0,0,0.35)] sm:p-7">
+      <Reveal className="rounded-lg border border-ink/[0.08] bg-surface p-6 [background-image:var(--sheen)] shadow-card sm:p-7">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <h2 className="font-display text-2xl font-medium text-neutral-100">
             Read before believing

@@ -16,7 +16,7 @@ export const metadata: Metadata = pageMetadata({
 /** A shell command, shown the way the console shows data. */
 function Command({ children }: { children: string }) {
   return (
-    <pre className="font-data mt-3 overflow-x-auto rounded-md border border-white/[0.07] bg-black/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-neutral-300">
+    <pre className="font-data mt-3 overflow-x-auto rounded-md border border-ink/[0.07] bg-shade/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-neutral-300">
       {children}
     </pre>
   );
@@ -178,17 +178,17 @@ python scripts/mirror.py --api https://your.instance --out ./mirror`}</Command>
           nothing would be lost:
         </p>
         <ul className="mt-3 space-y-2.5 text-sm leading-relaxed text-neutral-300">
-          <li className="border-l border-white/10 pl-3.5">
+          <li className="border-l border-ink/10 pl-3.5">
             <span className="font-data text-[13px] text-neutral-400">metadata_bundles</span> - the
             descriptions and images minters sealed. The chain commits to their hash, never their
             bytes.
           </li>
-          <li className="border-l border-white/10 pl-3.5">
+          <li className="border-l border-ink/10 pl-3.5">
             <span className="font-data text-[13px] text-neutral-400">asset_descriptions</span> - the
             resolution journal. Re-derivable by anyone who knows a description, since resolution is
             permissionless and verified against the chain.
           </li>
-          <li className="border-l border-white/10 pl-3.5">
+          <li className="border-l border-ink/10 pl-3.5">
             <span className="font-data text-[13px] text-neutral-400">moderation_hidden</span> - what
             this operator chose to withhold. A mirror that disagrees simply does not have it.
           </li>

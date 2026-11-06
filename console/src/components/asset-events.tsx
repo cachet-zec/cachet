@@ -29,7 +29,7 @@ function ExplorerLink({ href, children }: { href: string | null; children: React
       target="_blank"
       rel="noreferrer"
       title="View on the block explorer"
-      className="underline decoration-white/20 underline-offset-2 transition hover:text-accent hover:decoration-accent/50"
+      className="underline decoration-ink/20 underline-offset-2 transition hover:text-accent hover:decoration-accent/50"
     >
       {children}
     </a>
@@ -146,8 +146,8 @@ export function AssetEvents({ assetId }: { assetId: string }) {
                     <ExplorerLink href={explorerBlockUrl(event.height)}>
                       block {event.height.toLocaleString("en-US")}
                     </ExplorerLink>
-                    {tipHeight !== undefined && ` · ${depthLabel(tipHeight - event.height)}`}
-                    {event.kind !== "finalization" && ` · supply ${after.toLocaleString("en-US")}`}
+                    {tipHeight !== undefined && `, ${depthLabel(tipHeight - event.height)}`}
+                    {event.kind !== "finalization" && `, supply ${after.toLocaleString("en-US")}`}
                   </span>
                 </span>
                 <span className="flex min-w-0 items-start justify-between gap-3">
@@ -157,7 +157,7 @@ export function AssetEvents({ assetId }: { assetId: string }) {
                   <span className="flex shrink-0 items-center gap-2">
                     <Link
                       href={`/tx/${event.txid}`}
-                      className="whitespace-nowrap rounded-sm border border-white/10 px-2 py-0.5 text-[13px] text-neutral-400 transition hover:border-accent/50 hover:text-accent"
+                      className="whitespace-nowrap rounded-sm border border-ink/10 px-2 py-0.5 text-[13px] text-neutral-400 transition hover:border-accent/50 hover:text-accent"
                       title="What this transaction published, decoded from its bytes"
                     >
                       Decode

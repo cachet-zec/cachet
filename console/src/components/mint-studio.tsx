@@ -447,7 +447,7 @@ export function MintStudio() {
         <div className="flex min-w-0 flex-col gap-5">
           {/* Step 1: identity */}
           <SeedCard
-            title="1 · Issuer identity"
+            title="1. Issuer identity"
             savedNote="It IS the issuer identity: lose it and nobody can ever mint under this identity again."
             busy={!!stage}
             className="rise rise-2"
@@ -455,7 +455,7 @@ export function MintStudio() {
 
           {/* Step 2: the asset */}
           <section className={`${card} rise rise-3`}>
-            <h2 className={`${cardTitle} mb-3`}>2 · The asset</h2>
+            <h2 className={`${cardTitle} mb-3`}>2. The asset</h2>
             {remintError && (
               <p data-testid="remint-error" className="mb-3 text-sm text-red-400">
                 {remintError}
@@ -607,7 +607,7 @@ export function MintStudio() {
                 className={
                   finalize
                     ? "flex w-full items-center gap-3 rounded-md border border-accent/60 bg-accent/[0.07] px-3.5 py-2.5 text-left transition"
-                    : "flex w-full items-center gap-3 rounded-md border border-dashed border-white/15 px-3.5 py-2.5 text-left transition hover:border-white/30"
+                    : "flex w-full items-center gap-3 rounded-md border border-dashed border-ink/15 px-3.5 py-2.5 text-left transition hover:border-ink/30"
                 }
               >
                 {/* The switch itself — so the row reads as a toggle at a glance. */}
@@ -616,7 +616,7 @@ export function MintStudio() {
                   className={
                     finalize
                       ? "relative h-5 w-9 shrink-0 rounded-full border border-accent/70 bg-accent/25 transition-colors"
-                      : "relative h-5 w-9 shrink-0 rounded-full border border-white/25 bg-black/40 transition-colors"
+                      : "relative h-5 w-9 shrink-0 rounded-full border border-ink/25 bg-shade/40 transition-colors"
                   }
                 >
                   <span
@@ -649,7 +649,7 @@ export function MintStudio() {
 
           {/* Step 3: go */}
           <section className={`${card} rise rise-4`}>
-            <h2 className={`${cardTitle} mb-3`}>3 · Prove &amp; relay</h2>
+            <h2 className={`${cardTitle} mb-3`}>3. Prove &amp; relay</h2>
             {paused && (
               <p
                 data-testid="mint-paused"
@@ -741,11 +741,10 @@ export function MintStudio() {
             {stage && <MintGauge phase={phase} steps={holdRelay ? 3 : 5} message={stage} />}
             {engineReady && !stage && (
               <p className="font-data mt-3 text-[13px] text-neutral-500">
-                engine ready · {engineThreads} {engineThreads > 1 ? "threads" : "thread"}
+                engine ready, {engineThreads} {engineThreads > 1 ? "threads" : "thread"}
                 {provingReady && (
                   <>
-                    {" "}
-                    · <span className="text-accent">proving key warm</span>
+                    , <span className="text-accent">proving key warm</span>
                   </>
                 )}
               </p>
