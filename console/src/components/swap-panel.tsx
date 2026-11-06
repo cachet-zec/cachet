@@ -471,7 +471,7 @@ export function SwapPanel({
     <span className="mt-[7px] h-2 w-2 shrink-0 rounded-full bg-accent motion-safe:animate-pulse" />
   );
   const offerCard = (title: string, give: OfferSummary) => (
-    <div className="rounded-md border border-line bg-black/20 px-4 py-3.5">
+    <div className="rounded-md border border-line bg-shade/20 px-4 py-3.5">
       <p className={caption}>{title}</p>
       <div className="mt-2.5 grid items-center gap-3 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
         <OfferSide
@@ -496,7 +496,7 @@ export function SwapPanel({
   return (
     <section id="swap" className={`${card} rise scroll-mt-8`} data-testid="swap-panel">
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-        <h2 className={cardTitle}>2 · Make or take an offer</h2>
+        <h2 className={cardTitle}>2. Make or take an offer</h2>
         <button
           type="button"
           className="font-data text-[13px] text-neutral-500 transition hover:text-accent disabled:opacity-40"
@@ -511,7 +511,7 @@ export function SwapPanel({
       <div
         role="radiogroup"
         aria-label="Your side"
-        className="mt-4 inline-flex overflow-hidden rounded-md border border-white/10 bg-black/30"
+        className="mt-4 inline-flex overflow-hidden rounded-md border border-ink/10 bg-shade/30"
       >
         {(
           [
@@ -526,10 +526,10 @@ export function SwapPanel({
             aria-checked={role === value}
             data-testid={`swap-role-${value}`}
             onClick={() => setRole(value)}
-            className={`px-4 py-2 text-sm transition ${index > 0 ? "border-l border-white/[0.07]" : ""} ${
+            className={`px-4 py-2 text-sm transition ${index > 0 ? "border-l border-ink/[0.07]" : ""} ${
               role === value
                 ? "bg-accent/[0.09] text-accent"
-                : "text-neutral-400 hover:bg-white/[0.03] hover:text-neutral-200"
+                : "text-neutral-400 hover:bg-ink/[0.03] hover:text-neutral-200"
             }`}
           >
             {text}
@@ -592,7 +592,7 @@ export function SwapPanel({
                       className="transition hover:text-accent"
                       onClick={() => setGiveAmount(String(held))}
                     >
-                      of {held.toLocaleString("en-US")} · <span className="underline">all</span>
+                      of {held.toLocaleString("en-US")}, <span className="underline">use all</span>
                     </button>
                   )}
                 </span>
@@ -680,13 +680,13 @@ export function SwapPanel({
                     <Link
                       href={`/tx/${makerTxid}`}
                       data-testid="swap-maker-tx"
-                      className={`font-data underline underline-offset-2 ${makerDone ? "decoration-emerald-300/40" : "decoration-white/20"}`}
+                      className={`font-data underline underline-offset-2 ${makerDone ? "decoration-emerald-300/40" : "decoration-ink/20"}`}
                     >
                       {makerTxid.slice(0, 16)}…
                     </Link>
                     {makerDone && makerHeight !== null && (
                       <span className="font-data">
-                        {` · block ${makerHeight.toLocaleString("en-US")}`}
+                        {`, block ${makerHeight.toLocaleString("en-US")}`}
                       </span>
                     )}
                   </>
@@ -711,7 +711,7 @@ export function SwapPanel({
 
           {madeOffer && !listing && (
             <div className="flex flex-col gap-2">
-              <span className={label}>1 · Send this offer to the taker</span>
+              <span className={label}>1. Send this offer to the taker</span>
               <div className="flex items-start gap-2">
                 <textarea
                   readOnly
@@ -722,7 +722,7 @@ export function SwapPanel({
                 <CopyButton value={madeOffer.json} />
               </div>
               <label className={label} htmlFor="swap-answer">
-                2 · Paste the taker&apos;s answer
+                2. Paste the taker&apos;s answer
               </label>
               <textarea
                 id="swap-answer"
@@ -742,7 +742,7 @@ export function SwapPanel({
               </button>
               {countersignature && (
                 <>
-                  <span className={label}>3 · Send this signature back</span>
+                  <span className={label}>3. Send this signature back</span>
                   <div className="flex items-start gap-2">
                     <textarea
                       readOnly
@@ -774,7 +774,7 @@ export function SwapPanel({
                             </span>{" "}
                             <AssetTitle asset={byId.get(holding.asset_id)} />
                             <span className="font-data ml-2 text-[12px] text-neutral-500">
-                              {offered ? "on offer" : "no offer"} · slot {parked.slot + 1}
+                              {offered ? "on offer" : "no offer"}, slot {parked.slot + 1}
                             </span>
                           </span>
                           {!offered && listing === null && (
@@ -877,7 +877,7 @@ export function SwapPanel({
           {offer && (
             <div
               data-testid="swap-offer-summary"
-              className="grid gap-4 rounded-md border border-line bg-black/20 px-4 py-3.5 sm:grid-cols-2"
+              className="grid gap-4 rounded-md border border-line bg-shade/20 px-4 py-3.5 sm:grid-cols-2"
             >
               <div>
                 <p className={caption}>You get</p>
@@ -937,7 +937,7 @@ export function SwapPanel({
           )}
           {takeJson && !takeFrom && (
             <>
-              <span className={label}>2 · Send this answer to the maker</span>
+              <span className={label}>2. Send this answer to the maker</span>
               <div className="flex items-start gap-2">
                 <textarea
                   readOnly
@@ -948,7 +948,7 @@ export function SwapPanel({
                 <CopyButton value={takeJson} />
               </div>
               <label className={label} htmlFor="swap-signature-in">
-                3 · Paste the maker&apos;s signature
+                3. Paste the maker&apos;s signature
               </label>
               <textarea
                 id="swap-signature-in"

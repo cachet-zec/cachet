@@ -56,7 +56,7 @@ export function AssetPicker({
   const inputRef = useRef<HTMLInputElement>(null);
   const listId = useId();
   const second = (asset: PickableAsset) =>
-    detail ? detail(asset) : `${shortId(asset.asset_id)}${asset.finalized ? " · sealed" : ""}`;
+    detail ? detail(asset) : `${shortId(asset.asset_id)}${asset.finalized ? ", sealed" : ""}`;
 
   const chosen = value.trim().toLowerCase();
   if (isAssetId(chosen)) {
@@ -64,7 +64,7 @@ export function AssetPicker({
     return (
       <div
         data-testid={`${testId}-chosen`}
-        className={`${FIELD_HEIGHT} flex items-center gap-3 rounded-md border border-white/10 bg-black/30 px-2.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)]`}
+        className={`${FIELD_HEIGHT} flex items-center gap-3 rounded-md border border-ink/10 bg-shade/30 px-2.5 shadow-field`}
       >
         <AssetThumb asset={asset} id={chosen} />
         <span className="flex min-w-0 flex-1 flex-col leading-tight">
@@ -162,7 +162,7 @@ export function AssetPicker({
         <ul
           id={listId}
           role="listbox"
-          className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-line-strong bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+          className="absolute inset-x-0 top-full z-20 mt-1 max-h-80 overflow-y-auto rounded-md border border-line-strong bg-surface py-1 shadow-popover"
         >
           {matches.map((asset, index) => (
             <li
@@ -172,7 +172,7 @@ export function AssetPicker({
               aria-selected={index === active}
               data-testid={`${testId}-option`}
               className={`flex cursor-pointer items-center gap-3 px-2.5 py-1.5 ${
-                index === active ? "bg-accent/[0.08]" : "hover:bg-white/[0.03]"
+                index === active ? "bg-accent/[0.08]" : "hover:bg-ink/[0.03]"
               }`}
               onMouseEnter={() => setActive(index)}
               // mousedown, before the input's blur closes the list

@@ -87,7 +87,7 @@ function Pager({
   return (
     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
       <span className="font-data text-[13px] text-neutral-500">
-        page {page + 1} of {pages} · {total} rows
+        page {page + 1} of {pages}, {total} rows
       </span>
       <span className="flex items-center gap-2">
         <button
@@ -506,7 +506,7 @@ export function AdminPanel() {
                 <>
                   Last change{" "}
                   {new Date(pause.since * 1000).toISOString().slice(0, 16).replace("T", " ")} UTC
-                  {pause.reason ? ` · ${pause.reason}` : ""}
+                  {pause.reason ? `: ${pause.reason}` : ""}
                 </>
               ) : (
                 "Never changed on this instance."
@@ -614,7 +614,7 @@ export function AdminPanel() {
               <li
                 key={asset.asset_id}
                 className={`flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-line px-3 py-3 transition last:border-b-0 ${
-                  isSelected ? "bg-accent/[0.06]" : "hover:bg-white/[0.02]"
+                  isSelected ? "bg-accent/[0.06]" : "hover:bg-ink/[0.02]"
                 }`}
               >
                 <input
@@ -657,13 +657,10 @@ export function AdminPanel() {
                     )}
                   </div>
                   <div className="font-data mt-1 truncate text-[13px] text-neutral-500">
-                    supply {formatSupply(asset.total_supply)} ·{" "}
+                    supply {formatSupply(asset.total_supply)},{" "}
                     <span title={asset.asset_id}>{asset.asset_id.slice(0, 16)}&hellip;</span>
                     {asset.issuer && (
-                      <span title={asset.issuer}>
-                        {" "}
-                        · issuer {asset.issuer.slice(0, 12)}&hellip;
-                      </span>
+                      <span title={asset.issuer}>, issuer {asset.issuer.slice(0, 12)}&hellip;</span>
                     )}
                   </div>
                 </div>
@@ -790,7 +787,7 @@ export function AdminPanel() {
                     } ${
                       kind === option.value
                         ? "bg-accent/[0.08] text-accent"
-                        : "text-neutral-300 hover:bg-white/[0.03]"
+                        : "text-neutral-300 hover:bg-ink/[0.03]"
                     }`}
                   >
                     <span className="text-sm font-medium">{option.title}</span>
@@ -884,7 +881,7 @@ export function AdminPanel() {
                     <span className="font-data text-[13px] text-neutral-500">
                       {entry.reason ?? "no reason given"}
                       {entry.bytes_present === false && (
-                        <span className="text-red-300"> · bytes purged</span>
+                        <span className="text-red-300">, bytes purged</span>
                       )}
                     </span>
                   </span>

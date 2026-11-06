@@ -128,7 +128,7 @@ export function IssueAssetForm() {
           className={
             finalize
               ? "flex w-full items-center gap-3 rounded-md border border-accent/60 bg-accent/[0.07] px-3.5 py-2.5 text-left transition"
-              : "flex w-full items-center gap-3 rounded-md border border-dashed border-white/15 px-3.5 py-2.5 text-left transition hover:border-white/30"
+              : "flex w-full items-center gap-3 rounded-md border border-dashed border-ink/15 px-3.5 py-2.5 text-left transition hover:border-ink/30"
           }
         >
           <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden className="shrink-0">
@@ -137,7 +137,11 @@ export function IssueAssetForm() {
               cy="16"
               r="13"
               fill="none"
-              stroke={finalize ? "var(--color-accent)" : "rgba(255,255,255,0.25)"}
+              stroke={
+                finalize
+                  ? "var(--color-accent)"
+                  : "color-mix(in srgb, var(--color-ink) 25%, transparent)"
+              }
               strokeWidth="1.4"
               strokeDasharray={finalize ? "none" : "2.4 2.4"}
             />

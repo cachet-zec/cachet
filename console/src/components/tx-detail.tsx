@@ -63,7 +63,7 @@ function SwapFill({
       <p className="mt-3 max-w-prose text-base leading-relaxed text-neutral-300">
         This transaction filled an offer from the swap board: both payments, in one transaction.
       </p>
-      <div className="mt-5 grid gap-5 rounded-md border border-line bg-white/[0.02] p-5 sm:grid-cols-2">
+      <div className="mt-5 grid gap-5 rounded-md border border-line bg-ink/[0.02] p-5 sm:grid-cols-2">
         <div className="flex min-w-0 flex-col gap-3">
           <span className="text-sm text-neutral-500">The maker gave</span>
           <OfferSide
@@ -82,8 +82,8 @@ function SwapFill({
         </div>
       </div>
       <p className="font-data mt-3 text-[13px] text-neutral-500">
-        rate 1 : {rate(swap.give_amount, swap.want_amount)} · who the two parties are stays
-        encrypted
+        rate 1 : {rate(swap.give_amount, swap.want_amount)}. Who the two parties are stays
+        encrypted.
       </p>
     </section>
   );
@@ -131,7 +131,7 @@ export function TxDetail({ txid }: { txid: string }) {
               {tx.data.height === null || tx.data.height === undefined
                 ? "in the mempool"
                 : `block ${tx.data.height.toLocaleString("en-US")}`}
-              {` · v${tx.data.version}`}
+              {`, v${tx.data.version}`}
             </span>
           )}
           {explorer && (
@@ -139,7 +139,7 @@ export function TxDetail({ txid }: { txid: string }) {
               href={explorer}
               target="_blank"
               rel="noreferrer"
-              className="underline decoration-white/20 transition hover:text-accent"
+              className="underline decoration-ink/20 transition hover:text-accent"
             >
               Block explorer
             </a>

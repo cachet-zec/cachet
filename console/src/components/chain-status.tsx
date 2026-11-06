@@ -18,7 +18,7 @@ export function ChainStatus() {
   });
 
   return (
-    <div className="font-data flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-white/[0.08] bg-surface px-4 py-2.5 text-sm">
+    <div className="font-data flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-ink/[0.08] bg-surface px-4 py-2.5 text-sm">
       <span className="flex items-center gap-2">
         <span
           className={`h-2 w-2 rounded-full ${

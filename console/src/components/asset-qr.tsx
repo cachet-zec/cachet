@@ -34,9 +34,9 @@ function QrCode({ value, label }: { value: string; label: string }) {
       aria-label={label}
       viewBox={`0 0 ${size} ${size}`}
       shapeRendering="crispEdges"
-      className="h-44 w-44 shrink-0 bg-white"
+      className="h-44 w-44 shrink-0 bg-qr-light"
     >
-      <path d={path} fill="#000" />
+      <path d={path} className="fill-qr-dark" />
     </svg>
   );
 }
@@ -61,7 +61,7 @@ export function AssetShare({ assetId, digest }: { assetId: string; digest?: stri
       className={`rounded-sm border px-2.5 py-1 text-[13px] transition ${
         current === target
           ? "border-accent/60 text-accent"
-          : "border-white/10 text-neutral-400 hover:border-accent/40 hover:text-neutral-200"
+          : "border-ink/10 text-neutral-400 hover:border-accent/40 hover:text-neutral-200"
       }`}
     >
       {text}

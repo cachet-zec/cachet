@@ -49,7 +49,7 @@ function Thumb({ asset, className }: { asset: AssetSummary; className: string })
     />
   ) : (
     <span
-      className={`${className} font-data flex items-center justify-center border border-white/10 text-[13px] text-neutral-600`}
+      className={`${className} font-data flex items-center justify-center border border-ink/10 text-[13px] text-neutral-600`}
     >
       {asset.asset_id.slice(0, 2)}
     </span>
@@ -115,7 +115,7 @@ export function AssetList() {
             <div
               role="radiogroup"
               aria-label="Layout"
-              className="flex overflow-hidden rounded-md border border-white/10 bg-black/30"
+              className="flex overflow-hidden rounded-md border border-ink/10 bg-shade/30"
             >
               {(["list", "gallery"] as const).map((value, index) => (
                 <button
@@ -128,10 +128,10 @@ export function AssetList() {
                     setLayout(value);
                     setPage(0);
                   }}
-                  className={`font-data whitespace-nowrap px-3 py-1.5 text-[13px] transition ${index > 0 ? "border-l border-white/[0.07]" : ""} ${
+                  className={`font-data whitespace-nowrap px-3 py-1.5 text-[13px] transition ${index > 0 ? "border-l border-ink/[0.07]" : ""} ${
                     layout === value
                       ? "bg-accent/[0.08] text-accent"
-                      : "text-neutral-400 hover:bg-white/[0.03] hover:text-neutral-200"
+                      : "text-neutral-400 hover:bg-ink/[0.03] hover:text-neutral-200"
                   }`}
                 >
                   {value}
@@ -153,7 +153,7 @@ export function AssetList() {
       {registrySize > pageSize && (
         <input
           data-testid="list-search"
-          className={`mb-4 w-full rounded-md border border-white/10 bg-black/30 px-3.5 py-2 font-data text-base text-neutral-100 placeholder:text-neutral-600 outline-none transition focus:border-accent/60 sm:text-sm`}
+          className={`mb-4 w-full rounded-md border border-ink/10 bg-shade/30 px-3.5 py-2 font-data text-base text-neutral-100 placeholder:text-neutral-600 outline-none transition focus:border-accent/60 sm:text-sm`}
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
@@ -169,7 +169,7 @@ export function AssetList() {
             role="radiogroup"
             aria-label="Order"
             data-testid="list-order"
-            className="flex overflow-hidden rounded-md border border-white/10 bg-black/30"
+            className="flex overflow-hidden rounded-md border border-ink/10 bg-shade/30"
           >
             {ORDERS.map(({ value, title, hint }, index) => (
               <button
@@ -182,10 +182,10 @@ export function AssetList() {
                   setOrder(value);
                   setPage(0);
                 }}
-                className={`font-data whitespace-nowrap px-3 py-1.5 text-[13px] transition ${index > 0 ? "border-l border-white/[0.07]" : ""} ${
+                className={`font-data whitespace-nowrap px-3 py-1.5 text-[13px] transition ${index > 0 ? "border-l border-ink/[0.07]" : ""} ${
                   order === value
                     ? "bg-accent/[0.08] text-accent"
-                    : "text-neutral-400 hover:bg-white/[0.03] hover:text-neutral-200"
+                    : "text-neutral-400 hover:bg-ink/[0.03] hover:text-neutral-200"
                 }`}
               >
                 {title}
@@ -206,7 +206,7 @@ export function AssetList() {
             role="radiogroup"
             aria-label="Supply state"
             data-testid="list-supply-filter"
-            className="flex overflow-hidden rounded-md border border-white/10 bg-black/30"
+            className="flex overflow-hidden rounded-md border border-ink/10 bg-shade/30"
           >
             {(
               [
@@ -224,10 +224,10 @@ export function AssetList() {
                   setSupplyFilter(value);
                   setPage(0);
                 }}
-                className={`font-data whitespace-nowrap px-3 py-1.5 text-[13px] transition ${index > 0 ? "border-l border-white/[0.07]" : ""} ${
+                className={`font-data whitespace-nowrap px-3 py-1.5 text-[13px] transition ${index > 0 ? "border-l border-ink/[0.07]" : ""} ${
                   supplyFilter === value
                     ? "bg-accent/[0.08] text-accent"
-                    : "text-neutral-400 hover:bg-white/[0.03] hover:text-neutral-200"
+                    : "text-neutral-400 hover:bg-ink/[0.03] hover:text-neutral-200"
                 }`}
               >
                 {title}
@@ -295,7 +295,7 @@ export function AssetList() {
               <Link
                 href={`/assets/${asset.asset_id}`}
                 data-testid={`asset-tile-${asset.asset_id}`}
-                className="group flex h-full flex-col rounded-[3px] border border-line p-2 transition hover:border-accent/50 hover:bg-white/[0.025]"
+                className="group flex h-full flex-col rounded-[3px] border border-line p-2 transition hover:border-accent/50 hover:bg-ink/[0.025]"
               >
                 <Thumb asset={asset} className="aspect-square w-full rounded-sm" />
                 <span className="mt-2 flex min-w-0 px-0.5">
@@ -331,7 +331,7 @@ export function AssetList() {
               key={asset.asset_id}
               href={`/assets/${asset.asset_id}`}
               data-testid={`asset-row-${asset.asset_id}`}
-              className="group flex items-center gap-3.5 border-b border-line py-3 pl-1 pr-1.5 transition last:border-b-0 hover:bg-white/[0.025]"
+              className="group flex items-center gap-3.5 border-b border-line py-3 pl-1 pr-1.5 transition last:border-b-0 hover:bg-ink/[0.025]"
             >
               {/* The ledger index counts down from the total only in chain
                   order, where that number really is the asset's position.

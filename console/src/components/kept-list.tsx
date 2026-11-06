@@ -47,7 +47,7 @@ export function KeptList() {
           <Link
             key={asset.asset_id}
             href={`/assets/${asset.asset_id}`}
-            className="group flex items-center gap-3.5 border-b border-line py-3 transition last:border-b-0 hover:bg-white/[0.025]"
+            className="group flex items-center gap-3.5 border-b border-line py-3 transition last:border-b-0 hover:bg-ink/[0.025]"
           >
             {asset.image_path ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -59,7 +59,7 @@ export function KeptList() {
                 className="h-9 w-9 shrink-0 rounded-sm object-cover"
               />
             ) : (
-              <span className="font-data flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-white/10 text-[13px] text-neutral-600">
+              <span className="font-data flex h-9 w-9 shrink-0 items-center justify-center rounded-sm border border-ink/10 text-[13px] text-neutral-600">
                 {asset.asset_id.slice(0, 2)}
               </span>
             )}

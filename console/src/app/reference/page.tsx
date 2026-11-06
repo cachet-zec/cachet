@@ -109,7 +109,7 @@ function EndpointBlock({ endpoint }: { endpoint: Endpoint }) {
 
       {endpoint.body && (
         <>
-          <h4 className={sub}>Body{endpoint.body.schema ? ` · ${endpoint.body.schema}` : ""}</h4>
+          <h4 className={sub}>Body{endpoint.body.schema ? ` (${endpoint.body.schema})` : ""}</h4>
           <Fields fields={endpoint.body.fields} />
         </>
       )}
@@ -153,7 +153,7 @@ function EndpointBlock({ endpoint }: { endpoint: Endpoint }) {
         ))}
       </dl>
 
-      <pre className="font-data mt-5 overflow-x-auto rounded-md border border-white/[0.07] bg-black/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-neutral-300">
+      <pre className="font-data mt-5 overflow-x-auto rounded-md border border-ink/[0.07] bg-shade/40 px-3.5 py-2.5 text-[13px] leading-relaxed text-neutral-300">
         {curl(endpoint)}
       </pre>
     </article>
@@ -187,7 +187,7 @@ export default function ReferencePage() {
           >
             openapi.json
           </a>
-          <span className="text-neutral-500"> · </span>
+          <span className="text-neutral-500">, or </span>
           <a
             href={`${apiBaseUrl}/api/docs`}
             className="text-accent/90 underline decoration-accent/30 underline-offset-4 transition hover:text-accent"

@@ -119,7 +119,7 @@ export function IssuerAssets({ issuer }: { issuer: string }) {
                 <Link
                   key={asset.asset_id}
                   href={`/assets/${asset.asset_id}`}
-                  className="group flex items-center gap-4 border-b border-line px-1 py-3.5 transition last:border-b-0 hover:bg-white/[0.025]"
+                  className="group flex items-center gap-4 border-b border-line px-1 py-3.5 transition last:border-b-0 hover:bg-ink/[0.025]"
                 >
                   <span className={rowIndex}>
                     {String(currentPage * PAGE_SIZE + index + 1).padStart(2, "0")}

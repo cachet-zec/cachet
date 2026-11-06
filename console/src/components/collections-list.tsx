@@ -69,7 +69,7 @@ export function CollectionsList() {
             <Link
               key={collection.issuer}
               href={`/issuers/${collection.issuer}`}
-              className={`${columns} group border-b border-line px-1 py-4 transition last:border-b-0 hover:bg-white/[0.025]`}
+              className={`${columns} group border-b border-line px-1 py-4 transition last:border-b-0 hover:bg-ink/[0.025]`}
             >
               <span className="font-data hidden text-[13px] text-neutral-600 sm:block">
                 {String(index + 1).padStart(2, "0")}

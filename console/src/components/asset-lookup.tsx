@@ -40,7 +40,7 @@ function Thumb({
     />
   ) : (
     <span
-      className={`${size} font-data flex shrink-0 items-center justify-center rounded-sm border border-white/10 text-[13px] text-neutral-600`}
+      className={`${size} font-data flex shrink-0 items-center justify-center rounded-sm border border-ink/10 text-[13px] text-neutral-600`}
     >
       {assetId.slice(0, 2)}
     </span>
@@ -162,7 +162,7 @@ export function AssetLookup() {
               id={listId}
               role="listbox"
               data-testid="lookup-suggestions"
-              className="absolute inset-x-0 top-full z-20 mt-1 max-h-96 overflow-y-auto rounded-md border border-line-strong bg-surface py-1 shadow-[0_8px_24px_rgba(0,0,0,0.45)]"
+              className="absolute inset-x-0 top-full z-20 mt-1 max-h-96 overflow-y-auto rounded-md border border-line-strong bg-surface py-1 shadow-popover"
             >
               {options.map((asset, index) => (
                 <li
@@ -172,7 +172,7 @@ export function AssetLookup() {
                   aria-selected={index === active}
                   data-testid="lookup-suggestion"
                   className={`flex cursor-pointer items-center gap-3 px-3 py-2 ${
-                    index === active ? "bg-accent/[0.08]" : "hover:bg-white/[0.03]"
+                    index === active ? "bg-accent/[0.08]" : "hover:bg-ink/[0.03]"
                   }`}
                   onMouseEnter={() => setActive(index)}
                   // mousedown, before the input's blur closes the list
@@ -219,7 +219,7 @@ export function AssetLookup() {
         <Link
           href={`/assets/${found.assetId}`}
           data-testid="lookup-result"
-          className="group mt-4 flex items-center gap-3.5 border-y border-line py-3 pl-1 pr-1.5 transition hover:bg-white/[0.025]"
+          className="group mt-4 flex items-center gap-3.5 border-y border-line py-3 pl-1 pr-1.5 transition hover:bg-ink/[0.025]"
         >
           <Thumb imagePath={row.image_path} assetId={found.assetId} size="h-11 w-11" />
           <div className="min-w-0 flex-1">

@@ -7,7 +7,7 @@ import { useBrowserWallet } from "@/lib/browser-wallet";
 import { card, cardTitle, ghostButton, input } from "@/lib/ui";
 
 const quietLink =
-  "text-[13px] text-neutral-500 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300";
+  "text-[13px] text-neutral-500 underline decoration-ink/20 underline-offset-2 transition hover:text-neutral-300";
 
 /**
  * The seed, for the pages that use keys. Generated or pasted here, held in
@@ -48,7 +48,7 @@ export function SeedCard({
           </button>
           <button
             type="button"
-            className="text-sm text-neutral-300 underline decoration-white/20 underline-offset-2 transition hover:text-neutral-300"
+            className="text-sm text-neutral-300 underline decoration-ink/20 underline-offset-2 transition hover:text-neutral-300"
             onClick={() => setPasteOpen(true)}
           >
             I already have one
@@ -64,7 +64,7 @@ export function SeedCard({
             data-testid="mint-seed-grid"
             // As many columns as the card has room for: four on the mint page,
             // three beside the swap form.
-            className="grid grid-cols-[repeat(auto-fill,minmax(6.25rem,1fr))] gap-x-4 gap-y-1.5 rounded-md border border-white/10 bg-black/30 p-3.5 shadow-[inset_0_1px_2px_rgba(0,0,0,0.35)]"
+            className="grid grid-cols-[repeat(auto-fill,minmax(6.25rem,1fr))] gap-x-4 gap-y-1.5 rounded-md border border-ink/10 bg-shade/30 p-3.5 shadow-field"
           >
             {seed
               .trim()

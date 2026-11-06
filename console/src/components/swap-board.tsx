@@ -60,7 +60,7 @@ export function OfferSide({
         </span>
         <span className="font-data truncate text-[12px] text-neutral-500">
           {shortId(id)}
-          {asset && !compact ? (asset.finalized ? " · sealed supply" : " · open supply") : ""}
+          {asset && !compact ? (asset.finalized ? ", sealed supply" : ", open supply") : ""}
         </span>
       </span>
     </Link>

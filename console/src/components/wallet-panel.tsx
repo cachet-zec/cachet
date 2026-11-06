@@ -52,7 +52,7 @@ export function WalletPanel() {
     <section className={card}>
       <h2 className={`${cardTitle} mb-3`}>Wallet</h2>
       {wallet.isPending && (
-        <div className="h-16 motion-safe:animate-pulse rounded-md bg-white/[0.04]" />
+        <div className="h-16 motion-safe:animate-pulse rounded-md bg-ink/[0.04]" />
       )}
       {wallet.isError && <p className="text-sm text-red-400">{wallet.error.message}</p>}
       {wallet.data && wallet.data.length === 0 && (
@@ -63,12 +63,12 @@ export function WalletPanel() {
           {wallet.data.map((account) => (
             <div key={account.account}>
               <p className="font-data text-[13px] text-neutral-500">account:{account.account}</p>
-              <div className="mt-1 border-t border-white/[0.07]">
+              <div className="mt-1 border-t border-ink/[0.07]">
                 {account.holdings.map((holding) => (
                   <Link
                     key={holding.asset_id}
                     href={`/assets/${holding.asset_id}`}
-                    className="flex items-baseline justify-between gap-3 border-b border-white/[0.07] py-2 text-sm transition hover:bg-white/[0.025]"
+                    className="flex items-baseline justify-between gap-3 border-b border-ink/[0.07] py-2 text-sm transition hover:bg-ink/[0.025]"
                   >
                     <span className="truncate text-neutral-300">
                       {nameOf(holding.asset_id) ?? (
