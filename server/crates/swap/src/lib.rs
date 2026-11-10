@@ -19,10 +19,11 @@
 //!    randomizer `alpha` of the maker's spend.
 //! 3. **Countersignature** (maker → taker). The maker recomputes the
 //!    sighash from the transaction itself, checks that the action it is
-//!    asked to sign spends its offered note with `rk = ak + alpha`, and
-//!    that the outputs it can decrypt pay it what it asked for. Only then
-//!    does it sign. The taker appends the signature and the transaction is
-//!    complete.
+//!    asked to sign spends its offered note with `rk = ak + alpha`, that
+//!    the outputs it can decrypt pay it what it asked for, and that the
+//!    transaction expires no later than one built at the tip it sees
+//!    would. Only then does it sign. The taker appends the signature and
+//!    the transaction is complete.
 //!
 //! The sighash commits to every action, output and value balance, and to no
 //! signature or proof, so the maker signs exactly the transaction it read,
@@ -70,6 +71,11 @@ pub const VERSION: u8 = 1;
 
 /// Blocks a swap transaction stays valid for, like any built transaction.
 const EXPIRY_DELTA: u32 = 40;
+
+/// Blocks past `tip + EXPIRY_DELTA` a take's expiry may sit and still be
+/// countersigned: a taker builds for the block after the tip it saw, and
+/// its view of the chain may run a few blocks ahead of the maker's.
+const EXPIRY_MARGIN: u32 = 4;
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
 pub enum SwapError {
@@ -630,9 +636,28 @@ pub fn take_txid(take: &Take) -> Result<String, SwapError> {
     Ok(hex::encode(txid))
 }
 
+/// Refuse an expiry a swap built now would not carry. A countersigned swap
+/// is the taker's to relay or to sit on, and only its expiry ends that
+/// choice: one that never expires (height zero), or expires long after the
+/// maker's own take would, lets the taker wait for the price to suit it.
+fn check_expiry(expiry_height: BlockHeight, tip_height: BlockHeight) -> Result<(), SwapError> {
+    let expiry = u32::from(expiry_height);
+    if expiry == 0 {
+        return Err(SwapError::Refused("it never expires"));
+    }
+    let latest = u32::from(tip_height).saturating_add(EXPIRY_DELTA + EXPIRY_MARGIN);
+    if expiry > latest {
+        return Err(SwapError::Refused(
+            "it expires later than a swap built now would",
+        ));
+    }
+    Ok(())
+}
+
 /// What a registry checks before holding an offer for a take, with no key:
 /// everything the maker will check except the payment (only the maker can
-/// decrypt it), plus what makes a take expensive to fake. The proof must
+/// decrypt it) and the expiry (the maker holds it against the tip it sees
+/// when it signs), plus what makes a take expensive to fake. The proof must
 /// verify, the binding signature must balance every asset, and every action
 /// but the maker's must carry a valid spend signature. So a take that holds
 /// an offer comes from someone holding real notes on the offer's anchor and
@@ -664,14 +689,16 @@ pub fn check_take(offer: &Offer, take: &Take) -> Result<(), SwapError> {
 }
 
 /// The maker's side: read the transaction it is asked to complete, check
-/// it spends exactly the offered note and pays `receive_ivk`'s address what
-/// the offer asks, and only then sign. `swap_key` is the one-off account's
-/// spending key.
+/// it spends exactly the offered note, pays `receive_ivk`'s address what
+/// the offer asks and expires no later than a swap built at `tip_height`
+/// (the chain's tip as the maker sees it) would, and only then sign.
+/// `swap_key` is the one-off account's spending key.
 pub fn countersign(
     offer: &Offer,
     swap_key: &SpendingKey,
     receive_ivk: &IncomingViewingKey,
     take: &Take,
+    tip_height: BlockHeight,
     mut rng: impl RngCore + CryptoRng,
 ) -> Result<Countersignature, SwapError> {
     let parts = decode_offer(offer)?;
@@ -679,6 +706,7 @@ pub fn countersign(
         return Err(SwapError::Refused("this key did not make the offer"));
     }
     let read = read_take(&parts, take)?;
+    check_expiry(read.tx.expiry_height(), tip_height)?;
     let bundle = zsa_bundle(&read.tx)?;
 
     // The payment, from what this wallet can decrypt.

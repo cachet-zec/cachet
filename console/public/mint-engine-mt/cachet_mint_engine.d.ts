@@ -56,10 +56,12 @@ export function prepare_proving(): void;
 
 /**
  * The maker's side: check the taker's transaction against the offer this
- * seed made from `slot` and countersign it, or refuse. Returns the
+ * seed made from `slot` and countersign it, or refuse. `tip_height` comes
+ * from the public chain API: a transaction that never expires, or expires
+ * later than one built at that tip would, is refused. Returns the
  * signature message as JSON.
  */
-export function swap_countersign(seed_phrase: string, slot: number, offer_json: string, take_json: string): string;
+export function swap_countersign(seed_phrase: string, slot: number, offer_json: string, take_json: string, tip_height: number): string;
 
 /**
  * The taker's last step: add the maker's signature to the pending swap
@@ -141,7 +143,7 @@ export interface InitOutput {
     readonly build_spend_tx: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly generate_seed_phrase: () => [number, number];
     readonly issuer_info: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly swap_countersign: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => [number, number, number, number];
+    readonly swap_countersign: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number) => [number, number, number, number];
     readonly swap_finish: (a: number, b: number) => [number, number, number];
     readonly swap_make_offer: (a: number, b: number, c: number, d: number, e: number, f: bigint) => [number, number, number, number];
     readonly swap_slot_address: (a: number, b: number, c: number) => [number, number, number, number];

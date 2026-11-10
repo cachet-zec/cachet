@@ -301,12 +301,17 @@ export function SwapPanel({
   const countersign = () =>
     step("Checking the swap against your offer…", async () => {
       if (!madeOffer) return;
+      // The engine signs only a swap that expires as soon as one built at
+      // this tip would: signed, it is the taker's to relay until then.
+      const chain = await api.GET("/api/v1/chain");
+      if (chain.error) throw new Error(problemMessage(chain.error));
       setCountersignature(
         await call<string>("swap_countersign", {
           seed: seed.trim(),
           slot: madeOffer.slot,
           offer: madeOffer.json,
           take: answer.trim(),
+          tip_height: chain.data.tip_height,
         }),
       );
     });

@@ -127,15 +127,18 @@ export function prepare_proving() {
 
 /**
  * The maker's side: check the taker's transaction against the offer this
- * seed made from `slot` and countersign it, or refuse. Returns the
+ * seed made from `slot` and countersign it, or refuse. `tip_height` comes
+ * from the public chain API: a transaction that never expires, or expires
+ * later than one built at that tip would, is refused. Returns the
  * signature message as JSON.
  * @param {string} seed_phrase
  * @param {number} slot
  * @param {string} offer_json
  * @param {string} take_json
+ * @param {number} tip_height
  * @returns {string}
  */
-export function swap_countersign(seed_phrase, slot, offer_json, take_json) {
+export function swap_countersign(seed_phrase, slot, offer_json, take_json, tip_height) {
     let deferred5_0;
     let deferred5_1;
     try {
@@ -145,7 +148,7 @@ export function swap_countersign(seed_phrase, slot, offer_json, take_json) {
         const len1 = WASM_VECTOR_LEN;
         const ptr2 = passStringToWasm0(take_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len2 = WASM_VECTOR_LEN;
-        const ret = wasm.swap_countersign(ptr0, len0, slot, ptr1, len1, ptr2, len2);
+        const ret = wasm.swap_countersign(ptr0, len0, slot, ptr1, len1, ptr2, len2, tip_height);
         var ptr4 = ret[0];
         var len4 = ret[1];
         if (ret[3]) {

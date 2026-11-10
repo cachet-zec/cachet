@@ -164,6 +164,12 @@ export function SwapMakerProvider({ children }: { children: React.ReactNode }) {
       const takenAt = take.data?.taken_at;
       if (!take.data?.take || takenAt === null || takenAt === undefined) return;
       if (answeredTake.current === takenAt) return;
+      // The engine signs only a swap that expires as soon as one built at
+      // this tip would: signed, it is the taker's to relay until then. Read
+      // before the take counts as answered, so a chain that does not answer
+      // leaves it for the next pass instead of refusing it.
+      const chain = await api.GET("/api/v1/chain");
+      if (chain.error) throw new Error(problemMessage(chain.error));
       answeredTake.current = takenAt;
       setStatus("A taker answered: checking their transaction against your offer…");
       notify("A taker answered your offer: checking it and countersigning.");
@@ -173,6 +179,7 @@ export function SwapMakerProvider({ children }: { children: React.ReactNode }) {
           slot: madeOffer.slot,
           offer: madeOffer.json,
           take: take.data.take,
+          tip_height: chain.data.tip_height,
         });
         const posted = await api.POST("/api/v1/swaps/{id}/countersignature", {
           params: { path },
