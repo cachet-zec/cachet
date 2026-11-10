@@ -1,13 +1,21 @@
 //! The instance's own circuit breaker for the write paths.
 //!
 //! Per-client budgets stop one address; they stop nothing once an
-//! attacker has many. This counts every relay that reaches the node,
-//! whoever sent it, over a five-minute window. Past a threshold that no
-//! group of people reaches (a browser mint costs seconds of proving),
-//! the instance pauses its relay and uploads for a while and reopens on
-//! its own. The operator is notified and can resume early from the admin
-//! surface. Memory only, like the throttles: a restart is an operator
-//! action and reopens the instance.
+//! attacker has many. This counts every relay the node accepted, whoever
+//! sent it, over a five-minute window. Past a threshold that no group of
+//! people reaches (a browser mint costs seconds of proving), the instance
+//! pauses its relay and uploads for a while and reopens on its own. The
+//! operator is notified and can resume early from the admin surface.
+//! Memory only, like the throttles: a restart is an operator action and
+//! reopens the instance.
+//!
+//! Two things keep the pause out of one client's hands. A transaction the
+//! node refuses is not counted: it mined nothing, and counting it let one
+//! address sending junk at its allowed rate pause everyone, again each
+//! time the instance reopened. And one address lands only a share of the
+//! threshold per window ([`Breaker::client_share`], held by the per-client
+//! throttles), so tripping the breaker takes a crowd, which is what it is
+//! there to stop.
 
 use std::collections::VecDeque;
 use std::sync::Mutex;
@@ -68,8 +76,16 @@ impl Breaker {
         self.threshold
     }
 
-    /// Count one relay that reached the node. Returns the trip when this
-    /// relay is the one that exceeds the threshold.
+    /// Relays one client may land per window: half the threshold, and
+    /// never more than the threshold itself however low an operator sets
+    /// it, so no address trips the breaker alone whatever it sends. `None`
+    /// when the breaker is disabled: there is no threshold to stay under.
+    pub fn client_share(&self) -> Option<u32> {
+        (self.threshold > 0).then(|| (self.threshold / 2).max(1))
+    }
+
+    /// Count one relay the node accepted. Returns the trip when this relay
+    /// is the one that exceeds the threshold.
     pub fn record(&self) -> Option<Trip> {
         if self.threshold == 0 {
             return None;
@@ -171,5 +187,22 @@ mod tests {
             assert!(breaker.record().is_none());
         }
         assert!(breaker.tripped().is_none());
+        assert_eq!(breaker.client_share(), None, "nothing to stay under");
+    }
+
+    #[test]
+    fn a_client_landing_its_whole_share_never_trips_the_breaker() {
+        let share = |threshold| Breaker::new(threshold, DEFAULT_PAUSE).client_share();
+        assert_eq!(share(DEFAULT_RELAYS_PER_WINDOW), Some(20), "half of it");
+        // Whatever an operator sets, a share is at least one relay and
+        // landing all of it does not trip the breaker.
+        for threshold in 1..=200 {
+            let breaker = Breaker::new(threshold, DEFAULT_PAUSE);
+            let share = breaker.client_share().expect("enabled");
+            assert!((1..=threshold).contains(&share));
+            for _ in 0..share {
+                assert!(breaker.record().is_none(), "threshold {threshold}");
+            }
+        }
     }
 }

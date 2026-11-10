@@ -8,10 +8,10 @@
 //! process, entries are pruned as they age, and nothing here is logged.
 //! Same privacy class as the rate limiter's key map, one notch stricter.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use axum::extract::{ConnectInfo, FromRequestParts};
 use axum::http::request::Parts;
@@ -58,7 +58,17 @@ pub struct ClientLimits {
     uploads: Mutex<HashMap<ClientKey, (Instant, u32)>>,
     relays: Mutex<HashMap<ClientKey, u32>>,
     relay_minutes: Mutex<HashMap<ClientKey, (Instant, u32)>>,
+    relay_shares: Mutex<HashMap<ClientKey, ShareUse>>,
     offer_hours: Mutex<HashMap<ClientKey, (Instant, u32)>>,
+}
+
+/// What one client uses of its share of the breaker's window.
+#[derive(Default)]
+struct ShareUse {
+    /// When each relay the node accepted landed, oldest first.
+    landed: VecDeque<Instant>,
+    /// Relays in flight: each holds a place until its outcome is known.
+    in_flight: u32,
 }
 
 impl ClientLimits {
@@ -69,6 +79,7 @@ impl ClientLimits {
             uploads: Mutex::new(HashMap::new()),
             relays: Mutex::new(HashMap::new()),
             relay_minutes: Mutex::new(HashMap::new()),
+            relay_shares: Mutex::new(HashMap::new()),
             offer_hours: Mutex::new(HashMap::new()),
         }
     }
@@ -110,6 +121,53 @@ impl ClientLimits {
     /// Reserve one swap-board offer in the client's current hour.
     pub fn take_offer(&self, key: ClientKey) -> bool {
         take_in_window(&self.offer_hours, key, OFFERS_PER_HOUR_PER_CLIENT, 3600)
+    }
+
+    /// Reserve one of the `share` relays this client may land per breaker
+    /// window ([`crate::breaker::Breaker::client_share`]). `None` when the
+    /// share is spent: a landed relay counts for the window, a relay in
+    /// flight until its outcome is known. Dropping the returned place gives
+    /// it back, so a transaction the node refuses costs its sender nothing
+    /// here; [`RelayShare::landed`] keeps it.
+    pub fn reserve_relay_share(self: &Arc<Self>, key: ClientKey, share: u32) -> Option<RelayShare> {
+        self.reserve_relay_share_in(key, share, crate::breaker::WINDOW)
+    }
+
+    fn reserve_relay_share_in(
+        self: &Arc<Self>,
+        key: ClientKey,
+        share: u32,
+        window: Duration,
+    ) -> Option<RelayShare> {
+        let mut shares = self
+            .relay_shares
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let now = Instant::now();
+        let aged_out = |landed: &Instant| now.duration_since(*landed) > window;
+        if shares.len() > PRUNE_ABOVE {
+            shares.retain(|_, used| {
+                used.in_flight > 0 || used.landed.back().is_some_and(|last| !aged_out(last))
+            });
+        }
+        let used = match shares.get_mut(&key) {
+            Some(used) => {
+                while used.landed.front().is_some_and(aged_out) {
+                    used.landed.pop_front();
+                }
+                used.landed.len() as u32 + used.in_flight
+            }
+            None => 0,
+        };
+        if used >= share {
+            return None;
+        }
+        shares.entry(key).or_default().in_flight += 1;
+        Some(RelayShare {
+            limits: Arc::clone(self),
+            key,
+            landed: false,
+        })
     }
 
     /// Reserve a relay slot; released when the returned guard drops.
@@ -184,6 +242,41 @@ impl Drop for RelaySlot {
             *in_flight = in_flight.saturating_sub(1);
             if *in_flight == 0 {
                 relays.remove(&self.key);
+            }
+        }
+    }
+}
+
+/// One place in a client's share of the breaker's window, held by a relay
+/// in flight. Dropped, it is given back; landed, it counts for the window.
+pub struct RelayShare {
+    limits: Arc<ClientLimits>,
+    key: ClientKey,
+    landed: bool,
+}
+
+impl RelayShare {
+    /// The node accepted the relay: the place is used until the window
+    /// slides past this moment.
+    pub fn landed(mut self) {
+        self.landed = true;
+    }
+}
+
+impl Drop for RelayShare {
+    fn drop(&mut self) {
+        let mut shares = self
+            .limits
+            .relay_shares
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(used) = shares.get_mut(&self.key) {
+            used.in_flight = used.in_flight.saturating_sub(1);
+            if self.landed {
+                used.landed.push_back(Instant::now());
+            }
+            if used.in_flight == 0 && used.landed.is_empty() {
+                shares.remove(&self.key);
             }
         }
     }
@@ -268,6 +361,49 @@ mod tests {
             "slots are a separate bound"
         );
         assert!(limits.take_relay(bob), "bob is unaffected");
+    }
+
+    #[test]
+    fn a_relay_share_counts_what_landed_and_what_is_in_flight() {
+        let limits = Arc::new(ClientLimits::new(false));
+        let alice = limits.key_for(Some("203.0.113.6".parse().unwrap()));
+        let bob = limits.key_for(Some("203.0.113.7".parse().unwrap()));
+        let reserve = |key| limits.reserve_relay_share(key, 2);
+
+        // Refused by the node, as often as it likes: the place comes back.
+        for _ in 0..100 {
+            drop(reserve(alice).expect("nothing landed"));
+        }
+        assert!(limits.relay_shares.lock().unwrap().is_empty(), "no residue");
+
+        // In flight, each relay holds its place.
+        let first = reserve(alice).expect("first place");
+        let second = reserve(alice).expect("second place");
+        assert!(reserve(alice).is_none(), "both places held in flight");
+        drop(second);
+        let second = reserve(alice).expect("given back by the refusal");
+
+        // Landed, they hold it for the window.
+        first.landed();
+        second.landed();
+        assert!(reserve(alice).is_none(), "alice landed her share");
+        assert!(reserve(bob).is_some(), "bob is unaffected");
+    }
+
+    #[test]
+    fn a_relay_share_comes_back_as_the_window_slides() {
+        let limits = Arc::new(ClientLimits::new(false));
+        let key = limits.key_for(Some("203.0.113.8".parse().unwrap()));
+        let window = Duration::from_millis(5);
+        limits
+            .reserve_relay_share_in(key, 1, window)
+            .expect("nothing landed")
+            .landed();
+        std::thread::sleep(Duration::from_millis(25));
+        assert!(
+            limits.reserve_relay_share_in(key, 1, window).is_some(),
+            "the landing aged out of the window"
+        );
     }
 
     #[test]

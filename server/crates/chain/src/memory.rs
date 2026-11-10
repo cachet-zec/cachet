@@ -57,6 +57,8 @@ pub struct InMemoryChain {
     anchors_on_refresh: Mutex<Option<crate::RecentAnchors>>,
     /// Shielded-only transactions a test says were mined, by height.
     shielded: Mutex<HashMap<TxId, u64>>,
+    /// Signed bytes a test says the node accepts when relayed.
+    relayable: Mutex<Vec<Vec<u8>>>,
 }
 
 impl InMemoryChain {
@@ -80,6 +82,16 @@ impl InMemoryChain {
             .lock()
             .expect("in-memory shielded lock poisoned")
             .insert(txid, height);
+    }
+
+    /// Say the node accepts `tx_bytes` when relayed, each time they come,
+    /// as a transaction that mints nothing (tests). Any other bytes are
+    /// refused, as before.
+    pub fn accept_relay_of(&self, tx_bytes: &[u8]) {
+        self.relayable
+            .lock()
+            .expect("in-memory relayable lock poisoned")
+            .push(tx_bytes.to_vec());
     }
 
     /// Answer `recent_anchors` with these, as a node would (tests).
@@ -502,9 +514,27 @@ impl ChainBackend for InMemoryChain {
         })
     }
 
-    async fn relay(&self, _tx_bytes: Vec<u8>) -> Result<crate::RelayReceipt, ChainError> {
-        Err(ChainError::Rejected {
-            reason: "relaying signed transactions requires the OrchardZSA backend".to_owned(),
+    async fn relay(&self, tx_bytes: Vec<u8>) -> Result<crate::RelayReceipt, ChainError> {
+        let accepted = self
+            .relayable
+            .lock()
+            .expect("in-memory relayable lock poisoned")
+            .contains(&tx_bytes);
+        if !accepted {
+            return Err(ChainError::Rejected {
+                reason: "relaying signed transactions requires the OrchardZSA backend".to_owned(),
+            });
+        }
+        // A node takes its time over a block: relays sent together queue
+        // behind this one, as they do behind the real backend.
+        tokio::task::yield_now().await;
+        // One block per relay, as the real backend mines.
+        let mut state = self.state.lock().expect("in-memory chain lock poisoned");
+        state.height += 1;
+        state.tx_counter += 1;
+        Ok(crate::RelayReceipt {
+            txid: Self::derive_tx_id(state.tx_counter),
+            issued_assets: Vec::new(),
         })
     }
 

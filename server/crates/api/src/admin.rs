@@ -271,7 +271,7 @@ pub(crate) async fn pause_get(
         return Ok(Json(PauseResponse {
             paused: true,
             reason: Some(format!(
-                "auto: {} relays reached the node in five minutes",
+                "auto: the node accepted {} relays in five minutes",
                 trip.relays
             )),
             since: Some(trip.since_unix),

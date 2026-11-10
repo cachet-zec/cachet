@@ -1275,7 +1275,7 @@
             }
           },
           "429": {
-            "description": "This client already has the maximum number of relays in flight (retry shortly), or has spent its relay budget for the minute (wait a minute)",
+            "description": "This client already has the maximum number of relays in flight (retry shortly), has spent its relay budget for the minute (wait a minute), or has landed as many relays as one address may in five minutes (wait a few minutes)",
             "content": {
               "application/problem+json": {
                 "schema": {

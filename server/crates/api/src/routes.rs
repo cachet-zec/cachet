@@ -800,7 +800,7 @@ pub(crate) async fn get_kept(
         (status = 202, body = TxResponse, description = "Accepted by the chain"),
         (status = 400, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
         (status = 422, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
-        (status = 429, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This client already has the maximum number of relays in flight (retry shortly), or has spent its relay budget for the minute (wait a minute)"),
+        (status = 429, body = crate::error::ProblemDetails, content_type = "application/problem+json", description = "This client already has the maximum number of relays in flight (retry shortly), has spent its relay budget for the minute (wait a minute), or has landed as many relays as one address may in five minutes (wait a few minutes)"),
         (status = 503, body = crate::error::ProblemDetails, content_type = "application/problem+json"),
     )
 )]
@@ -810,10 +810,12 @@ pub(crate) async fn relay_transaction(
     Json(body): Json<RelayRequest>,
 ) -> Result<(StatusCode, Json<TxResponse>), ApiError> {
     // Relays are serialized behind the node (one block at a time), so a
-    // client that keeps one waiting holds everyone. Two bounds per client:
-    // a budget per minute (rate: a script relaying one proof at a time was
-    // never refused by the slot cap), then what it can have in flight; the
-    // slot frees itself when this handler returns, whatever happened.
+    // client that keeps one waiting holds everyone. Three bounds per
+    // client: a budget per minute (rate: a script relaying one proof at a
+    // time was never refused by the slot cap), what it can have in flight,
+    // and its share of the breaker's window (below); the slot and an
+    // unused place in the share free themselves when this handler returns,
+    // whatever happened.
     if state.write_paths_paused() {
         return Err(ApiError::MintsPaused);
     }
@@ -824,15 +826,45 @@ pub(crate) async fn relay_transaction(
         .client_limits
         .begin_relay(client)
         .ok_or(ApiError::RelayBusy)?;
+    // One address lands only a share of what trips the breaker, so the
+    // pause is never one client's to cause: past its share it is refused,
+    // alone, until the window slides.
+    let share = match state.breaker.client_share() {
+        Some(share) => Some(
+            state
+                .client_limits
+                .reserve_relay_share(client, share)
+                .ok_or(ApiError::RelayShareSpent)?,
+        ),
+        None => None,
+    };
     let tx_bytes = hex::decode(body.tx_hex.trim()).map_err(|_| {
         ApiError::Validation(cachet_domain::DomainError::InvalidMetadata {
             reason: "tx_hex must be hex-encoded transaction bytes",
         })
     })?;
-    // Every relay that reaches the node counts toward the instance's own
+    // One relay at a time from here, and the pause read again once the
+    // turn comes: relays that queued before the breaker tripped are
+    // refused rather than mined one after the other.
+    let turn = state.relay_turn.lock().await;
+    if state.write_paths_paused() {
+        return Err(ApiError::MintsPaused);
+    }
+    let receipt = state.chain.relay(tx_bytes).await?;
+    // Only a relay the node accepted counts toward the instance's own
     // breaker, whoever sent it: per-client budgets stop one address, this
-    // stops a crowd of them. The relay that trips it is refused too.
-    if let Some(trip) = state.breaker.record() {
+    // stops a crowd of them. A transaction the node refuses mined nothing
+    // and counts for nothing; counted, junk sent at one client's allowed
+    // rate paused everyone. The relay that trips it has landed: it is
+    // answered like any other, and the next one finds the instance paused.
+    let trip = state.breaker.record();
+    // After the breaker's own count, so a client's window never forgets a
+    // relay the breaker still holds.
+    if let Some(share) = share {
+        share.landed();
+    }
+    drop(turn);
+    if let Some(trip) = trip {
         tracing::warn!(
             relays = trip.relays,
             pause_secs = trip.until_unix - trip.since_unix,
@@ -841,8 +873,9 @@ pub(crate) async fn relay_transaction(
         if let Some(webhook) = &state.mint_webhook {
             let webhook = webhook.clone();
             let content = format!(
-                "⛔ **Minting paused automatically**: {} relays reached the node in five minutes \
-                 (threshold {}). Reopens by itself in {} minutes; resume earlier from /admin.",
+                "⛔ **Minting paused automatically**: the node accepted {} relays in five \
+                 minutes (threshold {}). Reopens by itself in {} minutes; resume earlier from \
+                 /admin.",
                 trip.relays,
                 state.breaker.threshold(),
                 (trip.until_unix - trip.since_unix) / 60
@@ -855,13 +888,13 @@ pub(crate) async fn relay_transaction(
                     .send()
                     .await;
                 if let Err(error) = sent {
+                    // The URL is the webhook's secret: never in the log.
+                    let error = error.without_url();
                     tracing::warn!(%error, "breaker webhook delivery failed");
                 }
             });
         }
-        return Err(ApiError::MintsPaused);
     }
-    let receipt = state.chain.relay(tx_bytes).await?;
     // Operator notification for MINTS relayed through this instance —
     // fire-and-forget, public facts only (asset ids and txid are chain
     // data; no client address is read, let alone sent). Opt-in via
