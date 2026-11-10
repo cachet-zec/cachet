@@ -68,6 +68,14 @@ All notable changes to Cachet are documented here. The format follows
   the stack moved to the fixed circuit in 0.6.0, and no advisory is
   accepted any more. CONTRIBUTING.md and the Dependabot policy stop
   saying the lockfile holds yanked crates; none remains.
+- The index holds every amount the chain can carry. Amounts were stored
+  as `BIGINT` while the chain's are unsigned 64-bit: one mint above
+  2^63 - 1, or mints of one asset adding up past it, failed the fold that
+  carried them, and the index stopped at that block for every asset. A
+  collection summing past it made `/api/v1/collections` fail the same
+  way. Migration 15 widens the three amount columns to `NUMERIC`; the
+  first start after the upgrade rewrites `assets` and `asset_events`.
+  Past 2^64 - 1 a supply or a collection total reads as that maximum.
 
 ### Fixed
 
