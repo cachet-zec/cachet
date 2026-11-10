@@ -595,3 +595,304 @@ async fn the_database_answers_what_the_reference_answers() {
     drop(index);
     scratch.drop().await;
 }
+
+// Amounts. An on-chain amount is a u64 and an asset's totals are sums of
+// them, so neither fits a BIGINT. Whatever the chain carries, the fold
+// commits, the checkpoint advances, and what is read back is what was
+// written.
+
+/// Two of these pass `i64::MAX`, four pass `u64::MAX`.
+const LARGE: u64 = 5_000_000_000_000_000_000;
+
+fn tip(height: u64) -> Checkpoint {
+    Checkpoint {
+        tip_height: height,
+        tip_hash: format!("{height:064x}"),
+    }
+}
+
+fn mint(asset: u8, issuer: u8, issued: u64) -> AssetDelta {
+    AssetDelta {
+        asset_id: [asset; 32],
+        issued,
+        burned: 0,
+        finalized: false,
+        asset_desc_hash: None,
+        issuer_ik: Some([issuer; 33]),
+    }
+}
+
+fn burn(asset: u8, burned: u64) -> AssetDelta {
+    AssetDelta {
+        asset_id: [asset; 32],
+        issued: 0,
+        burned,
+        finalized: false,
+        asset_desc_hash: None,
+        issuer_ik: None,
+    }
+}
+
+fn event(asset: u8, height: u64, kind: cachet_domain::AssetEventKind, amount: u64) -> EventRow {
+    EventRow {
+        asset_id: [asset; 32],
+        height,
+        txid: [height as u8; 32],
+        kind,
+        amount,
+    }
+}
+
+async fn scratch_index() -> (Scratch, AssetIndex) {
+    let Some(scratch) = Scratch::create().await else {
+        panic!("set CACHET_TEST_DATABASE_URL to run this test");
+    };
+    let index = AssetIndex::connect(&scratch.url).await.expect("connect");
+    (scratch, index)
+}
+
+/// What the database holds for one asset, digit for digit.
+async fn stored_totals(url: &str, asset: u8) -> (String, String) {
+    let pool = PgPoolOptions::new().connect(url).await.expect("pool");
+    let row = sqlx::query(
+        "SELECT issued::TEXT AS issued, burned::TEXT AS burned FROM assets WHERE asset_id = $1",
+    )
+    .bind([asset; 32].as_slice())
+    .fetch_one(&pool)
+    .await
+    .expect("asset row");
+    let totals = (row.get("issued"), row.get("burned"));
+    pool.close().await;
+    totals
+}
+
+async fn supply_of(index: &AssetIndex, asset: u8) -> u64 {
+    index
+        .get_asset(cachet_domain::AssetId::from_bytes([asset; 32]))
+        .await
+        .expect("get asset")
+        .expect("indexed")
+        .total_supply
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres (CACHET_TEST_DATABASE_URL)"]
+async fn the_largest_mint_the_chain_carries_is_indexed() {
+    use cachet_domain::AssetEventKind::Issuance;
+    let (scratch, index) = scratch_index().await;
+
+    index
+        .apply(
+            &[mint(1, ISSUERS[0], u64::MAX)],
+            &[event(1, 7, Issuance, u64::MAX)],
+            tip(7),
+        )
+        .await
+        .expect("apply");
+    assert_eq!(index.checkpoint().await.expect("checkpoint"), Some(tip(7)));
+    assert_eq!(
+        stored_totals(&scratch.url, 1).await,
+        (u64::MAX.to_string(), "0".to_owned())
+    );
+    // Every read of it answers, with every unit.
+    assert_eq!(supply_of(&index, 1).await, u64::MAX);
+    assert_eq!(index.list().await.expect("list")[0].total_supply, u64::MAX);
+    let page = index
+        .list_page(&AssetListQuery::default())
+        .await
+        .expect("list_page");
+    assert_eq!(page.items[0].total_supply, u64::MAX);
+    assert_eq!(
+        index.collections().await.expect("collections")[0].total_supply,
+        u64::MAX
+    );
+
+    // A chain folded again from its start replaces the index, as large.
+    index
+        .replace(
+            &[mint(1, ISSUERS[0], u64::MAX), mint(2, ISSUERS[1], u64::MAX)],
+            &[
+                event(1, 2, Issuance, u64::MAX),
+                event(2, 3, Issuance, u64::MAX),
+            ],
+            tip(3),
+        )
+        .await
+        .expect("replace");
+    assert_eq!(index.checkpoint().await.expect("checkpoint"), Some(tip(3)));
+    assert_eq!(supply_of(&index, 1).await, u64::MAX);
+    assert_eq!(supply_of(&index, 2).await, u64::MAX);
+
+    drop(index);
+    scratch.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres (CACHET_TEST_DATABASE_URL)"]
+async fn mints_of_one_asset_add_up_past_a_bigint() {
+    let (scratch, index) = scratch_index().await;
+
+    for height in 1..=2 {
+        index
+            .apply(&[mint(1, ISSUERS[0], LARGE)], &[], tip(height))
+            .await
+            .expect("apply");
+        assert_eq!(
+            index.checkpoint().await.expect("checkpoint"),
+            Some(tip(height))
+        );
+    }
+    assert_eq!(
+        stored_totals(&scratch.url, 1).await,
+        ("10000000000000000000".to_owned(), "0".to_owned())
+    );
+    assert_eq!(supply_of(&index, 1).await, 10_000_000_000_000_000_000);
+
+    // The issued total is a sum with no ceiling: kept to the digit past
+    // u64, where the supply read from it stops at the most a u64 says.
+    for height in 3..=4 {
+        index
+            .apply(&[mint(1, ISSUERS[0], LARGE)], &[], tip(height))
+            .await
+            .expect("apply");
+    }
+    assert_eq!(
+        stored_totals(&scratch.url, 1).await,
+        ("20000000000000000000".to_owned(), "0".to_owned())
+    );
+    assert_eq!(supply_of(&index, 1).await, u64::MAX);
+    // Burns come off the whole total, not off what a u64 kept of it.
+    index
+        .apply(&[burn(1, LARGE)], &[], tip(5))
+        .await
+        .expect("apply");
+    assert_eq!(index.checkpoint().await.expect("checkpoint"), Some(tip(5)));
+    assert_eq!(
+        stored_totals(&scratch.url, 1).await,
+        (
+            "20000000000000000000".to_owned(),
+            "5000000000000000000".to_owned()
+        )
+    );
+    assert_eq!(supply_of(&index, 1).await, 15_000_000_000_000_000_000);
+
+    drop(index);
+    scratch.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres (CACHET_TEST_DATABASE_URL)"]
+async fn an_event_above_i64_is_recorded_as_it_happened() {
+    use cachet_domain::AssetEventKind::{Burn, Issuance};
+    let (scratch, index) = scratch_index().await;
+    let above = i64::MAX as u64 + 1;
+
+    // The events alone: nothing but their own amounts is in question.
+    index
+        .apply(
+            &[],
+            &[event(1, 4, Issuance, u64::MAX), event(1, 9, Burn, above)],
+            tip(9),
+        )
+        .await
+        .expect("apply");
+    assert_eq!(index.checkpoint().await.expect("checkpoint"), Some(tip(9)));
+
+    let events = index
+        .events(cachet_domain::AssetId::from_bytes([1; 32]))
+        .await
+        .expect("events");
+    assert_eq!(
+        events
+            .iter()
+            .map(|event| (event.kind.clone(), event.height, event.amount))
+            .collect::<Vec<_>>(),
+        [(Issuance, 4, u64::MAX), (Burn, 9, above)]
+    );
+
+    drop(index);
+    scratch.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres (CACHET_TEST_DATABASE_URL)"]
+async fn a_collection_sums_past_a_bigint() {
+    let (scratch, index) = scratch_index().await;
+
+    index
+        .apply(
+            &[mint(1, ISSUERS[0], LARGE), mint(2, ISSUERS[0], LARGE)],
+            &[],
+            tip(1),
+        )
+        .await
+        .expect("apply");
+    assert_eq!(index.checkpoint().await.expect("checkpoint"), Some(tip(1)));
+    let collections = index.collections().await.expect("collections");
+    assert_eq!(collections.len(), 1);
+    assert_eq!(collections[0].asset_count, 2);
+    assert_eq!(collections[0].total_supply, 10_000_000_000_000_000_000);
+
+    // Past u64 the sum stops at the most its type says, and still answers.
+    let more: Vec<AssetDelta> = (3..=6)
+        .map(|asset| mint(asset, ISSUERS[1], LARGE))
+        .collect();
+    index.apply(&more, &[], tip(2)).await.expect("apply");
+    assert_eq!(index.checkpoint().await.expect("checkpoint"), Some(tip(2)));
+    let collections = index.collections().await.expect("collections");
+    assert_eq!(
+        collections
+            .iter()
+            .map(|collection| (collection.asset_count, collection.total_supply))
+            .collect::<Vec<_>>(),
+        [(4, u64::MAX), (2, 10_000_000_000_000_000_000)]
+    );
+
+    drop(index);
+    scratch.drop().await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres (CACHET_TEST_DATABASE_URL)"]
+async fn wider_amounts_are_still_never_negative() {
+    let (scratch, index) = scratch_index().await;
+    index
+        .apply(
+            &[mint(1, ISSUERS[0], 1)],
+            &[event(1, 1, cachet_domain::AssetEventKind::Issuance, 1)],
+            tip(1),
+        )
+        .await
+        .expect("apply");
+
+    let pool = PgPoolOptions::new()
+        .connect(&scratch.url)
+        .await
+        .expect("pool");
+    let types: Vec<String> = sqlx::query(
+        "SELECT data_type FROM information_schema.columns
+         WHERE (table_name, column_name) IN
+               (('assets', 'issued'), ('assets', 'burned'), ('asset_events', 'amount'))",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("column types")
+    .iter()
+    .map(|row| row.get("data_type"))
+    .collect();
+    assert_eq!(types, ["numeric", "numeric", "numeric"]);
+    for statement in [
+        "UPDATE assets SET issued = -1",
+        "UPDATE assets SET burned = -1",
+        "UPDATE asset_events SET amount = -1",
+    ] {
+        assert!(
+            sqlx::query(statement).execute(&pool).await.is_err(),
+            "{statement}"
+        );
+    }
+
+    pool.close().await;
+    drop(index);
+    scratch.drop().await;
+}

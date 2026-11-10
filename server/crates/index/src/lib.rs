@@ -317,18 +317,49 @@ const RECONCILE_NAME_RANKS: &str = "
                      ON m.kind = 'description' AND m.key = a2.asset_id) r
      WHERE r.asset_id = a.asset_id AND a.name_rank IS DISTINCT FROM r.rank";
 
+/// A stored amount, from the decimal text its `NUMERIC` column is read as
+/// (migration 0015). Amounts go to the database as text and come back as
+/// text: an on-chain amount is a `u64`, which `BIGINT` does not hold, and
+/// an asset's issued total can pass even `u64` (minted, burned, minted
+/// again) while its supply does not, hence the `u128`.
+///
+/// Reading never fails: digits past `u128` stop at its maximum, and
+/// anything that is not a non-negative integer, which the columns' CHECKs
+/// and this crate's writes rule out, reads as its leading digits (none: 0).
+fn stored_amount(text: &str) -> u128 {
+    text.bytes()
+        .take_while(u8::is_ascii_digit)
+        .fold(0u128, |value, digit| {
+            value
+                .saturating_mul(10)
+                .saturating_add(u128::from(digit - b'0'))
+        })
+}
+
+/// A stored amount as the `u64` the domain types carry: past it, its maximum.
+fn saturating_u64(amount: u128) -> u64 {
+    u64::try_from(amount).unwrap_or(u64::MAX)
+}
+
+/// Circulating supply from a row that selects `issued::TEXT` and
+/// `burned::TEXT`. The burns come off the whole issued total before the
+/// result is narrowed, not off what a `u64` would have kept of it.
+fn supply_from_row(row: &PgRow) -> u64 {
+    let issued = stored_amount(row.get("issued"));
+    let burned = stored_amount(row.get("burned"));
+    saturating_u64(issued.saturating_sub(burned))
+}
+
 fn summary_from_row(row: &PgRow) -> Result<AssetSummary, IndexError> {
     let bytes: Vec<u8> = row.get("asset_id");
     let bytes: [u8; 32] = bytes
         .try_into()
         .map_err(|_| IndexError::OutOfRange("asset_id is not 32 bytes".into()))?;
-    let issued: i64 = row.get("issued");
-    let burned: i64 = row.get("burned");
     Ok(AssetSummary {
         asset_id: AssetId::from_bytes(bytes),
         description: row.get("description"),
         issuer: row.get::<Option<Vec<u8>>, _>("issuer_ik").map(hex::encode),
-        total_supply: (issued.max(0) as u64).saturating_sub(burned.max(0) as u64),
+        total_supply: supply_from_row(row),
         finalized: row.get("finalized"),
         last_height: row
             .get::<Option<i64>, _>("last_height")
@@ -576,13 +607,14 @@ impl AssetIndex {
         }
 
         for delta in deltas {
-            let issued = i64::try_from(delta.issued)
-                .map_err(|_| IndexError::OutOfRange("issued delta exceeds i64".into()))?;
-            let burned = i64::try_from(delta.burned)
-                .map_err(|_| IndexError::OutOfRange("burned delta exceeds i64".into()))?;
+            // Amounts are bound as decimal text and added up in NUMERIC
+            // (migration 0015): no amount the chain carries, and no total
+            // of them, is one this statement refuses. A fold that failed
+            // here would fail again at every retry, and the index would
+            // stop at that block.
             sqlx::query(
                 "INSERT INTO assets (asset_id, issued, burned, finalized, asset_desc_hash, issuer_ik)
-                 VALUES ($1, $2, $3, $4, $5, $6)
+                 VALUES ($1, $2::NUMERIC, $3::NUMERIC, $4, $5, $6)
                  ON CONFLICT (asset_id) DO UPDATE SET
                      issued    = assets.issued + EXCLUDED.issued,
                      burned    = assets.burned + EXCLUDED.burned,
@@ -591,8 +623,8 @@ impl AssetIndex {
                      issuer_ik = COALESCE(assets.issuer_ik, EXCLUDED.issuer_ik)",
             )
             .bind(delta.asset_id.as_slice())
-            .bind(issued)
-            .bind(burned)
+            .bind(delta.issued.to_string())
+            .bind(delta.burned.to_string())
             .bind(delta.finalized)
             .bind(delta.asset_desc_hash.as_ref().map(|hash| hash.as_slice()))
             .bind(delta.issuer_ik.as_ref().map(|ik| ik.as_slice()))
@@ -631,19 +663,17 @@ impl AssetIndex {
         }
 
         for event in events {
-            let amount = i64::try_from(event.amount)
-                .map_err(|_| IndexError::OutOfRange("event amount exceeds i64".into()))?;
             let height = i64::try_from(event.height)
                 .map_err(|_| IndexError::OutOfRange("event height exceeds i64".into()))?;
             sqlx::query(
                 "INSERT INTO asset_events (asset_id, height, txid, kind, amount)
-                 VALUES ($1, $2, $3, $4, $5)",
+                 VALUES ($1, $2, $3, $4, $5::NUMERIC)",
             )
             .bind(event.asset_id.as_slice())
             .bind(height)
             .bind(event.txid.as_slice())
             .bind(kind_to_str(&event.kind))
-            .bind(amount)
+            .bind(event.amount.to_string())
             .execute(&mut *tx)
             .await?;
             // GREATEST skips NULL: the first event sets it.
@@ -676,7 +706,7 @@ impl AssetIndex {
     /// Public events of one asset, oldest first.
     pub async fn events(&self, asset_id: AssetId) -> Result<Vec<AssetEvent>, IndexError> {
         let rows = sqlx::query(
-            "SELECT height, txid, kind, amount FROM asset_events
+            "SELECT height, txid, kind, amount::TEXT AS amount FROM asset_events
              WHERE asset_id = $1 ORDER BY id ASC",
         )
         .bind(asset_id.as_bytes().as_slice())
@@ -686,7 +716,7 @@ impl AssetIndex {
         rows.into_iter()
             .map(|row| {
                 let height: i64 = row.get("height");
-                let amount: i64 = row.get("amount");
+                let amount = saturating_u64(stored_amount(row.get("amount")));
                 let txid: Vec<u8> = row.get("txid");
                 let txid: [u8; 32] = txid
                     .try_into()
@@ -701,7 +731,7 @@ impl AssetIndex {
                     height: height.max(0) as u64,
                     txid: TxId::from_bytes(txid),
                     kind,
-                    amount: amount.max(0) as u64,
+                    amount,
                 })
             })
             .collect()
@@ -914,7 +944,8 @@ impl AssetIndex {
     /// Single-asset lookup from the index (same shape as one `list` row).
     pub async fn get_asset(&self, asset_id: AssetId) -> Result<Option<AssetSummary>, IndexError> {
         let row = sqlx::query(
-            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik, a.last_height,
+            "SELECT a.asset_id, a.issued::TEXT AS issued, a.burned::TEXT AS burned,
+                    a.finalized, a.issuer_ik, a.last_height,
                     CASE WHEN m.key IS NULL THEN d.description END AS description
              FROM assets a
              LEFT JOIN asset_descriptions d USING (asset_id)
@@ -927,13 +958,11 @@ impl AssetIndex {
         .await?;
 
         row.map(|row| {
-            let issued: i64 = row.get("issued");
-            let burned: i64 = row.get("burned");
             Ok(AssetSummary {
                 asset_id,
                 description: row.get("description"),
                 issuer: row.get::<Option<Vec<u8>>, _>("issuer_ik").map(hex::encode),
-                total_supply: (issued.max(0) as u64).saturating_sub(burned.max(0) as u64),
+                total_supply: supply_from_row(&row),
                 finalized: row.get("finalized"),
                 last_height: row
                     .get::<Option<i64>, _>("last_height")
@@ -946,7 +975,8 @@ impl AssetIndex {
     /// Registry listing, newest first, with journaled descriptions.
     pub async fn list(&self) -> Result<Vec<AssetSummary>, IndexError> {
         let rows = sqlx::query(
-            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik, a.last_height,
+            "SELECT a.asset_id, a.issued::TEXT AS issued, a.burned::TEXT AS burned,
+                    a.finalized, a.issuer_ik, a.last_height,
                     CASE WHEN m.key IS NULL THEN d.description END AS description
              FROM assets a
              LEFT JOIN asset_descriptions d USING (asset_id)
@@ -1014,7 +1044,8 @@ impl AssetIndex {
         };
 
         let mut page = QueryBuilder::<Postgres>::new(
-            "SELECT a.asset_id, a.issued, a.burned, a.finalized, a.issuer_ik, a.last_height,
+            "SELECT a.asset_id, a.issued::TEXT AS issued, a.burned::TEXT AS burned,
+                    a.finalized, a.issuer_ik, a.last_height,
                     CASE WHEN m.key IS NULL THEN d.description END AS description",
         );
         page.push(LISTING_FROM);
@@ -1051,8 +1082,9 @@ impl AssetIndex {
         let rows = sqlx::query(
             "SELECT issuer_ik,
                     COUNT(*)                                   AS asset_count,
-                    -- SUM(bigint) yields NUMERIC in Postgres; keep it i64.
-                    COALESCE(SUM(issued - burned), 0)::BIGINT  AS total_supply,
+                    -- Summed in NUMERIC and read as text: several assets
+                    -- can add up past any integer type.
+                    COALESCE(SUM(issued - burned), 0)::TEXT    AS total_supply,
                     COUNT(*) FILTER (WHERE finalized)          AS finalized_count
              FROM assets
              WHERE issuer_ik IS NOT NULL
@@ -1066,16 +1098,56 @@ impl AssetIndex {
             .into_iter()
             .map(|row| {
                 let asset_count: i64 = row.get("asset_count");
-                let total_supply: i64 = row.get("total_supply");
+                // A negative sum (more burned than this index saw issued)
+                // reads as zero, as it always did; a sum past `u64` as its
+                // maximum.
+                let total_supply = saturating_u64(stored_amount(row.get("total_supply")));
                 let finalized_count: i64 = row.get("finalized_count");
                 cachet_domain::CollectionSummary {
                     issuer: hex::encode(row.get::<Vec<u8>, _>("issuer_ik")),
                     asset_count: asset_count.max(0) as u64,
-                    total_supply: total_supply.max(0) as u64,
+                    total_supply,
                     finalized_count: finalized_count.max(0) as u64,
                 }
             })
             .collect())
+    }
+}
+
+#[cfg(test)]
+mod amount_tests {
+    use super::*;
+
+    #[test]
+    fn a_stored_amount_reads_to_the_digit() {
+        assert_eq!(stored_amount("0"), 0);
+        assert_eq!(stored_amount("18446744073709551615"), u128::from(u64::MAX));
+        // An issued total past u64 is kept whole.
+        assert_eq!(
+            stored_amount("36893488147419103230"),
+            2 * u128::from(u64::MAX)
+        );
+        assert_eq!(stored_amount(&u128::MAX.to_string()), u128::MAX);
+    }
+
+    #[test]
+    fn reading_a_stored_amount_never_fails() {
+        // Past u128 it stops at the most the type says.
+        assert_eq!(stored_amount(&format!("{}0", u128::MAX)), u128::MAX);
+        assert_eq!(stored_amount(&"9".repeat(60)), u128::MAX);
+        // Not a non-negative integer: its leading digits, or none.
+        assert_eq!(stored_amount("-5"), 0);
+        assert_eq!(stored_amount("NaN"), 0);
+        assert_eq!(stored_amount(""), 0);
+        assert_eq!(stored_amount("12.50"), 12);
+    }
+
+    #[test]
+    fn narrowing_to_u64_stops_at_its_maximum() {
+        assert_eq!(saturating_u64(0), 0);
+        assert_eq!(saturating_u64(u128::from(u64::MAX)), u64::MAX);
+        assert_eq!(saturating_u64(u128::from(u64::MAX) + 1), u64::MAX);
+        assert_eq!(saturating_u64(u128::MAX), u64::MAX);
     }
 }
 

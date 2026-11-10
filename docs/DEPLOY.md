@@ -169,6 +169,19 @@ ALTER TABLE swap_offers DROP COLUMN IF EXISTS txid;
 DELETE FROM _sqlx_migrations WHERE version = 14;
 ```
 
+Going back from a version with migration 15 narrows the amount columns to
+`BIGINT` again. It works while every stored amount fits one and fails
+with `bigint out of range` otherwise; the older version could not index
+such a chain anyway:
+
+```sql
+ALTER TABLE assets
+  ALTER COLUMN issued TYPE BIGINT,
+  ALTER COLUMN burned TYPE BIGINT;
+ALTER TABLE asset_events ALTER COLUMN amount TYPE BIGINT;
+DELETE FROM _sqlx_migrations WHERE version = 15;
+```
+
 ## After a deploy
 
 - `python scripts/verify-site.py --site https://your.site` checks that the
