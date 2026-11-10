@@ -938,7 +938,9 @@ pub fn swap_take(
 }
 
 /// The maker's side: check the taker's transaction against the offer this
-/// seed made from `slot` and countersign it, or refuse. Returns the
+/// seed made from `slot` and countersign it, or refuse. `tip_height` comes
+/// from the public chain API: a transaction that never expires, or expires
+/// later than one built at that tip would, is refused. Returns the
 /// signature message as JSON.
 #[wasm_bindgen]
 pub fn swap_countersign(
@@ -946,6 +948,7 @@ pub fn swap_countersign(
     slot: u32,
     offer_json: &str,
     take_json: &str,
+    tip_height: u32,
 ) -> Result<String, JsError> {
     let keys = Keys::from_phrase(seed_phrase)?;
     let offer: cachet_swap::Offer =
@@ -957,6 +960,7 @@ pub fn swap_countersign(
         &keys.swap_key(slot_checked(slot)?),
         &FullViewingKey::from(&keys.spending_key()).to_ivk(Scope::External),
         &take,
+        tip_height.into(),
         rand::rngs::OsRng,
     )
     .map_err(swap_error)?;
