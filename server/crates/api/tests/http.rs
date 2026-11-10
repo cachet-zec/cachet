@@ -41,19 +41,45 @@ fn admin_app() -> Router {
     })
 }
 
-/// An admin app whose breaker trips at three relays in the window.
-fn breaker_app() -> Router {
+/// Signed bytes the fake node accepts when relayed, for the tests that
+/// need a relay to land.
+const LANDING_TX_HEX: &str = "c0ffee";
+
+/// An admin app whose breaker trips past `threshold` relays landed in the
+/// window, on a node that accepts [`LANDING_TX_HEX`] and nothing else.
+/// Behind a declared proxy, so a test says which client a relay comes from.
+fn breaker_app(threshold: u32) -> Router {
+    let chain = InMemoryChain::new();
+    chain.accept_relay_of(&hex::decode(LANDING_TX_HEX).unwrap());
     cachet_api::router_with(cachet_api::RouterOptions {
-        chain: Arc::new(InMemoryChain::new()),
+        chain: Arc::new(chain),
         metadata: Some(Arc::new(cachet_index::MemoryMetadataStore::new())),
         read_only: true,
         snapshot_key: None,
         admin_token: Some(ADMIN_TOKEN.to_owned()),
         mint_webhook: None,
-        trust_proxy: false,
+        trust_proxy: true,
         mints_paused: false,
-        relay_breaker: Some((3, 600)),
+        relay_breaker: Some((threshold, 600)),
     })
+}
+
+/// A relay of `tx_hex` sent by the client at `203.0.113.<client>`.
+fn relay_from(client: u8, tx_hex: &str) -> Request<Body> {
+    Request::post("/api/v1/relay")
+        .header(header::CONTENT_TYPE, "application/json")
+        .header("x-forwarded-for", format!("203.0.113.{client}"))
+        .body(Body::from(json!({ "tx_hex": tx_hex }).to_string()))
+        .unwrap()
+}
+
+async fn mints_paused(app: &Router) -> Value {
+    let (_, chain) = send(
+        app,
+        Request::get("/api/v1/chain").body(Body::empty()).unwrap(),
+    )
+    .await;
+    chain["mints_paused"].clone()
 }
 
 fn read_only_app() -> Router {
@@ -765,19 +791,19 @@ async fn the_operator_can_pause_and_resume_minting() {
     assert_eq!(chain["mints_paused"], false);
 }
 
-/// The circuit breaker: past the threshold, the relay that trips it and
-/// everything after answer 503 mints-paused, uploads too, the chain info
-/// says so, the admin surface names the cause, and an operator resume
-/// reopens at once.
+/// The circuit breaker: once a crowd has landed more relays than the
+/// threshold, everything after answers 503 mints-paused, uploads too, the
+/// chain info says so, the admin surface names the cause, and an operator
+/// resume reopens at once.
 #[tokio::test]
 async fn a_relay_flood_trips_the_breaker_until_the_operator_resumes() {
-    let app = breaker_app();
-    let relay = || post_json("/api/v1/relay", json!({"tx_hex": "deadbeef"}));
-    for _ in 0..3 {
-        let (status, _) = send(&app, relay()).await;
-        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "reached the node");
+    let app = breaker_app(3);
+    // Four clients land a relay each: the fourth is one past the threshold.
+    for client in 1..=4 {
+        let (status, _) = send(&app, relay_from(client, LANDING_TX_HEX)).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "landed");
     }
-    let (status, body) = send(&app, relay()).await;
+    let (status, body) = send(&app, relay_from(5, LANDING_TX_HEX)).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["type"], "https://cachetzec.com/problems/mints-paused");
     assert!(
@@ -793,12 +819,7 @@ async fn a_relay_flood_trips_the_breaker_until_the_operator_resumes() {
     )
     .await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "uploads pause too");
-    let (_, chain) = send(
-        &app,
-        Request::get("/api/v1/chain").body(Body::empty()).unwrap(),
-    )
-    .await;
-    assert_eq!(chain["mints_paused"], true);
+    assert_eq!(mints_paused(&app).await, true);
     let (status, body) = send(
         &app,
         Request::get("/api/v1/admin/pause")
@@ -823,12 +844,76 @@ async fn a_relay_flood_trips_the_breaker_until_the_operator_resumes() {
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let (status, _) = send(&app, relay()).await;
-    assert_eq!(
-        status,
-        StatusCode::UNPROCESSABLE_ENTITY,
-        "reaches the node again"
-    );
+    let (status, _) = send(&app, relay_from(6, LANDING_TX_HEX)).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "lands again");
+}
+
+/// What the node refuses counts for nothing: clients sending junk as fast
+/// as their budgets allow, alone or as a crowd, leave the instance open,
+/// and spend nothing of what they may land.
+#[tokio::test]
+async fn relays_the_node_refuses_never_trip_the_breaker() {
+    let app = breaker_app(3);
+    for client in 1..=5 {
+        // Nine of the ten relays a client may send in a minute.
+        for _ in 0..9 {
+            let (status, body) = send(&app, relay_from(client, "00")).await;
+            assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+            assert_eq!(
+                body["type"],
+                "https://cachetzec.com/problems/rejected-by-node"
+            );
+        }
+    }
+    assert_eq!(mints_paused(&app).await, false, "45 refusals, threshold 3");
+    let (status, _) = send(&app, relay_from(1, LANDING_TX_HEX)).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "a real relay still lands");
+}
+
+/// One client lands its share of the window (half the threshold) and no
+/// more: alone it never reaches the threshold, and past its share it is
+/// the only one refused.
+#[tokio::test]
+async fn one_client_alone_never_trips_the_breaker() {
+    let app = breaker_app(6);
+    for _ in 0..3 {
+        let (status, _) = send(&app, relay_from(1, LANDING_TX_HEX)).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "within its share");
+    }
+    // The rest of its minute: refused before anything reaches the node.
+    for _ in 0..7 {
+        let (status, body) = send(&app, relay_from(1, LANDING_TX_HEX)).await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(
+            body["type"],
+            "https://cachetzec.com/problems/relay-budget-spent"
+        );
+        assert!(body["detail"].as_str().unwrap().contains("five minutes"));
+    }
+    assert_eq!(mints_paused(&app).await, false);
+    let (status, _) = send(&app, relay_from(2, LANDING_TX_HEX)).await;
+    assert_eq!(status, StatusCode::ACCEPTED, "nobody else is held back");
+}
+
+/// Relays already waiting their turn when the breaker trips are refused,
+/// not mined one after the other: a flood sent all at once lands one relay
+/// past the threshold, like a flood sent one by one.
+#[tokio::test]
+async fn relays_queued_when_the_breaker_trips_are_refused() {
+    let app = breaker_app(3);
+    let sent: Vec<_> = (1..=8)
+        .map(|client| {
+            let app = app.clone();
+            tokio::spawn(async move { send(&app, relay_from(client, LANDING_TX_HEX)).await.0 })
+        })
+        .collect();
+    let mut statuses = Vec::new();
+    for relay in sent {
+        statuses.push(relay.await.unwrap());
+    }
+    let count = |wanted| statuses.iter().filter(|status| **status == wanted).count();
+    assert_eq!(count(StatusCode::ACCEPTED), 4, "{statuses:?}");
+    assert_eq!(count(StatusCode::SERVICE_UNAVAILABLE), 4, "{statuses:?}");
 }
 
 /// The relay budget refuses the eleventh relay of a minute from one

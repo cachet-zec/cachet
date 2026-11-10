@@ -55,6 +55,11 @@ pub enum ApiError {
     )]
     RelayBudgetSpent,
     #[error(
+        "this client has landed as many relays as one address may in five minutes; wait a few \
+         minutes before sending another"
+    )]
+    RelayShareSpent,
+    #[error(
         "minting through this instance is paused by its operator; the chain is unaffected and \
          a signed transaction can be submitted elsewhere; retry here later"
     )]
@@ -91,6 +96,7 @@ impl ApiError {
             Self::SwapOfferBudgetSpent => StatusCode::TOO_MANY_REQUESTS,
             Self::RelayBusy => StatusCode::TOO_MANY_REQUESTS,
             Self::RelayBudgetSpent => StatusCode::TOO_MANY_REQUESTS,
+            Self::RelayShareSpent => StatusCode::TOO_MANY_REQUESTS,
             Self::MintsPaused => StatusCode::SERVICE_UNAVAILABLE,
             Self::AdminUnauthorized => StatusCode::NOT_FOUND,
             Self::Chain(chain_error) => match chain_error {
@@ -119,6 +125,9 @@ impl ApiError {
             Self::SwapOfferBudgetSpent => "swap-offer-budget-spent",
             Self::RelayBusy => "relay-busy",
             Self::RelayBudgetSpent => "relay-budget-spent",
+            // The same type as the minute's budget: to a client both mean
+            // "this will not clear in seconds", and the detail says how long.
+            Self::RelayShareSpent => "relay-budget-spent",
             Self::MintsPaused => "mints-paused",
             // 404 on purpose: with no token configured (or a wrong one),
             // the admin surface is indistinguishable from absent.

@@ -61,6 +61,10 @@ pub struct AppState {
     /// The instance's own circuit breaker: pauses the write paths by
     /// itself under a relay flood, reopens on its own (see [`breaker`]).
     pub breaker: Arc<breaker::Breaker>,
+    /// Relays take their turn here, one at a time as behind the node, so
+    /// each reads the pause again when its turn comes: a queue that formed
+    /// before the breaker tripped is refused, not mined.
+    pub relay_turn: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl AppState {
@@ -341,6 +345,7 @@ pub fn router_with(options: RouterOptions) -> Router {
             }
             None => breaker::Breaker::from_env(),
         }),
+        relay_turn: Arc::new(tokio::sync::Mutex::new(())),
     };
     Router::new()
         .merge(SwaggerUi::new("/api/docs").url("/api/openapi.json", ApiDoc::openapi()))

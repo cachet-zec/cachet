@@ -24,7 +24,8 @@ the rate limiter's key extractor (peer address by default; client-IP
 headers such as `X-Forwarded-For` / `X-Real-IP` only behind a declared
 proxy — `CACHET_TRUST_PROXY`), pruned every minute; and the write-path
 throttles in `client_key.rs` (upload budget, relays per minute, relays in
-flight), which do not even hold the address —
+flight, relays landed per five minutes), which do not even hold the
+address —
 their key is `BLAKE2b(salt ‖ address)` with a salt drawn at process start
 and never written down, so the maps cannot be inverted and the salt dies
 with the process. Tracing calls log typed fields, never raw requests.

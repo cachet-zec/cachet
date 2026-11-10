@@ -84,6 +84,29 @@ All notable changes to Cachet are documented here. The format follows
   chain's tip when it countersigns, and refuses a take that never expires
   or expires more than 44 blocks past it (the 40 a swap is built with, 4
   of margin). The mint engines are rebuilt.
+- One client can no longer pause the instance. The relay breaker counted
+  a relay before the node had seen it, so one address sending bytes that
+  are not a transaction, at the ten relays a minute it is allowed, passed
+  the threshold of 40 in about four minutes: the relay, uploads and the
+  swap board answered 503 for half an hour, and again each time the
+  instance reopened. The breaker now counts only relays the node
+  accepted, and one address lands at most half the threshold in five
+  minutes (20 by default; beyond, `429 relay-budget-spent` for that
+  address alone), so the pause takes a crowd. The relay that passes the
+  threshold has landed and is answered as such; those waiting behind it
+  get the 503. `CACHET_RELAY_BREAKER=0` turns the share off with the
+  breaker.
+- The Discord webhook's URL no longer reaches the log when the notice of
+  an automatic pause cannot be delivered: that line leaves it out, like
+  the two other webhook paths.
+- rustls 0.23.46 (RUSTSEC-2026-0346 to 0349: TLS secrets in `Debug`
+  output, data sent on after an ECH rejection, a certificate
+  decompression that allocates before authentication, a downgrade of the
+  key exchange; used by the database client), rustls-webpki 0.103.16 and
+  webpki-roots 1.0.10 (RUSTSEC-2026-0382 and 0381, distrusted
+  intermediates still accepted), tokio 1.53.3 (RUSTSEC-2026-0386,
+  `AsyncFd` constructors that break I/O safety). `server/Cargo.lock`
+  moves these four crates and nothing else.
 
 ### Fixed
 
