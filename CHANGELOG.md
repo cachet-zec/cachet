@@ -76,6 +76,14 @@ All notable changes to Cachet are documented here. The format follows
   way. Migration 15 widens the three amount columns to `NUMERIC`; the
   first start after the upgrade rewrites `assets` and `asset_events`.
   Past 2^64 - 1 a supply or a collection total reads as that maximum.
+- The maker countersigns only a swap that expires soon. A take whose
+  transaction never expired (expiry height 0), or expired far ahead,
+  passed every check: the maker's page signed it unattended, and the
+  taker held a complete swap to relay whenever the rate suited it, for as
+  long as the units stayed in their slot. The engine now takes the
+  chain's tip when it countersigns, and refuses a take that never expires
+  or expires more than 44 blocks past it (the 40 a swap is built with, 4
+  of margin). The mint engines are rebuilt.
 
 ### Fixed
 

@@ -34,8 +34,13 @@ all, and nobody ever holds the other side's units in between.
    recomputes the sighash itself, checks that the action it is asked to
    sign spends its offered note with `rk = ak.randomize(alpha)`, that the
    bundle is built on the offer's anchor and burns nothing, that the
-   transaction carries no other bundle, and that the outputs it can
-   decrypt pay its address what it asked. Only then does it sign.
+   transaction carries no other bundle, that the outputs it can decrypt
+   pay its address what it asked, and that the transaction expires no
+   later than 44 blocks past the tip the maker sees (the 40 a swap is
+   built with, and a margin). Signed, the swap is the taker's to relay
+   until it expires: one that never did, or did far ahead, would leave
+   the taker free to wait for the rate to suit it. Only then does it
+   sign.
 
 The sighash commits to every action and value balance and to no
 signature or proof, so neither side can alter anything after the other

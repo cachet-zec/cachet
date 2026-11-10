@@ -6,7 +6,7 @@
 use std::ops::Deref;
 
 use cachet_swap::testing::{address, key, note, setup};
-use cachet_swap::{Countersignature, Offer, SwapError, countersign, finish, take, take_txid};
+use cachet_swap::{Countersignature, Offer, SwapError, Take, countersign, finish, take, take_txid};
 use orchard::circuit::VerifyingKey;
 use orchard::flavor::OrchardZSA;
 use orchard::keys::{FullViewingKey, Scope};
@@ -14,6 +14,12 @@ use orchard::note::AssetBase;
 use rand::rngs::OsRng;
 use zcash_primitives::transaction::OrchardBundle;
 use zcash_protocol::consensus::BlockHeight;
+
+/// The chain's tip as the maker sees it in these tests: the takers build
+/// for block 100, the one after it.
+fn tip() -> BlockHeight {
+    BlockHeight::from_u32(99)
+}
 
 #[test]
 fn a_swap_completes_and_verifies_like_a_node_would_check_it() {
@@ -33,8 +39,15 @@ fn a_swap_completes_and_verifies_like_a_node_would_check_it() {
     .unwrap();
 
     let maker_ivk = FullViewingKey::from(&s.maker_main_key).to_ivk(Scope::External);
-    let signature =
-        countersign(&offer, &s.maker_swap_key, &maker_ivk, &take_message, OsRng).unwrap();
+    let signature = countersign(
+        &offer,
+        &s.maker_swap_key,
+        &maker_ivk,
+        &take_message,
+        tip(),
+        OsRng,
+    )
+    .unwrap();
     let tx = finish(pending, &signature).unwrap();
 
     // The id was known from the take, before the maker signed.
@@ -116,10 +129,83 @@ fn the_maker_refuses_a_take_that_underpays() {
             &s.maker_swap_key,
             &maker_ivk,
             &take_message,
+            tip(),
             OsRng
         ),
         Err(SwapError::Refused("it does not pay what the offer asks"))
     );
+}
+
+/// `take` with its transaction's expiry height rewritten, as a taker who
+/// built it that way would send it. The taker's own signatures no longer
+/// cover it, which the maker never looks at: its checks are what is tested.
+fn with_expiry(take: &Take, expiry_height: u32) -> Take {
+    let mut tx = hex::decode(&take.tx).unwrap();
+    // The v6 header: version, version group, branch id, lock time, expiry.
+    tx[16..20].copy_from_slice(&expiry_height.to_le_bytes());
+    let read = zcash_primitives::transaction::Transaction::read(
+        tx.as_slice(),
+        zcash_protocol::consensus::BranchId::Nu7,
+    )
+    .unwrap();
+    assert_eq!(u32::from(read.expiry_height()), expiry_height);
+    Take {
+        tx: hex::encode(tx),
+        ..take.clone()
+    }
+}
+
+/// A countersigned swap is the taker's to relay until it expires. The maker
+/// signs one that expires when a swap built at the tip it sees would, give
+/// or take a few blocks, and none that never expires or expires later.
+#[test]
+fn the_maker_refuses_a_take_that_outlives_a_swap_built_now() {
+    let s = setup();
+    let taker_fvk = FullViewingKey::from(&s.taker_key);
+    // Built for block 100: it expires at 140.
+    let (take_message, _) = take(
+        &s.offer,
+        &s.taker_inputs,
+        address(&s.taker_key),
+        taker_fvk.to_ovk(Scope::External),
+        BlockHeight::from_u32(100),
+        OsRng,
+    )
+    .unwrap();
+    let maker_ivk = FullViewingKey::from(&s.maker_main_key).to_ivk(Scope::External);
+    let sign = |take: &Take, tip: u32| {
+        countersign(
+            &s.offer,
+            &s.maker_swap_key,
+            &maker_ivk,
+            take,
+            BlockHeight::from_u32(tip),
+            OsRng,
+        )
+    };
+    let too_late = Err(SwapError::Refused(
+        "it expires later than a swap built now would",
+    ));
+
+    // The maker sees the taker's tip, or the chain a few blocks on.
+    assert!(sign(&take_message, 99).is_ok());
+    assert!(sign(&take_message, 139).is_ok(), "it only ends sooner");
+    // Its view may trail the taker's by the margin, and no further:
+    // 96 + 40 + 4 is 140, 95 + 40 + 4 is 139.
+    assert!(sign(&take_message, 96).is_ok());
+    assert_eq!(sign(&take_message, 95), too_late);
+
+    // Height zero is "never expires": the taker could relay it any day.
+    assert_eq!(
+        sign(&with_expiry(&take_message, 0), 99),
+        Err(SwapError::Refused("it never expires"))
+    );
+    // Far ahead is the same option, with an end nobody will wait for.
+    assert_eq!(sign(&with_expiry(&take_message, 1_000_000), 99), too_late);
+    assert_eq!(sign(&with_expiry(&take_message, 144), 99), too_late);
+    // One block inside the bound is signed: the rewrite itself is not what
+    // gets a take refused.
+    assert!(sign(&with_expiry(&take_message, 143), 99).is_ok());
 }
 
 #[test]
@@ -139,7 +225,7 @@ fn only_the_maker_can_complete_it() {
 
     // Another key cannot countersign the offer...
     assert_eq!(
-        countersign(&s.offer, &key(), &maker_ivk, &take_message, OsRng),
+        countersign(&s.offer, &key(), &maker_ivk, &take_message, tip(), OsRng),
         Err(SwapError::Refused("this key did not make the offer"))
     );
     // ...and a signature from a key that is not the maker's is refused.

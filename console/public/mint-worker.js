@@ -16,7 +16,7 @@ let engineThreads = 1;
 // files' hashes, and checked by CI: /mint-engine*/ is cached for an hour
 // (see next.config.ts), and this query is what busts that cache so a
 // rebuilt engine reaches returning browsers at once.
-const ENGINE_VERSION = "ac3fd1b259f0";
+const ENGINE_VERSION = "2b5727d09a0b";
 
 async function load(variant) {
   const base = `/mint-engine${variant}`;
@@ -95,7 +95,13 @@ self.onmessage = async (event) => {
       // Heavy: one proof for the whole swap bundle.
       result = mod.swap_take(args.seed, args.offer, args.target_height);
     } else if (cmd === "swap_countersign") {
-      result = mod.swap_countersign(args.seed, args.slot, args.offer, args.take);
+      // The tip bounds the expiry the maker signs for. A page that sends
+      // none would have the engine measure from height zero and refuse
+      // every take as expiring too late: say what is missing instead.
+      if (!Number.isInteger(args.tip_height) || args.tip_height < 0) {
+        throw new Error("the chain's tip is needed to countersign a swap");
+      }
+      result = mod.swap_countersign(args.seed, args.slot, args.offer, args.take, args.tip_height);
     } else if (cmd === "swap_take_txid") {
       result = mod.swap_take_txid(args.take);
     } else if (cmd === "swap_finish") {
