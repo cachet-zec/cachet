@@ -110,6 +110,15 @@ All notable changes to Cachet are documented here. The format follows
 
 ### Fixed
 
+- The server waits for the database it was given, and no longer runs
+  without it. With `CACHET_DATABASE_URL` set, it retries the connection
+  for a minute, then exits so its supervisor restarts it. It used to start
+  in scan-only mode and stay there: after a host reboot the public
+  registry came up three seconds before Postgres, and its listings hung
+  for two and a half days while `/healthz` stayed green. With the variable
+  unset (a developer without Postgres) the scan-only fallback is
+  unchanged. The uptime probe now asks the registry for a listing, and the
+  smoke check gives each request twenty seconds instead of waiting forever.
 - The README's honest-scope note says where ZSA stands: not on mainnet
   and not part of NU7. Mainnet has had a v6 transaction format since
   NU6.3 (ZIP 229, Ironwood), but it carries no ZSA bundles; the v6 Cachet
