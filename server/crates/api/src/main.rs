@@ -117,26 +117,22 @@ async fn main() -> anyhow::Result<()> {
                 );
             }
 
-            // Registry cache: optional. Default URL matches
-            // infra/docker-compose.yml; unreachable database → scan-only
-            // mode with a warning, never a startup failure.
-            let database_url = std::env::var("CACHET_DATABASE_URL").unwrap_or_else(|_| {
-                "postgres://cachet:cachet-dev-only@localhost:5432/cachet".to_owned()
-            });
+            // Registry cache. A database the operator named is part of the
+            // deployment: the server waits for it, then refuses to start
+            // without it. Only the unset default (a developer without
+            // Postgres) falls back to scan-only mode, with a warning.
+            let database = DatabaseSetting::from_env(std::env::var("CACHET_DATABASE_URL").ok());
             let mut has_index = false;
             let mut gc_index: Option<Arc<cachet_index::AssetIndex>> = None;
-            match cachet_index::AssetIndex::connect(&database_url).await {
-                Ok(index) => {
-                    tracing::info!("asset index connected (Postgres registry cache)");
-                    let index = Arc::new(index);
-                    backend = backend.with_index(index.clone());
-                    gc_index = Some(index.clone());
-                    metadata = Some(index);
-                    has_index = true;
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "asset index unavailable; listings will full-scan");
-                }
+            if let Some(index) =
+                connect_index(&database, DATABASE_WAIT, DATABASE_RETRY_PAUSE).await?
+            {
+                tracing::info!("asset index connected (Postgres registry cache)");
+                let index = Arc::new(index);
+                backend = backend.with_index(index.clone());
+                gc_index = Some(index.clone());
+                metadata = Some(index);
+                has_index = true;
             }
             let backend = Arc::new(backend);
 
@@ -440,6 +436,75 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Where the registry cache lives, and whether the server may run without it.
+///
+/// No `Debug`: the URL carries the database password.
+struct DatabaseSetting {
+    url: String,
+    /// `CACHET_DATABASE_URL` is set: the operator deployed a database, so
+    /// starting without it is a fault, not a fallback.
+    required: bool,
+}
+
+impl DatabaseSetting {
+    /// Matches infra/docker-compose.yml.
+    const DEV_DEFAULT: &'static str = "postgres://cachet:cachet-dev-only@localhost:5432/cachet";
+
+    /// A blank value counts as unset, like the other optional settings.
+    fn from_env(value: Option<String>) -> Self {
+        match value.filter(|url| !url.trim().is_empty()) {
+            Some(url) => Self {
+                url,
+                required: true,
+            },
+            None => Self {
+                url: Self::DEV_DEFAULT.to_owned(),
+                required: false,
+            },
+        }
+    }
+}
+
+/// How long a required database gets to come up. When a host reboots, the
+/// container runtime restarts every service at once, in no order: the
+/// database can be a few seconds behind the server.
+const DATABASE_WAIT: std::time::Duration = std::time::Duration::from_secs(60);
+const DATABASE_RETRY_PAUSE: std::time::Duration = std::time::Duration::from_secs(2);
+
+/// Connect the registry index.
+///
+/// A required database is retried until `wait` has passed, then the error
+/// is returned and the server exits: its supervisor restarts it until the
+/// database answers. Without the index every listing walks the whole
+/// chain, which a long chain cannot serve, and nothing reconnects later.
+///
+/// An optional database is tried once. `None` means scan-only mode.
+async fn connect_index(
+    setting: &DatabaseSetting,
+    wait: std::time::Duration,
+    pause: std::time::Duration,
+) -> anyhow::Result<Option<cachet_index::AssetIndex>> {
+    let deadline = tokio::time::Instant::now() + wait;
+    loop {
+        let error = match cachet_index::AssetIndex::connect(&setting.url).await {
+            Ok(index) => return Ok(Some(index)),
+            Err(error) => error,
+        };
+        if !setting.required {
+            tracing::warn!(%error, "asset index unavailable; listings will full-scan");
+            return Ok(None);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(anyhow::Error::new(error).context(
+                "CACHET_DATABASE_URL is set but the database did not answer; \
+                 not starting in scan-only mode",
+            ));
+        }
+        tracing::warn!(%error, "database not reachable yet; retrying");
+        tokio::time::sleep(pause).await;
+    }
+}
+
 /// One garbage-collection pass over the bundle store: sweep uploads that
 /// no journaled description references after a 30-minute grace window,
 /// and publish the remaining orphan byte total for the upload cap.
@@ -606,4 +671,56 @@ async fn run_moderation(args: &[String]) -> anyhow::Result<()> {
         _ => anyhow::bail!(USAGE),
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::{DatabaseSetting, connect_index};
+
+    /// Nothing listens on port 1: the connection is refused, and the pool
+    /// gives up after its five-second budget.
+    const UNREACHABLE: &str = "postgres://cachet:unused@127.0.0.1:1/cachet";
+
+    #[test]
+    fn a_database_the_operator_named_is_required() {
+        let setting = DatabaseSetting::from_env(Some("postgres://db/cachet".to_owned()));
+        assert_eq!(setting.url, "postgres://db/cachet");
+        assert!(setting.required);
+    }
+
+    #[test]
+    fn an_unset_or_blank_database_is_the_optional_dev_default() {
+        for value in [None, Some(String::new()), Some("  ".to_owned())] {
+            let setting = DatabaseSetting::from_env(value);
+            assert_eq!(setting.url, DatabaseSetting::DEV_DEFAULT);
+            assert!(!setting.required);
+        }
+    }
+
+    #[tokio::test]
+    async fn an_optional_database_that_is_down_means_scan_only() {
+        let setting = DatabaseSetting {
+            url: UNREACHABLE.to_owned(),
+            required: false,
+        };
+        let index = connect_index(&setting, Duration::ZERO, Duration::ZERO)
+            .await
+            .expect("an optional database never fails the startup");
+        assert!(index.is_none());
+    }
+
+    #[tokio::test]
+    async fn a_required_database_that_is_down_stops_the_startup() {
+        let setting = DatabaseSetting {
+            url: UNREACHABLE.to_owned(),
+            required: true,
+        };
+        let error = connect_index(&setting, Duration::ZERO, Duration::ZERO)
+            .await
+            .err()
+            .expect("a required database that never answers is an error");
+        assert!(error.to_string().contains("CACHET_DATABASE_URL"));
+    }
 }

@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - name: API healthz + console
+      - name: API healthz + registry listing + console
         run: |
           probe() {
             # Two attempts 20s apart: a transient blip must not page anyone.
@@ -31,4 +31,7 @@ jobs:
             return 1
           }
           probe https://api.cachetzec.com/healthz
+          # healthz only says the process is up. The listing goes through
+          # the node and the database: it is what a visitor's page needs.
+          probe "https://api.cachetzec.com/api/v1/assets?limit=1"
           probe https://cachetzec.com

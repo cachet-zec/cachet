@@ -135,9 +135,15 @@ it; Next.js telemetry is off).
 
 The asset registry cache connects to Postgres via `CACHET_DATABASE_URL`
 (default matches docker-compose:
-`postgres://cachet:cachet-dev-only@localhost:5432/cachet`). If the
-database is unreachable the server starts anyway and serves listings by
-full chain scan — the index is a cache, never a dependency. It detects
+`postgres://cachet:cachet-dev-only@localhost:5432/cachet`). With the
+variable unset, an unreachable database is not an error: the server
+starts anyway and serves listings by full chain scan, which suits a
+short regtest chain. With the variable set, the database is part of the
+deployment: the server retries the connection for a minute, then exits,
+so its supervisor (`restart: unless-stopped` in the prod compose file)
+brings it back once Postgres answers. A full scan cannot serve a long
+chain, and nothing reconnects a server that started without its index.
+The index detects
 chain resets (routine on the ephemeral regtest) and rebuilds itself; the
 description journal, the bundle store and the moderation denylist persist
 across resets, by design.

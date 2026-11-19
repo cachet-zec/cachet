@@ -2,7 +2,8 @@
 # Post-deploy smoke check for the public instance: fifteen seconds of
 # curl that verify the whole deployment. Run after every deploy:
 #   bash infra/prod/smoke.sh
-# Exits non-zero on the first failure.
+# Exits non-zero on the first failure. Every request gets twenty seconds:
+# a route that hangs is a failure, not a reason to wait.
 set -euo pipefail
 
 SITE="${CACHET_SITE:-https://cachetzec.com}"
@@ -20,9 +21,9 @@ check() {
   fi
 }
 
-has_header() { curl -s -D- -o /dev/null "$1" | grep -qi "$2"; }
-http_200() { [ "$(curl -s -o /dev/null -w '%{http_code}' "$1")" = "200" ]; }
-body_has() { curl -s "$1" | grep -q "$2"; }
+has_header() { curl -s --max-time 20 -D- -o /dev/null "$1" | grep -qi "$2"; }
+http_200() { [ "$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' "$1")" = "200" ]; }
+body_has() { curl -s --max-time 20 "$1" | grep -q "$2"; }
 
 echo "smoke: $SITE + $API"
 
@@ -34,17 +35,17 @@ check "engine (threaded) served"      http_200 "$SITE/mint-engine-mt/cachet_mint
 check "api chain info"                http_200 "$API/api/v1/chain"
 check "api asset listing"             http_200 "$API/api/v1/assets"
 # "^x-total-count:" and not the bare name: the CORS expose header lists it too.
-check "paged listing says its total"  bash -c "curl -s -D- -o /dev/null '$API/api/v1/assets?limit=1' | grep -qi '^x-total-count:'"
+check "paged listing says its total"  bash -c "curl -s --max-time 20 -D- -o /dev/null '$API/api/v1/assets?limit=1' | grep -qi '^x-total-count:'"
 check "kept listing up"               http_200 "$API/api/v1/kept"
 check "raw blocks page"               http_200 "$API/api/v1/chain/transactions?start_height=1&limit=5"
 check "snapshot signed"               body_has "$API/api/v1/snapshot" '"signature"'
 check "snapshot key exposed"          body_has "$API/api/v1/chain" '"snapshot_public_key"'
-check "read-only guard (mint = 403)" bash -c "[ \"\$(curl -s -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{\"description\":\"smoke\",\"amount\":1}' $API/api/v1/assets)\" = '403' ]"
+check "read-only guard (mint = 403)" bash -c "[ \"\$(curl -s --max-time 20 -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{\"description\":\"smoke\",\"amount\":1}' $API/api/v1/assets)\" = '403' ]"
 check "CSP on console"                has_header "$SITE" "content-security-policy"
 check "HSTS on console"               has_header "$SITE" "strict-transport-security"
 check "cross-origin isolation"        has_header "$SITE/mint" "cross-origin-embedder-policy"
 check "CORP on api"                   has_header "$API/api/v1/chain" "cross-origin-resource-policy"
-check "compression on engine"         bash -c "curl -s -o /dev/null -H 'Accept-Encoding: gzip' -D- $SITE/mint-engine/cachet_mint_engine_bg.wasm | grep -qi 'content-encoding: gzip'"
+check "compression on engine"         bash -c "curl -s --max-time 20 -o /dev/null -H 'Accept-Encoding: gzip' -D- $SITE/mint-engine/cachet_mint_engine_bg.wasm | grep -qi 'content-encoding: gzip'"
 
 # Any failure has already exited: reaching here means every check passed.
 echo "smoke: all $pass checks green"
