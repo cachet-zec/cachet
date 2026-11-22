@@ -1,8 +1,11 @@
 name: Uptime
 
-# External heartbeat for the public instance, from GitHub's infra (so a
-# dead VPS is actually noticed). A failed run emails the user who last
-# touched this file's cron line — that is the alert.
+# Backup heartbeat for the public instance, from GitHub's infra. GitHub
+# runs schedules on a best-effort basis: since September this ran 3 to 9
+# times a day, not every five minutes, so it can miss an outage for hours.
+# The main heartbeat is UptimeRobot, which probes the same three URLs
+# every five minutes from outside: keep the two lists in step. A failed
+# run here emails the user who last touched this file's cron line.
 on:
   schedule:
     - cron: "*/5 * * * *"
